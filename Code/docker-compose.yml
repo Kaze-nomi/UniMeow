@@ -1,0 +1,81 @@
+services:
+  api-gateway:
+    build: ./API Gateway
+    ports:
+      - "8080:8080"
+    networks:
+      - meow-network
+
+  file-storing-service:
+    build: ./File Storing Service
+    ports:
+      - "9091:9091"
+    networks:
+      - meow-network
+    volumes:
+      - file_storage:/storage
+    environment:
+      DB_URL: jdbc:postgresql://postgres-file-storing:5432/file-storing-db
+      DB_USER: postgres
+      DB_PASSWORD: postgres
+    depends_on:
+      postgres-file-storing:
+        condition: service_healthy
+
+  postgres-file-storing:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_DB: file-storing-db
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    networks:
+      - meow-network
+    volumes:
+      - postgres_storing_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  file-analysis-service:
+    build: ./File Analysis Service
+    ports:
+      - "9092:9092"
+    volumes:
+      - analysis_storage:/storage
+    networks:
+      - meow-network
+    environment:
+      DB_URL: jdbc:postgresql://postgres-file-analysis:5432/file-analysis-db
+      DB_USER: postgres
+      DB_PASSWORD: postgres
+    depends_on:
+      postgres-file-analysis:
+        condition: service_healthy
+
+  postgres-file-analysis:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_DB: file-analysis-db
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    volumes:
+      - postgres_analysis_data:/var/lib/postgresql/data
+    networks:
+      - meow-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  postgres_storing_data:
+  postgres_analysis_data:
+  file_storage:
+  analysis_storage:
+
+networks:
+  meow-network:
+    driver: bridge

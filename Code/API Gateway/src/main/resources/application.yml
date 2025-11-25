@@ -1,0 +1,14 @@
+grpc:
+  client:
+    file-storing-service:
+      address: 'static://file-storing-service:9091'
+      negotiation-type: plaintext
+    file-analysis-service:
+      address: 'static://file-analysis-service:9092'
+      negotiation-type: plaintext
+
+spring:
+  servlet:
+    multipart:
+      max-file-size: 4MB
+      max-request-size: 4MB
