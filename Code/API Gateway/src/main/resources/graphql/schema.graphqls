@@ -1,0 +1,33 @@
+type Query {
+    me: User
+    getUser(id: ID!): User
+    getUserByUsername(username: String!): User
+}
+
+type Mutation {
+    updateProfile(input: UpdateProfileInput!): User
+}
+
+input UpdateProfileInput {
+    username: String
+    name: String
+    surname: String
+    patronymic: String
+    status: String
+    avatarUrl: String
+}
+
+type User {
+    id: ID!
+    emailGoogle: String!
+    username: String!
+    name: String!
+    surname: String
+    patronymic: String
+    emailUniversity: String
+    avatarUrl: String
+    status: String
+    isStudentVerified: Boolean!
+    isEmployeeVerified: Boolean!
+    createdAt: String!
+}

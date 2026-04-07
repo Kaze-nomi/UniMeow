@@ -39,11 +39,10 @@
 2. Frontend отправляет запрос через API Gateway в User Service
 3. User Service проверяет email среди списка заранее определённых почт университетов студентов/сотрудников
 4. Если код совпадение есть, то User Service генерирует 6-значный проверочный код, иначе возвращает ошибку
-5. User Service публикует событие USER_VERIFICATION_REQUESTED в Kafka
-6. Notification Service получает событие и отправляет email через SMTP
-7. Пользователь получает email и вводит код в приложении
-8. User Service проверяет код и устанавливает флаг is_student_verified/is_employee_verified = true
-9. User Service возвращает сообщение об успешной верификации
+5. User Service отправляет email через SMTP
+6. Пользователь получает email и вводит код в приложении
+7. User Service проверяет код и устанавливает флаг is_student_verified/is_employee_verified = true
+8. User Service возвращает сообщение об успешной верификации
 
 **Результат**: Статус пользователя подтвержден
 
@@ -106,9 +105,9 @@
 2. Frontend → API Gateway → Post Service: DeletePost(userId, postId)
 3. Post Service проверяет что пользователь - автор поста
 4. Post Service удаляет пост из БД
-5. Post Service публикует событие POST_DELETED в Kafka
-6. Feed Service получает POST_DELETED → удаляет postId из всех лент
-7. Interaction Service получает POST_DELETED → удаляет все лайки/комментарии поста
+6. Post Service удаляет все лайки/комментарии поста
+7. Post Service публикует событие POST_DELETED в Kafka
+8. Feed Service получает POST_DELETED → удаляет postId из всех лент
 
 **Результат**: Пост полностью удален из системы
 
@@ -119,12 +118,11 @@
 
 **Шаги:**
 1. Пользователь нажимает "Подписаться" на странице пользователя 456
-2. Frontend → API Gateway → Interaction Service: FollowUser(sourceUserId=123, targetUserId=456)
-3. Interaction Service сохраняет подписку в БД
-4. Interaction Service публикует событие USER_FOLLOWED в Kafka
+2. Frontend → API Gateway → User Service: FollowUser(sourceUserId=123, targetUserId=456)
+3. User Service сохраняет подписку в БД
+4. User Service публикует событие USER_FOLLOWED в Kafka
 5. Feed Service получает USER_FOLLOWED:
    - Добавляет посты targetUserId в ленту sourceUserId
-6. Notification Service получает USER_FOLLOWED → отправляет уведомление targetUserId
 
 **Результат**: Пользователь подписан на другого пользователя
 
@@ -133,10 +131,8 @@
 
 **Шаги:**
 1. Пользователь нажимает "лайк" под постом 789
-2. Frontend → API Gateway → Interaction Service: LikePost(postId=789)
-3. Interaction Service сохраняет лайк в БД
-4. Interaction Service публикует событие POST_LIKED в Kafka
-5. Notification Service получает POST_LIKED → отправляет уведомление автору поста
+2. Frontend → API Gateway → Post Service: LikePost(postId=789)
+3. Post Service сохраняет лайк в БД
 
 **Результат**: Пост отмечен как понравившийся
 
@@ -145,22 +141,20 @@
 
 **Шаги:**
 1. Пользователь пишет комментарий "Отличный пост!" под постом 789
-2. Frontend → API Gateway → Interaction Service: AddComment(postId=789, content)
-3. Interaction Service сохраняет комментарий в БД
-4. Interaction Service публикует событие COMMENT_ADDED в Kafka
-5. Notification Service получает COMMENT_ADDED → отправляет уведомление автору поста
+2. Frontend → API Gateway → Post Service: AddComment(postId=789, content)
+3. Post Service сохраняет комментарий в БД
 
 **Результат**: Комментарий добавлен к посту
 
-## 🔔 Сценарии уведомлений
+<!-- ## 🔔 Сценарии уведомлений
 
 ### Получение уведомлений о активности
 **Автоматические уведомления при событиях:**
 - USER_FOLLOWED: "Новый подписчик: Иванов Иван"
 - POST_LIKED: "Петров Петр лайкнул ваш пост"
-- COMMENT_ADDED: "Сидоров Сидор прокомментировал ваш пост"
+- COMMENT_ADDED: "Сидоров Сидор прокомментировал ваш пост" -->
 
-**Результат**: Пользователь информирован о действиях других пользователей
+<!-- **Результат**: Пользователь информирован о действиях других пользователей -->
 
 ## 🛠️ Сценарии управления аккаунтом
 

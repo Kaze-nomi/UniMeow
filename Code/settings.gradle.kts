@@ -1,5 +1,5 @@
 rootProject.name = "UniMeow"
 
-include(
-    "API Gateway"
-)
+include(":gRPC")
+include(":API Gateway")
+include(":User Service")

@@ -1,0 +1,21 @@
+services:
+  postgres-user:
+    image: postgres:16
+    environment:
+      POSTGRES_DB: user_db
+  postgres-post:
+    image: postgres:16
+    environment:
+      POSTGRES_DB: post_db
+  postgres-media:
+    image: postgres:16
+    environment:
+      POSTGRES_DB: media_db
+  redis:
+    image: redis:7
+  zookeeper:
+    image: confluentinc/cp-zookeeper
+  kafka:
+    image: confluentinc/cp-kafka
+  eureka-server:
+    build: ./eureka-server
