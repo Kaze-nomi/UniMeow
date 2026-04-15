@@ -1,0 +1,50 @@
+type Query {
+    me: User
+    getUser(id: ID!): User
+    getUserByUsername(username: String!): User
+}
+
+type Mutation {
+    updateProfile(input: UpdateProfileInput!): User
+    sendVerificationCode(universityEmail: String!): VerificationResult!
+    verifyEmailCode(code: String!): VerifyResult!
+    subscribe(targetUserId: ID!): SubscribeResult!
+    unsubscribe(targetUserId: ID!): SubscribeResult!
+}
+
+input UpdateProfileInput {
+    username:   String
+    name:       String
+    surname:    String
+    patronymic: String
+    status:     String
+    avatarUrl:  String
+}
+
+type User {
+    id:                  ID!
+    emailGoogle:         String!
+    username:            String
+    name:                String!
+    surname:             String
+    patronymic:          String
+    emailUniversity:     String
+    avatarUrl:           String
+    status:              String
+    isStudentVerified:   Boolean!
+    isEmployeeVerified:  Boolean!
+    createdAt:           String!
+}
+
+type VerificationResult {
+    success: Boolean!
+}
+
+type VerifyResult {
+    success: Boolean!
+    error:   String
+}
+
+type SubscribeResult {
+    success: Boolean!
+}
