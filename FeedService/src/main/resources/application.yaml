@@ -1,0 +1,74 @@
+server:
+  port: 9002
+
+spring:
+  application:
+    name: feed-service
+  data:
+    redis:
+      host: ${SPRING_DATA_REDIS_HOST:redis}
+      port: ${SPRING_DATA_REDIS_PORT:6379}
+  kafka:
+    bootstrap-servers: ${SPRING_KAFKA_BOOTSTRAP_SERVERS:kafka:9092}
+    producer:
+      acks: all
+      retries: 10
+      client-id: feed-service-dlq-producer
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.apache.kafka.common.serialization.StringSerializer
+      properties:
+        enable.idempotence: true
+        max.in.flight.requests.per.connection: 5
+        delivery.timeout.ms: 120000
+        request.timeout.ms: 30000
+    consumer:
+      group-id: ${SPRING_KAFKA_CONSUMER_GROUP_ID:feed-service-group}
+      auto-offset-reset: earliest
+      enable-auto-commit: false
+      isolation-level: read_committed
+      max-poll-records: 100
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+    listener:
+      ack-mode: manual_immediate
+
+app:
+  feed:
+    default-page-size: 20
+    max-page-size: 100
+    author-window-size: 1000
+    global-window-size: 5000
+    trending-window-size: 5000
+    trending-like-boost-ms: 3600000  # 1 лайк = +1 час в рейтинге
+  kafka:
+    topics:
+      post-events: post-events
+      user-events: user-events
+      feed-events-dlq: feed-events.dlq
+
+grpc:
+  server:
+    port: 9092
+    permit-keep-alive-without-calls: true
+    permit-keep-alive-time: 20s
+
+eureka:
+  client:
+    serviceUrl:
+      defaultZone: ${EUREKA_CLIENT_SERVICEURL_DEFAULTZONE:http://localhost:8761/eureka/}
+  instance:
+    lease-renewal-interval-in-seconds: 5
+    lease-expiration-duration-in-seconds: 15
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus,metrics
+  endpoint:
+    health:
+      show-details: always
+  metrics:
+    export:
+      prometheus:
+        enabled: true

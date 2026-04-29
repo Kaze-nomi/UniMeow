@@ -1,0 +1,29 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+  - job_name: api-gateway
+    metrics_path: /actuator/prometheus
+    static_configs:
+      - targets: ['api-gateway:8080']
+
+  - job_name: user-service
+    metrics_path: /actuator/prometheus
+    static_configs:
+      - targets: ['user-service:9000']
+
+  - job_name: post-service
+    metrics_path: /actuator/prometheus
+    static_configs:
+      - targets: ['post-service:9001']
+
+  - job_name: feed-service
+    metrics_path: /actuator/prometheus
+    static_configs:
+      - targets: ['feed-service:9002']
+
+  - job_name: media-service
+    metrics_path: /actuator/prometheus
+    static_configs:
+      - targets: ['media-service:9003']

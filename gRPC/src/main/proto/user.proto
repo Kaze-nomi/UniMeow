@@ -1,0 +1,442 @@
+syntax = "proto3";
+
+package uni.grpc.user;
+option java_multiple_files = true;
+option java_package = "uni.grpc.user";
+
+service UserService {
+    rpc CreateOrGetUser  (CreateOrGetUserRequest)  returns (UserResponse);
+    rpc GetUserById      (GetUserByIdRequest)       returns (UserResponse);
+    rpc GetUserByUsername(GetUserByUsernameRequest) returns (UserResponse);
+    rpc UpdateUser       (UpdateUserRequest)        returns (UserResponse);
+
+    rpc CreateSession      (CreateSessionRequest)      returns (CreateSessionResponse);
+    rpc RefreshSession     (RefreshSessionRequest)     returns (RefreshSessionResponse);
+    rpc RevokeRefreshToken (RevokeRefreshTokenRequest) returns (RevokeRefreshTokenResponse);
+
+    rpc SendVerificationCode (SendVerificationCodeRequest) returns (SendVerificationCodeResponse);
+    rpc VerifyEmailCode      (VerifyEmailCodeRequest)      returns (VerifyEmailCodeResponse);
+
+    rpc Subscribe   (SubscribeRequest)   returns (SubscribeResponse);
+    rpc Unsubscribe (UnsubscribeRequest) returns (UnsubscribeResponse);
+    rpc IsSubscribed(IsSubscribedRequest) returns (IsSubscribedResponse);
+
+    rpc UploadUniversityIcon (UploadUniversityIconRequest) returns (UploadUniversityIconResponse);
+
+    rpc ValidateTopicForUniversity (ValidateTopicRequest) returns (ValidateTopicResponse);
+    rpc GetGeneralTopicForUniversity (GetGeneralTopicRequest) returns (GetGeneralTopicResponse);
+    rpc ResolvePostTarget (ResolvePostTargetRequest) returns (ResolvePostTargetResponse);
+    rpc ListUniversities (ListUniversitiesRequest) returns (UniversityListResponse);
+    rpc ListFaculties (ListFacultiesRequest) returns (FacultyListResponse);
+    rpc ListPrograms (ListProgramsRequest) returns (ProgramListResponse);
+    rpc ListTopics (ListTopicsRequest) returns (TopicListResponse);
+
+    rpc BanUser     (BanUserRequest)     returns (ModerationResponse);
+    rpc GrantAdmin  (GrantAdminRequest)  returns (ModerationResponse);
+    rpc CreateImprovementSuggestion (CreateImprovementSuggestionRequest) returns (ModerationResponse);
+    rpc ListImprovementSuggestions (ListImprovementSuggestionsRequest) returns (ImprovementSuggestionListResponse);
+    rpc DeleteImprovementSuggestion (DeleteImprovementSuggestionRequest) returns (ModerationResponse);
+    rpc CreateUniversityProposal (CreateUniversityProposalRequest) returns (ModerationResponse);
+    rpc ListUniversityProposals (ListUniversityProposalsRequest) returns (UniversityProposalListResponse);
+    rpc ReviewUniversityProposal (ReviewUniversityProposalRequest) returns (ModerationResponse);
+    rpc CreateFacultyProposal (CreateFacultyProposalRequest) returns (ModerationResponse);
+    rpc ListFacultyProposals (ListFacultyProposalsRequest) returns (FacultyProposalListResponse);
+    rpc ReviewFacultyProposal (ReviewFacultyProposalRequest) returns (ModerationResponse);
+    rpc CreateProgramProposal (CreateProgramProposalRequest) returns (ModerationResponse);
+    rpc ListProgramProposals (ListProgramProposalsRequest) returns (ProgramProposalListResponse);
+    rpc ReviewProgramProposal (ReviewProgramProposalRequest) returns (ModerationResponse);
+    rpc CreateFaculty (CreateFacultyRequest) returns (ModerationResponse);
+    rpc CreateProgramForUser (CreateProgramForUserRequest) returns (CreateProgramResponse);
+}
+
+message CreateOrGetUserRequest {
+    string email_google = 1;
+    string name         = 2;
+    string surname      = 3;
+    string avatar_url   = 4;
+}
+
+message GetUserByIdRequest       { string id       = 1; }
+message GetUserByUsernameRequest { string username = 1; }
+
+message UpdateUserRequest {
+    string          id         = 1;
+    optional string username   = 2;
+    optional string name       = 3;
+    optional string surname    = 4;
+    optional string patronymic = 5;
+    optional string status     = 6;
+    optional string avatar_url = 7;
+    optional int64  faculty_id = 8;
+    optional int32  course = 9;
+    optional EducationLevel education_level = 10;
+    optional int32  graduation_year = 11;
+    optional string bio = 12;
+    optional string cover_url = 13;
+    optional int64  program_id = 14;
+}
+
+message University {
+    int64  id         = 1;
+    string name       = 2;
+    string short_name = 3;
+    string icon_url   = 4;
+    string subdomain  = 5;
+}
+
+message Faculty {
+    int64  id         = 1;
+    string name       = 2;
+    string short_name = 3;
+}
+
+message Program {
+    int64  id         = 1;
+    int64  faculty_id = 2;
+    string name       = 3;
+    string short_name = 4;
+}
+
+message Topic {
+    int64  id         = 1;
+    string slug       = 2;
+    string name       = 3;
+    bool   is_system  = 4;
+    optional int64 parent_id = 5;
+    optional int64 faculty_id = 6;
+}
+
+enum EducationLevel {
+    BACHELOR = 0;
+    MASTER = 1;
+    PHD = 2;
+    SPECIALIST = 3;
+}
+
+message UserResponse {
+    string id                   = 1;
+    string email_google         = 2;
+    string username             = 3;
+    string name                 = 4;
+    string surname              = 5;
+    string patronymic           = 6;
+    string email_university     = 7;
+    string avatar_url           = 8;
+    string status               = 9;
+    bool   is_student_verified  = 10;
+    bool   is_employee_verified = 11;
+    string created_at           = 12;
+    optional University university = 20;
+    optional Faculty    faculty    = 21;
+    optional Program    program    = 22;
+    optional int32 course = 23;
+    optional EducationLevel education_level = 24;
+    optional int32 graduation_year = 25;
+    optional string bio = 26;
+    optional string cover_url = 27;
+    bool is_admin = 28;
+    bool is_banned = 29;
+    optional string banned_until = 30;
+    optional string ban_reason = 31;
+}
+
+message CreateSessionRequest {
+    string user_id         = 1;
+    string refresh_token   = 2;
+    int64  expires_in_days = 3;
+}
+message CreateSessionResponse { bool success = 1; }
+
+message RefreshSessionRequest  { string old_refresh_token = 1; }
+message RefreshSessionResponse {
+    string user_id           = 1;
+    string new_refresh_token = 2;
+}
+
+message RevokeRefreshTokenRequest  { string refresh_token = 1; }
+message RevokeRefreshTokenResponse { bool success = 1; }
+
+message SendVerificationCodeRequest {
+    string user_id          = 1;
+    string university_email = 2;
+}
+message SendVerificationCodeResponse { bool success = 1; }
+
+message VerifyEmailCodeRequest {
+    string user_id = 1;
+    string code    = 2;
+}
+message VerifyEmailCodeResponse {
+    bool   success = 1;
+    string error   = 2; // "INVALID" | "EXPIRED" | "ATTEMPTS_EXCEEDED" | "UNKNOWN_DOMAIN"
+}
+
+message SubscribeRequest {
+    string subscriber_id  = 1;
+    string target_user_id = 2;
+}
+message SubscribeResponse { bool success = 1; }
+
+message UnsubscribeRequest {
+    string subscriber_id  = 1;
+    string target_user_id = 2;
+}
+message UnsubscribeResponse { bool success = 1; }
+
+message IsSubscribedRequest {
+    string subscriber_id  = 1;
+    string target_user_id = 2;
+}
+message IsSubscribedResponse { bool subscribed = 1; }
+
+message UploadUniversityIconRequest {
+    int64  university_id = 1;
+    bytes  data = 2;
+    string content_type = 3;
+    string admin_token = 4;
+}
+
+message UploadUniversityIconResponse {
+    bool   success = 1;
+    string icon_url = 2;
+}
+
+message ValidateTopicRequest {
+    int64 university_id = 1;
+    int64 topic_id = 2;
+}
+
+message ValidateTopicResponse {
+    bool success = 1;
+    optional int64 parent_topic_id = 2;
+}
+
+message GetGeneralTopicRequest {
+    int64 university_id = 1;
+}
+
+message GetGeneralTopicResponse {
+    int64 topic_id = 1;
+}
+
+message ResolvePostTargetRequest {
+    string author_id = 1;
+    optional int64 topic_id = 2;
+}
+
+message ResolvePostTargetResponse {
+    bool success = 1;
+    optional int64 university_id = 2;
+    optional int64 topic_id = 3;
+    optional int64 parent_topic_id = 4;
+    string error = 5;
+    optional int64 faculty_id = 6;
+    optional int64 program_id = 7;
+}
+
+message ListUniversitiesRequest {}
+
+message UniversityListResponse {
+    repeated University universities = 1;
+}
+
+message ListFacultiesRequest {
+    int64 university_id = 1;
+}
+
+message FacultyListResponse {
+    repeated Faculty faculties = 1;
+}
+
+message ListProgramsRequest {
+    int64 faculty_id = 1;
+}
+
+message ProgramListResponse {
+    repeated Program programs = 1;
+}
+
+message ListTopicsRequest {
+    int64 university_id = 1;
+}
+
+message TopicListResponse {
+    repeated Topic topics = 1;
+}
+
+message BanUserRequest {
+    string target_user_id = 1;
+    string moderator_id = 2;
+    optional string banned_until = 3;
+    optional string reason = 4;
+}
+
+message GrantAdminRequest {
+    string granter_id  = 1;
+    string target_user_id = 2;
+}
+
+message ModerationResponse {
+    bool success = 1;
+}
+
+message CreateImprovementSuggestionRequest {
+    string author_id = 1;
+    string text = 2;
+}
+
+message ImprovementSuggestion {
+    int64 id = 1;
+    string author_id = 2;
+    string text = 3;
+    string status = 4;
+    string created_at = 5;
+}
+
+message ListImprovementSuggestionsRequest {
+    string admin_id = 1;
+}
+
+message DeleteImprovementSuggestionRequest {
+    string admin_id = 1;
+    int64  id       = 2;
+}
+
+message ImprovementSuggestionListResponse {
+    repeated ImprovementSuggestion suggestions = 1;
+}
+
+message CreateUniversityProposalRequest {
+    string author_id = 1;
+    string name = 2;
+    string short_name = 3;
+    string subdomain = 4;
+    string student_domain = 5;
+    string employee_domain = 6;
+    string city = 7;
+    string description = 8;
+    string icon_url = 9;
+}
+
+message UniversityProposal {
+    int64 id = 1;
+    string author_id = 2;
+    string name = 3;
+    string short_name = 4;
+    string subdomain = 5;
+    string student_domain = 6;
+    string employee_domain = 7;
+    string city = 8;
+    string description = 9;
+    string status = 10;
+    string created_at = 11;
+    string reviewed_by = 12;
+    string reviewed_at = 13;
+    string icon_url = 14;
+}
+
+message ListUniversityProposalsRequest {
+    string admin_id = 1;
+}
+
+message UniversityProposalListResponse {
+    repeated UniversityProposal proposals = 1;
+}
+
+message ReviewUniversityProposalRequest {
+    int64 proposal_id = 1;
+    string reviewer_id = 2;
+    string status = 3;
+}
+
+message CreateFacultyProposalRequest {
+    string author_id = 1;
+    int64 university_id = 2;
+    string name = 3;
+    string short_name = 4;
+}
+
+message FacultyProposal {
+    int64 id = 1;
+    string author_id = 2;
+    int64 university_id = 3;
+    string university_name = 4;
+    string university_short_name = 5;
+    string name = 6;
+    string short_name = 7;
+    string status = 8;
+    string created_at = 9;
+    string reviewed_by = 10;
+    string reviewed_at = 11;
+}
+
+message ListFacultyProposalsRequest {
+    string admin_id = 1;
+}
+
+message FacultyProposalListResponse {
+    repeated FacultyProposal proposals = 1;
+}
+
+message ReviewFacultyProposalRequest {
+    int64 proposal_id = 1;
+    string reviewer_id = 2;
+    string status = 3;
+}
+
+message CreateProgramProposalRequest {
+    string author_id = 1;
+    int64 faculty_id = 2;
+    string name = 3;
+    string short_name = 4;
+}
+
+message ProgramProposal {
+    int64 id = 1;
+    string author_id = 2;
+    int64 university_id = 3;
+    string university_name = 4;
+    string university_short_name = 5;
+    int64 faculty_id = 6;
+    string faculty_name = 7;
+    string faculty_short_name = 8;
+    string name = 9;
+    string short_name = 10;
+    string status = 11;
+    string created_at = 12;
+    string reviewed_by = 13;
+    string reviewed_at = 14;
+}
+
+message ListProgramProposalsRequest {
+    string admin_id = 1;
+}
+
+message ProgramProposalListResponse {
+    repeated ProgramProposal proposals = 1;
+}
+
+message ReviewProgramProposalRequest {
+    int64 proposal_id = 1;
+    string reviewer_id = 2;
+    string status = 3;
+}
+
+message CreateFacultyRequest {
+    string admin_id = 1;
+    int64 university_id = 2;
+    string name = 3;
+    string short_name = 4;
+}
+
+message CreateProgramForUserRequest {
+    string user_id    = 1;
+    int64  faculty_id = 2;
+    string name       = 3;
+    string short_name = 4;
+}
+
+message CreateProgramResponse {
+    bool    success = 1;
+    Program program = 2;
+}

@@ -1,0 +1,52 @@
+spring:
+  application:
+    name: api-gateway-test
+
+  security:
+    oauth2:
+      client:
+        registration:
+          google:
+            client-id: test-client-id
+            client-secret: test-client-secret
+            scope: email, profile
+            authorization-grant-type: authorization_code
+            redirect-uri: "http://localhost/login/oauth2/code/google"
+        provider:
+          google:
+            authorization-uri: https://accounts.google.com/o/oauth2/auth
+            token-uri: https://oauth2.googleapis.com/token
+            user-info-uri: https://www.googleapis.com/oauth2/v3/userinfo
+            user-name-attribute: sub
+
+  graphql:
+    graphiql:
+      enabled: false
+
+  cloud:
+    discovery:
+      enabled: false
+
+jwt:
+  secret: wi+U5/PIuDARQmYIHLnKgO88oHQMhCuWA+2UqfFTNt4yPSLJNVmEFwF09MaM4TuKo0JuKZ6uCH7u7tP/Dle0UA==
+
+app:
+  security:
+    secure-cookie: false
+
+eureka:
+  client:
+    enabled: false
+    register-with-eureka: false
+    fetch-registry: false
+
+grpc:
+  client:
+    user-service:
+      address: 'static://localhost:9999'
+      negotiation-type: plaintext
+      enable-keep-alive: false
+    post-service:
+      address: 'static://localhost:9998'
+      negotiation-type: plaintext
+      enable-keep-alive: false

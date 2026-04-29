@@ -1,0 +1,32 @@
+syntax = "proto3";
+
+package uni.grpc.feed;
+option java_multiple_files = true;
+option java_package = "uni.grpc.feed";
+
+service FeedService {
+    rpc GetFeed (GetFeedRequest) returns (GetFeedResponse);
+}
+
+enum FeedType {
+    FOLLOWING = 0;
+    TRENDING  = 1;
+    GLOBAL    = 2;
+}
+
+message GetFeedRequest {
+    string   user_id       = 1;
+    FeedType feed_type     = 2;
+    int64    cursor        = 3;
+    int32    size          = 4;
+    int64    university_id = 5;
+    int64    topic_id      = 6;
+    int64    faculty_id    = 7;
+    int64    program_id    = 8;
+}
+
+message GetFeedResponse {
+    repeated string post_ids    = 1;
+    int64           next_cursor = 2;
+    bool            has_more    = 3;
+}

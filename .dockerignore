@@ -1,0 +1,25 @@
+# Node.js
+**/node_modules
+Frontend/node_modules
+
+# Build output
+**/dist
+**/build
+**/.vite
+
+# Java/Maven build artifacts
+**/target
+**/.gradle
+
+# IDE files
+.idea
+.vscode
+**/*.iml
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Git
+.git
+.gitignore

@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="ru" data-theme="light">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>UniMeow</title>
+  <link rel="icon" type="image/png" href="/favicon.png" sizes="256x256" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Onest:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    @keyframes likepop { 0% { transform: scale(1); } 35% { transform: scale(1.35); } 100% { transform: scale(1); } }
+    @keyframes fadein { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+    @keyframes skeleton { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
+    :root {
+      --accent-hue: 288;
+      --accent: oklch(0.62 0.23 var(--accent-hue));
+      --accent-hover: oklch(0.55 0.23 var(--accent-hue));
+      --accent-subtle: oklch(0.95 0.05 var(--accent-hue));
+      --accent-glow: oklch(0.62 0.23 var(--accent-hue) / 0.18);
+      --like: oklch(0.65 0.24 15);
+      --like-subtle: oklch(0.96 0.05 15);
+      --reply: oklch(0.65 0.18 230);
+      --reply-subtle: oklch(0.96 0.04 230);
+    }
+    [data-theme="light"] {
+      --bg: oklch(0.98 0.008 288);
+      --surface: oklch(0.99 0.005 288);
+      --surface-2: oklch(0.955 0.014 288);
+      --surface-hover: oklch(0.965 0.012 288);
+      --header-bg: oklch(0.98 0.008 288 / 0.88);
+      --text: oklch(0.18 0.02 288);
+      --text-muted: oklch(0.52 0.05 288);
+      --border: oklch(0.925 0.02 288);
+      --border-strong: oklch(0.85 0.03 288);
+      --card-shadow: none;
+    }
+    [data-theme="dark"] {
+      --bg: #15202b;
+      --surface: #15202b;
+      --surface-2: #1e2732;
+      --surface-hover: #1a2836;
+      --header-bg: rgba(21,32,43,0.85);
+      --text: #f7f9f9;
+      --text-muted: #8b98a5;
+      --border: #38444d;
+      --border-strong: #536471;
+      --accent-subtle: oklch(0.30 0.10 var(--accent-hue) / 0.35);
+      --like-subtle: oklch(0.40 0.15 15 / 0.20);
+      --reply-subtle: oklch(0.40 0.12 230 / 0.20);
+      --card-shadow: none;
+    }
+    html, body { height: 100%; font-family: 'Onest', sans-serif; background: var(--bg); color: var(--text); -webkit-font-smoothing: antialiased; scrollbar-gutter: stable; }
+
+    textarea, input, select, button { font-family: 'Onest', sans-serif; }
+    ::-webkit-scrollbar { width: 8px; height: 8px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: var(--border-strong); border-radius: 4px; }
+    ::-webkit-scrollbar-thumb:hover { background: var(--text-muted); }
+    input:focus, textarea:focus { border-color: var(--accent) !important; box-shadow: 0 0 0 1px var(--accent); }
+    button:hover:not(:disabled) { filter: brightness(0.96); }
+    a { color: var(--accent); text-decoration: none; }
+    .um-feed-row { transition: background 0.12s; }
+    .um-feed-row:hover { background: var(--surface-hover); }
+    .um-likebtn-active svg { animation: likepop 0.32s ease; }
+    .um-tab:hover { background: var(--surface-hover); }
+    .um-side-nav:hover { background: var(--surface-hover); }
+    .um-icon-btn { transition: background 0.12s, color 0.12s; }
+    .um-icon-btn:hover { background: var(--accent-subtle); color: var(--accent); }
+    .um-like-btn:hover { background: var(--like-subtle); color: var(--like) !important; }
+    .um-like-btn:hover svg { stroke: var(--like); }
+    .um-reply-btn:hover { background: var(--reply-subtle); color: var(--reply) !important; }
+    .um-reply-btn:hover svg { stroke: var(--reply); }
+    @media (max-width: 400px) {
+      .um-feed-row { padding: 10px 12px !important; }
+      .um-action-bar { max-width: none !important; }
+    }
+    @media (prefers-color-scheme: dark) {
+      html:not([data-theme="light"]) {
+        --bg: #15202b;
+        --surface: #15202b;
+        --surface-2: #1e2732;
+        --surface-hover: #1a2836;
+        --text: #f7f9f9;
+        --text-muted: #8b98a5;
+        --border: #38444d;
+        --border-strong: #536471;
+        --accent-subtle: oklch(0.30 0.10 288 / 0.35);
+        --like-subtle: oklch(0.40 0.15 15 / 0.20);
+        --reply-subtle: oklch(0.40 0.12 230 / 0.20);
+      }
+    }
+  </style>
+  <script>
+    (function() {
+      const saved = localStorage.getItem('um-theme');
+      const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+      document.documentElement.dataset.theme = saved || (prefersDark ? 'dark' : 'light');
+    })();
+  </script>
+</head>
+<body>
+  <div id="root"></div>
+  <script type="module" src="/src/main.jsx"></script>
+</body>
+</html>

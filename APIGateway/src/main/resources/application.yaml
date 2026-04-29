@@ -1,0 +1,90 @@
+server:
+  port: 8080
+
+app:
+  security:
+    secure-cookie: false
+
+spring:
+  application:
+    name: api-gateway
+  codec:
+    max-in-memory-size: 12MB
+  webflux:
+    multipart:
+      max-in-memory-size: 12MB
+      max-disk-usage-per-part: 12MB
+  graphql:
+    graphiql:
+      enabled: true
+      path: /graphiql
+  security:
+    oauth2:
+      client:
+        registration:
+          google:
+            client-id: ${GOOGLE_CLIENT_ID:test-client-id}
+            client-secret: ${GOOGLE_CLIENT_SECRET:test-client-secret}
+            scope: email, profile
+  autoconfigure:
+    exclude:
+      - net.devh.boot.grpc.client.autoconfigure.GrpcClientMetricAutoConfiguration
+
+eureka:
+  client:
+    serviceUrl:
+      defaultZone: http://localhost:8761/eureka/
+  instance:
+    lease-renewal-interval-in-seconds: 5
+    lease-expiration-duration-in-seconds: 15
+
+grpc:
+  client:
+    user-service:
+      address: 'discovery:///user-service'
+      negotiation-type: plaintext
+      default-load-balancing-policy: round_robin
+      keep-alive-time: 30s
+      keep-alive-timeout: 10s
+      keep-alive-without-calls: true
+      enable-keep-alive: true
+    post-service:
+      address: 'discovery:///post-service'
+      negotiation-type: plaintext
+      default-load-balancing-policy: round_robin
+      keep-alive-time: 30s
+      keep-alive-timeout: 10s
+      keep-alive-without-calls: true
+      enable-keep-alive: true
+    feed-service:
+      address: 'discovery:///feed-service'
+      negotiation-type: plaintext
+      default-load-balancing-policy: round_robin
+      keep-alive-time: 30s
+      keep-alive-timeout: 10s
+      keep-alive-without-calls: true
+      enable-keep-alive: true
+    media-service:
+      address: 'discovery:///media-service'
+      negotiation-type: plaintext
+      default-load-balancing-policy: round_robin
+      keep-alive-time: 30s
+      keep-alive-timeout: 10s
+      keep-alive-without-calls: true
+      enable-keep-alive: true
+
+jwt:
+  secret: ${JWT_SECRET:testSecret}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus,metrics
+  endpoint:
+    health:
+      show-details: always
+  metrics:
+    export:
+      prometheus:
+        enabled: true

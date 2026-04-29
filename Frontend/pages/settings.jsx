@@ -1,0 +1,388 @@
+
+
+
+
+function SettingsPage({ currentUser, onNavigate }) {
+  const [theme, setTheme] = React.useState(document.documentElement.dataset.theme || 'light');
+  const apply = (t) => {
+    setTheme(t);
+    document.documentElement.dataset.theme = t;
+    localStorage.setItem('um-theme', t);
+  };
+
+  const ThemeOption = ({ value, label, preview }) => {
+    const active = theme === value;
+    return (
+      <button onClick={() => apply(value)} style={{
+        flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'stretch',
+        gap: 10, padding: 14, borderRadius: 14,
+        border: '2px solid ' + (active ? 'var(--accent)' : 'var(--border)'),
+        background: 'var(--surface-2)', cursor: 'pointer',
+        fontFamily: 'inherit', textAlign: 'left',
+      }}>
+        <div style={{
+          height: 70, borderRadius: 10, overflow: 'hidden',
+          background: preview.bg, position: 'relative',
+        }}>
+          <div style={{ height: 14, background: preview.surface, borderBottom: '1px solid ' + preview.border }} />
+          <div style={{ position: 'absolute', top: 22, left: 10, right: 10, height: 8, background: preview.text, opacity: 0.7, borderRadius: 4 }} />
+          <div style={{ position: 'absolute', top: 36, left: 10, width: 60, height: 6, background: preview.muted, borderRadius: 3 }} />
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <span style={{ fontWeight: 700, fontSize: 14, color: 'var(--text)' }}>{label}</span>
+          <span style={{
+            width: 18, height: 18, borderRadius: '50%',
+            border: '2px solid ' + (active ? 'var(--accent)' : 'var(--border-strong)'),
+            background: active ? 'var(--accent)' : 'transparent',
+            display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+          }}>
+            {active && <CheckIcon size={10} color="#fff" />}
+          </span>
+        </div>
+      </button>
+    );
+  };
+
+  return (
+    <div>
+      <div style={{ position: 'sticky', top: 0, zIndex: 10, background: 'var(--header-bg)', backdropFilter: 'saturate(180%) blur(12px)', WebkitBackdropFilter: 'saturate(180%) blur(12px)', borderBottom: '1px solid var(--border)', padding: '12px 16px' }} data-um-header>
+        <h2 style={{ margin: 0, fontSize: 20, fontWeight: 800 }}>Настройки</h2>
+      </div>
+
+      <div style={{ padding: 16 }}>
+        <h3 style={{ margin: '0 0 4px', fontSize: 17, fontWeight: 700 }}>Внешний вид</h3>
+        <p style={{ margin: '0 0 14px', color: 'var(--text-muted)', fontSize: 14, lineHeight: 1.5 }}>
+          Выберите тему оформления.
+        </p>
+        <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+          <ThemeOption value="light" label="Светлая" preview={{ bg: '#ffffff', surface: '#f7f9f9', border: '#eff3f4', text: '#0f1419', muted: '#536471' }} />
+          <ThemeOption value="dark"  label="Тёмная"     preview={{ bg: '#15202b', surface: '#1e2732', border: '#38444d', text: '#f7f9f9', muted: '#8b98a5' }} />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+
+function EditProfileModal({ open, onClose, currentUser, onUserUpdated }) {
+  const [form, setForm] = React.useState({});
+  const [loading, setLoading] = React.useState(false);
+  const [error, setError] = React.useState('');
+  const [faculties, setFaculties] = React.useState([]);
+  const [programs, setPrograms] = React.useState([]);
+
+  React.useEffect(() => {
+    if (!open || !currentUser) return;
+    setForm({
+      username: currentUser.username || '',
+      name: currentUser.name || '',
+      surname: currentUser.surname || '',
+      patronymic: currentUser.patronymic || '',
+      bio: currentUser.bio || '',
+      status: currentUser.status || '',
+      avatarUrl: currentUser.avatarUrl || '',
+      coverUrl: currentUser.coverUrl || '',
+      facultyId: currentUser.faculty?.id || '',
+      programId: currentUser.program?.id || '',
+      course: currentUser.course || '',
+      graduationYear: currentUser.graduationYear || '',
+      educationLevel: currentUser.educationLevel || '',
+    });
+    setError('');
+    if (currentUser.university?.id) {
+      API.gql(API.Q.listFaculties, { universityId: currentUser.university.id })
+        .then(d => setFaculties(d.listFaculties || []))
+        .catch(() => setFaculties([]));
+    }
+    if (currentUser.faculty?.id) {
+      API.gql(API.Q.listPrograms, { facultyId: currentUser.faculty.id })
+        .then(d => setPrograms(d.listPrograms || []))
+        .catch(() => setPrograms([]));
+    }
+  }, [open, currentUser]);
+
+
+  React.useEffect(() => {
+    if (!form.facultyId) { setPrograms([]); return; }
+    API.gql(API.Q.listPrograms, { facultyId: form.facultyId })
+      .then(d => setPrograms(d.listPrograms || []))
+      .catch(() => setPrograms([]));
+  }, [form.facultyId]);
+
+  if (!open) return null;
+  const set = (k) => (e) => setForm(f => ({ ...f, [k]: e.target.value }));
+
+  const save = async () => {
+    setLoading(true); setError('');
+    try {
+      const input = {};
+      ['username','name','surname','patronymic','bio','status','avatarUrl','coverUrl','educationLevel'].forEach(k => {
+        if (form[k] !== '' && form[k] !== undefined) input[k] = form[k];
+      });
+      if (form.facultyId) input.facultyId = form.facultyId;
+      if (form.programId) input.programId = form.programId;
+      if (form.course) input.course = parseInt(form.course);
+      const d = await API.gql(API.M.updateProfile, { input });
+      onUserUpdated && onUserUpdated(d.updateProfile);
+      onClose();
+    } catch (e) { setError(e.message); }
+    finally { setLoading(false); }
+  };
+
+  return (
+    <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(91,112,131,0.4)', backdropFilter: 'blur(4px)', zIndex: 1000, display: 'flex', alignItems: 'flex-start', justifyContent: 'center', padding: '40px 16px', overflowY: 'auto' }}>
+      <div onClick={e => e.stopPropagation()} style={{ background: 'var(--bg)', borderRadius: 16, width: '100%', maxWidth: 600, padding: 0 }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 16px', borderBottom: '1px solid var(--border)' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+            <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 6, color: 'var(--text)', fontSize: 22, lineHeight: 1 }}>×</button>
+            <h3 style={{ margin: 0, fontSize: 18, fontWeight: 800 }}>Редактировать профиль</h3>
+          </div>
+          <Button onClick={save} loading={loading} size="sm">Сохранить</Button>
+        </div>
+        <div style={{ padding: 16, display: 'flex', flexDirection: 'column', gap: 14 }}>
+          {error && <div style={{ padding: '10px 14px', background: 'var(--like-subtle)', color: 'var(--like)', borderRadius: 10, fontSize: 13 }}>{error}</div>}
+          <Input label="Никнейм" value={form.username || ''} onChange={set('username')} />
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+            <Input label="Имя" value={form.name || ''} onChange={set('name')} />
+            <Input label="Фамилия" value={form.surname || ''} onChange={set('surname')} />
+          </div>
+          <Input label="Отчество" value={form.patronymic || ''} onChange={set('patronymic')} />
+          <Input label="О себе" value={form.bio || ''} onChange={set('bio')} multiline rows={3} />
+          <Input label="Статус" value={form.status || ''} onChange={set('status')} />
+          <ImageUploadField label="Аватар" value={form.avatarUrl || ''} onChange={v => setForm(f => ({ ...f, avatarUrl: v }))} preview="circle" bucket="user-avatars" />
+          <ImageUploadField label="Обложка (баннер)" value={form.coverUrl || ''} onChange={v => setForm(f => ({ ...f, coverUrl: v }))} preview="wide" bucket="user-banners" />
+
+          {currentUser.university && (
+            <>
+              <div style={{ height: 1, background: 'var(--border)', margin: '4px 0' }} />
+              <div style={{ fontWeight: 700, fontSize: 14, color: 'var(--text)' }}>Учёба · {currentUser.university.name}</div>
+              {faculties.length > 0 && (
+                <SelectField label="Факультет" value={form.facultyId || ''} onChange={e => setForm(f => ({ ...f, facultyId: e.target.value, programId: '' }))}
+                  options={[{ value: '', label: 'Не указан' }, ...faculties.map(f => ({ value: f.id, label: f.name }))]} />
+              )}
+              {form.facultyId && programs.length > 0 && (
+                <SelectField label="Программа" value={form.programId || ''} onChange={set('programId')}
+                  options={[{ value: '', label: 'Не указана' }, ...programs.map(p => ({ value: p.id, label: p.name }))]} />
+              )}
+              <Input type="number" label="Курс (1–8)" value={form.course || ''} onChange={e => setForm(f => ({ ...f, course: Math.min(8, Math.max(1, parseInt(e.target.value) || 0)) || '' }))} min={1} max={8} />
+              <SelectField label="Уровень образования" value={form.educationLevel || ''} onChange={set('educationLevel')}
+                options={[
+                  { value: '', label: 'Не указано' },
+                  { value: 'BACHELOR', label: 'Бакалавр' },
+                  { value: 'MASTER', label: 'Магистр' },
+                  { value: 'PHD', label: 'Аспирант' },
+                  { value: 'SPECIALIST', label: 'Специалист' },
+                ]} />
+            </>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function SelectField({ label, value, onChange, options }) {
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+      {label && <label style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-muted)' }}>{label}</label>}
+      <select value={value} onChange={onChange} style={{
+        padding: '10px 14px', borderRadius: 10, border: '1.5px solid var(--border)',
+        background: 'var(--surface)', color: 'var(--text)', fontFamily: 'inherit', fontSize: 14, outline: 'none',
+      }}>
+        {options.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+      </select>
+    </div>
+  );
+}
+
+
+function VerifyModal({ open, onClose, currentUser, onUserUpdated }) {
+  const [stage, setStage] = React.useState('email');
+  const [email, setEmail] = React.useState('');
+  const [code, setCode] = React.useState('');
+  const [codeSent, setCodeSent] = React.useState(false);
+  const [busy, setBusy] = React.useState(false);
+  const [msg, setMsg] = React.useState('');
+  const [err, setErr] = React.useState('');
+
+
+  const [faculties, setFaculties] = React.useState([]);
+  const [programs, setPrograms] = React.useState([]);
+  const [facultyId, setFacultyId] = React.useState('');
+  const [programId, setProgramId] = React.useState('');
+  const [loadingFaculties, setLoadingFaculties] = React.useState(false);
+  const [loadingPrograms, setLoadingPrograms] = React.useState(false);
+  const [newProgName, setNewProgName] = React.useState('');
+  const [newProgShort, setNewProgShort] = React.useState('');
+  const [showAddProgram, setShowAddProgram] = React.useState(false);
+  const [addingProgram, setAddingProgram] = React.useState(false);
+
+  const resetState = React.useCallback(() => {
+    setEmail(currentUser?.emailUniversity || '');
+    setCode(''); setCodeSent(false); setMsg(''); setErr('');
+    setStage('email');
+    setFaculties([]); setPrograms([]); setFacultyId(''); setProgramId('');
+    setNewProgName(''); setNewProgShort(''); setShowAddProgram(false);
+  }, [currentUser]);
+
+  React.useEffect(() => {
+    if (open) resetState();
+  }, [open]);
+
+
+  React.useEffect(() => {
+    if (stage !== 'profile') return;
+    const uniId = currentUser?.university?.id;
+    if (!uniId) return;
+    setLoadingFaculties(true);
+    API.gql(API.Q.listFaculties, { universityId: uniId })
+      .then(d => { setFaculties(d.listFaculties || []); setFacultyId(currentUser?.faculty?.id || ''); })
+      .catch(() => setFaculties([]))
+      .finally(() => setLoadingFaculties(false));
+  }, [stage]);
+
+
+  React.useEffect(() => {
+    if (!facultyId) { setPrograms([]); setProgramId(''); return; }
+    setLoadingPrograms(true);
+    API.gql(API.Q.listPrograms, { facultyId })
+      .then(d => { setPrograms(d.listPrograms || []); setProgramId(currentUser?.program?.id || ''); })
+      .catch(() => setPrograms([]))
+      .finally(() => setLoadingPrograms(false));
+  }, [facultyId]);
+
+  if (!open) return null;
+
+  const send = async () => {
+    setBusy(true); setErr(''); setMsg('');
+    try {
+      const d = await API.gql(API.M.sendVerificationCode, { email });
+      if (d.sendVerificationCode.success) { setCodeSent(true); setMsg('Код отправлен на ' + email); }
+      else setErr(d.sendVerificationCode.message || 'Ошибка');
+    } catch (e) { setErr(e.message); } finally { setBusy(false); }
+  };
+
+  const verify = async () => {
+    setBusy(true); setErr(''); setMsg('');
+    try {
+      const d = await API.gql(API.M.verifyEmailCode, { code });
+      if (d.verifyEmailCode.success) {
+        const ud = await API.gql(API.Q.me);
+        onUserUpdated && onUserUpdated(ud.me);
+        setMsg('');
+        setStage('profile');
+      } else setErr(d.verifyEmailCode.error || 'Неверный код');
+    } catch (e) { setErr(e.message); } finally { setBusy(false); }
+  };
+
+  const addProgram = async () => {
+    if (!newProgName.trim() || !newProgShort.trim()) return;
+    setAddingProgram(true); setErr('');
+    try {
+      const d = await API.gql(API.M.createProgram, { facultyId, name: newProgName.trim(), shortName: newProgShort.trim() });
+      const prog = d.createProgram;
+      setPrograms(prev => [...prev.filter(p => p.id !== prog.id), prog]);
+      setProgramId(prog.id);
+      setShowAddProgram(false); setNewProgName(''); setNewProgShort('');
+    } catch (e) { setErr(e.message); } finally { setAddingProgram(false); }
+  };
+
+  const saveProfile = async () => {
+    if (!facultyId || !programId) { setErr('Выберите факультет и программу'); return; }
+    setBusy(true); setErr('');
+    try {
+      const d = await API.gql(API.M.updateProfile, { input: { facultyId, programId } });
+      onUserUpdated && onUserUpdated(d.updateProfile);
+      onClose();
+    } catch (e) { setErr(e.message); } finally { setBusy(false); }
+  };
+
+  const titleMap = { email: 'Верификация университета', profile: 'Ваш факультет и программа' };
+
+  return (
+    <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(91,112,131,0.4)', backdropFilter: 'blur(4px)', zIndex: 1000, display: 'flex', alignItems: 'flex-start', justifyContent: 'center', padding: '40px 16px' }}>
+      <div onClick={e => e.stopPropagation()} style={{ background: 'var(--bg)', borderRadius: 16, width: '100%', maxWidth: 480, padding: 0 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 16, padding: '8px 16px', borderBottom: '1px solid var(--border)' }}>
+          <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 6, color: 'var(--text)', fontSize: 22, lineHeight: 1 }}>×</button>
+          <h3 style={{ margin: 0, fontSize: 18, fontWeight: 800 }}>{titleMap[stage]}</h3>
+        </div>
+
+        {stage === 'email' && (
+          <div style={{ padding: 20, display: 'flex', flexDirection: 'column', gap: 14 }}>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              <Badge color={currentUser.isStudentVerified ? 'green' : 'muted'}>
+                {currentUser.isStudentVerified ? <CheckIcon size={10} /> : <span style={{ width: 10, height: 10, borderRadius: '50%', border: '1.5px solid currentColor', display: 'inline-block' }} />} Студент
+              </Badge>
+              <Badge color={currentUser.isEmployeeVerified ? 'green' : 'muted'}>
+                {currentUser.isEmployeeVerified ? <CheckIcon size={10} /> : <span style={{ width: 10, height: 10, borderRadius: '50%', border: '1.5px solid currentColor', display: 'inline-block' }} />} Сотрудник
+              </Badge>
+            </div>
+            <p style={{ margin: 0, fontSize: 14, lineHeight: 1.6, color: 'var(--text-muted)' }}>
+              Введите email вашего университета — пришлём код подтверждения.
+            </p>
+            <Input label="Email университета" value={email} onChange={e => setEmail(e.target.value)} type="email" placeholder="student@university.edu" />
+            <Button onClick={send} loading={busy && !codeSent} disabled={!email} variant="outline">
+              {codeSent ? 'Отправить снова' : 'Отправить код'}
+            </Button>
+            {codeSent && (
+              <>
+                <Input label="Код из письма" value={code} onChange={e => setCode(e.target.value)} placeholder="123456" />
+                <Button onClick={verify} loading={busy && codeSent} disabled={!code}>Подтвердить</Button>
+              </>
+            )}
+            {msg && <div style={{ padding: '10px 14px', background: 'oklch(0.95 0.08 150 / 0.3)', borderRadius: 10, color: 'oklch(0.55 0.18 150)', fontSize: 13 }}>{msg}</div>}
+            {err && <div style={{ padding: '10px 14px', background: 'var(--like-subtle)', color: 'var(--like)', borderRadius: 10, fontSize: 13 }}>{err}</div>}
+          </div>
+        )}
+
+        {stage === 'profile' && (
+          <div style={{ padding: 20, display: 'flex', flexDirection: 'column', gap: 14 }}>
+            <p style={{ margin: 0, fontSize: 14, lineHeight: 1.6, color: 'var(--text-muted)' }}>
+              Укажите факультет и образовательную программу, чтобы ваши записи попадали в нужную ленту.
+            </p>
+            {loadingFaculties ? (
+              <div style={{ display: 'flex', justifyContent: 'center', padding: 16 }}><Spinner size={24} /></div>
+            ) : (
+              <SelectField label="Факультет" value={facultyId} onChange={e => setFacultyId(e.target.value)}
+                options={[{ value: '', label: 'Выберите факультет' }, ...faculties.map(f => ({ value: f.id, label: f.name }))]} />
+            )}
+            {facultyId && (
+              loadingPrograms ? (
+                <div style={{ display: 'flex', justifyContent: 'center', padding: 8 }}><Spinner size={20} /></div>
+              ) : (
+                <>
+                  <SelectField label="Образовательная программа" value={programId} onChange={e => setProgramId(e.target.value)}
+                    options={[{ value: '', label: 'Выберите программу' }, ...programs.map(p => ({ value: p.id, label: p.name }))]} />
+                  {!showAddProgram ? (
+                    <button onClick={() => setShowAddProgram(true)} style={{ alignSelf: 'flex-start', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--accent)', fontSize: 13, fontWeight: 600, padding: '2px 0', fontFamily: 'inherit' }}>
+                      + Добавить свою программу
+                    </button>
+                  ) : (
+                    <div style={{ padding: 14, border: '1.5px solid var(--border)', borderRadius: 12, display: 'flex', flexDirection: 'column', gap: 10, background: 'var(--surface)' }}>
+                      <div style={{ fontWeight: 700, fontSize: 13 }}>Новая образовательная программа</div>
+                      <Input label="Название" value={newProgName} onChange={e => setNewProgName(e.target.value)} placeholder="Информатика и вычислительная техника" />
+                      <Input label="Код / краткое название" value={newProgShort} onChange={e => setNewProgShort(e.target.value)} placeholder="09.03.01" />
+                      <div style={{ display: 'flex', gap: 8 }}>
+                        <Button size="sm" onClick={addProgram} loading={addingProgram} disabled={!newProgName.trim() || !newProgShort.trim()}>Добавить</Button>
+                        <Button size="sm" variant="secondary" onClick={() => { setShowAddProgram(false); setNewProgName(''); setNewProgShort(''); }}>Отмена</Button>
+                      </div>
+                    </div>
+                  )}
+                </>
+              )
+            )}
+            {err && <div style={{ padding: '10px 14px', background: 'var(--like-subtle)', color: 'var(--like)', borderRadius: 10, fontSize: 13 }}>{err}</div>}
+            <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
+              <Button onClick={saveProfile} loading={busy} disabled={!facultyId || !programId}>Завершить</Button>
+              <Button variant="secondary" onClick={onClose}>Пропустить</Button>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+Object.assign(window, { EditProfileModal, VerifyModal, SelectField });
+
+Object.assign(window, { SettingsPage });

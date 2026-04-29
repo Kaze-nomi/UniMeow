@@ -1,0 +1,157 @@
+syntax = "proto3";
+
+package uni.grpc.post;
+option java_multiple_files = true;
+option java_package = "uni.grpc.post";
+
+service PostService {
+    rpc CreatePost     (CreatePostRequest)     returns (PostResponse);
+    rpc GetPostById    (GetPostByIdRequest)    returns (PostResponse);
+    rpc GetPostsByUser (GetPostsByUserRequest) returns (PostListResponse);
+    rpc GetPostsByIds  (GetPostsByIdsRequest)  returns (PostListResponse);
+    rpc EditPost       (EditPostRequest)       returns (PostResponse);
+    rpc DeletePost     (DeletePostRequest)     returns (DeletePostResponse);
+
+    rpc LikePost   (LikePostRequest)   returns (LikeResponse);
+    rpc UnlikePost (UnlikePostRequest) returns (LikeResponse);
+
+    rpc AddComment    (AddCommentRequest)    returns (CommentResponse);
+    rpc GetComments   (GetCommentsRequest)   returns (CommentListResponse);
+    rpc EditComment   (EditCommentRequest)   returns (CommentResponse);
+    rpc DeleteComment (DeleteCommentRequest) returns (DeleteCommentResponse);
+    rpc LikeComment   (LikeCommentRequest)   returns (LikeResponse);
+    rpc UnlikeComment (UnlikeCommentRequest) returns (LikeResponse);
+}
+
+message CreatePostRequest {
+    string          author_id  = 1;
+    string          content    = 2;
+    repeated string media_urls = 3;
+    optional int64 topic_id = 4;
+}
+
+message GetPostByIdRequest {
+    string          post_id   = 1;
+    optional string viewer_id = 2;
+}
+
+message GetPostsByUserRequest {
+    string          author_id = 1;
+    optional string viewer_id = 2;
+    int32           page      = 3;
+    int32           size      = 4;
+}
+
+message GetPostsByIdsRequest {
+    repeated string post_ids  = 1;
+    optional string viewer_id = 2;
+}
+
+message EditPostRequest {
+    string          post_id           = 1;
+    string          requester_id      = 2;
+    optional string content           = 3;
+    bool            update_media_urls = 4;
+    repeated string media_urls        = 5;
+}
+
+message DeletePostRequest {
+    string post_id      = 1;
+    string requester_id = 2;
+    bool admin_override = 3;
+}
+
+message DeletePostResponse {
+    bool success = 1;
+}
+
+message PostResponse {
+    string          id             = 1;
+    string          author_id      = 2;
+    string          content        = 3;
+    repeated string media_urls     = 4;
+    int32           likes_count    = 5;
+    int32           comments_count = 6;
+    bool            liked_by_me    = 7;
+    string          created_at     = 8;
+    string          updated_at     = 9;
+    optional int64  university_id  = 10;
+    optional int64  topic_id       = 11;
+    optional int64  faculty_id     = 12;
+    optional int64  program_id     = 13;
+}
+
+message PostListResponse {
+    repeated PostResponse posts = 1;
+    int32                 total = 2;
+}
+
+message LikePostRequest   { 
+    string post_id = 1; 
+    string user_id = 2; 
+}
+message UnlikePostRequest { 
+    string post_id = 1; 
+    string user_id = 2; 
+}
+
+message LikeResponse  { 
+    bool success   = 1; 
+}
+
+message AddCommentRequest {
+    string post_id   = 1;
+    string author_id = 2;
+    string content   = 3;
+    optional string parent_comment_id = 4;
+}
+
+message GetCommentsRequest {
+    string          post_id   = 1;
+    int32           page      = 2;
+    int32           size      = 3;
+    optional string viewer_id = 4;
+}
+
+message EditCommentRequest {
+    string comment_id   = 1;
+    string requester_id = 2;
+    string content      = 3;
+}
+
+message DeleteCommentRequest {
+    string comment_id   = 1;
+    string requester_id = 2;
+    bool admin_override = 3;
+}
+
+message DeleteCommentResponse {
+    bool success = 1;
+}
+
+message LikeCommentRequest {
+    string comment_id = 1;
+    string user_id = 2;
+}
+
+message UnlikeCommentRequest {
+    string comment_id = 1;
+    string user_id = 2;
+}
+
+message CommentResponse {
+    string id         = 1;
+    string post_id    = 2;
+    string author_id  = 3;
+    string content    = 4;
+    bool liked_by_me = 5;
+    string likes_count = 6;
+    string created_at = 7;
+    string updated_at = 8;
+    optional string parent_comment_id = 9;
+}
+
+message CommentListResponse {
+    repeated CommentResponse comments = 1;
+    int32                    total    = 2;
+}

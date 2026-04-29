@@ -1,0 +1,297 @@
+type Query {
+    me:                                   User
+    getUser(id: ID!):                     User
+    getUserByUsername(username: String!): User
+    listUniversities: [University!]!
+    listFaculties(universityId: ID!): [Faculty!]!
+    listPrograms(facultyId: ID!): [Program!]!
+    listTopics(universityId: ID!): [Topic!]!
+    adminImprovementSuggestions: [ImprovementSuggestion!]!
+    adminUniversityProposals: [UniversityProposal!]!
+    adminFacultyProposals: [FacultyProposal!]!
+    adminProgramProposals: [ProgramProposal!]!
+
+    # Feed — three separate tabs
+    followingFeed(cursor: String, size: Int, universityId: ID, facultyId: ID, programId: ID, topicId: ID): FeedPage!
+    trendingFeed(cursor: String, size: Int, universityId: ID, facultyId: ID, programId: ID, topicId: ID):  FeedPage!
+    globalFeed(cursor: String, size: Int, universityId: ID, facultyId: ID, programId: ID, topicId: ID):    FeedPage!
+
+    getPost(id: ID!):                               Post
+    getUserPosts(userId: ID!, page: Int, size: Int): PostPage!
+    getComments(postId: ID!, page: Int, size: Int):  CommentPage!
+}
+
+type Mutation {
+    updateProfile(input: UpdateProfileInput!): User
+    sendVerificationCode(universityEmail: String!): VerificationResult!
+    verifyEmailCode(code: String!):   VerifyResult!
+    subscribe(targetUserId: ID!):     SubscribeResult!
+    unsubscribe(targetUserId: ID!):   SubscribeResult!
+
+    createPost(input: CreatePostInput!): Post!
+    editPost(postId: ID!, input: EditPostInput!): Post!
+    deletePost(postId: ID!):             DeleteResult!
+    likePost(postId: ID!):               LikeResult!
+    unlikePost(postId: ID!):             LikeResult!
+
+    addComment(postId: ID!, content: String!, parentCommentId: ID): Comment!
+    editComment(commentId: ID!, content: String!):  Comment!
+    deleteComment(commentId: ID!):                  DeleteResult!
+    likeComment(commentId: ID!):                    LikeResult!
+    unlikeComment(commentId: ID!):                  LikeResult!
+
+    createProgram(facultyId: ID!, name: String!, shortName: String!): Program!
+    createImprovementSuggestion(text: String!): AdminActionResult!
+    createUniversityProposal(input: UniversityProposalInput!): AdminActionResult!
+    createFacultyProposal(input: FacultyProposalInput!): AdminActionResult!
+    createProgramProposal(input: ProgramProposalInput!): AdminActionResult!
+    adminGrantAdmin(targetUserId: ID!): AdminActionResult!
+    adminBanUser(input: BanUserInput!): AdminActionResult!
+    adminDeletePost(postId: ID!): DeleteResult!
+    adminDeleteComment(commentId: ID!): DeleteResult!
+    adminDeleteSuggestion(id: ID!): DeleteResult!
+    adminReviewUniversityProposal(proposalId: ID!, status: String!): AdminActionResult!
+    adminReviewFacultyProposal(proposalId: ID!, status: String!): AdminActionResult!
+    adminReviewProgramProposal(proposalId: ID!, status: String!): AdminActionResult!
+    adminCreateFaculty(input: CreateFacultyInput!): AdminActionResult!
+}
+
+# ── Inputs ──────────────────────────────────────────────────────────────────
+
+input UpdateProfileInput {
+    username:       String
+    name:           String
+    surname:        String
+    patronymic:     String
+    status:         String
+    avatarUrl:      String
+    coverUrl:       String
+    bio:            String
+    facultyId:      ID
+    programId:      ID
+    course:         Int
+    educationLevel: EducationLevel
+    graduationYear: Int
+}
+
+input CreatePostInput {
+    content:   String!
+    mediaUrls: [String!]
+    topicId:   ID
+}
+
+input EditPostInput {
+    content:         String
+    updateMediaUrls: Boolean
+    mediaUrls:       [String!]
+}
+
+input UniversityProposalInput {
+    name:           String!
+    shortName:      String!
+    subdomain:      String!
+    studentDomain:  String!
+    employeeDomain: String!
+    city:           String
+    description:    String
+    iconUrl:        String
+}
+
+input BanUserInput {
+    targetUserId: ID!
+    bannedUntil:  String
+    reason:       String
+}
+
+input CreateFacultyInput {
+    universityId: ID!
+    name:         String!
+    shortName:    String!
+}
+
+input FacultyProposalInput {
+    universityId: ID!
+    name:         String!
+    shortName:    String!
+}
+
+input ProgramProposalInput {
+    facultyId: ID!
+    name:      String!
+    shortName: String!
+}
+
+# ── Types ───────────────────────────────────────────────────────────────────
+
+type User {
+    id:                 ID!
+    emailGoogle:        String!
+    username:           String
+    name:               String!
+    surname:            String
+    patronymic:         String
+    emailUniversity:    String
+    avatarUrl:          String
+    coverUrl:           String
+    status:             String
+    bio:                String
+    isStudentVerified:  Boolean!
+    isEmployeeVerified: Boolean!
+    isFollowedByMe:     Boolean!
+    createdAt:          String!
+    university:         University
+    faculty:            Faculty
+    program:            Program
+    course:             Int
+    educationLevel:     EducationLevel
+    graduationYear:     Int
+    isAdmin:            Boolean!
+    isBanned:           Boolean!
+    bannedUntil:        String
+    banReason:          String
+}
+
+type University {
+    id:        ID!
+    name:      String!
+    shortName: String!
+    subdomain: String
+    iconUrl:   String
+}
+
+type Faculty {
+    id:        ID!
+    name:      String!
+    shortName: String!
+}
+
+type Program {
+    id:        ID!
+    facultyId: ID!
+    name:      String!
+    shortName: String!
+}
+
+type Topic {
+    id:        ID!
+    slug:      String!
+    name:      String!
+    isSystem:  Boolean!
+    facultyId: ID
+    subtopics: [Topic!]!
+}
+
+enum EducationLevel {
+    BACHELOR
+    MASTER
+    PHD
+    SPECIALIST
+}
+
+type Post {
+    id:            ID!
+    authorId:      String!
+    author:        User
+    content:       String!
+    mediaUrls:     [String!]!
+    likesCount:    Int!
+    commentsCount: Int!
+    likedByMe:     Boolean!
+    createdAt:     String!
+    updatedAt:     String!
+    universityId:  ID
+    facultyId:     ID
+    programId:     ID
+    topicId:       ID
+}
+
+type Comment {
+    id:              ID!
+    postId:          String!
+    authorId:        String!
+    content:         String!
+    likesCount:      Int!
+    likedByMe:       Boolean!
+    createdAt:       String!
+    updatedAt:       String!
+    parentCommentId: ID
+}
+
+type FeedPage {
+    posts:      [Post!]!
+    nextCursor: String
+    hasMore:    Boolean!
+}
+
+type PostPage {
+    posts: [Post!]!
+    total: Int!
+}
+
+type CommentPage {
+    comments: [Comment!]!
+    total:    Int!
+}
+
+type VerificationResult { success: Boolean! }
+type VerifyResult       { success: Boolean!  error: String }
+type SubscribeResult    { success: Boolean! }
+type DeleteResult       { success: Boolean! }
+type LikeResult         { success: Boolean! }
+type AdminActionResult  { success: Boolean! }
+
+type ImprovementSuggestion {
+    id:        ID!
+    authorId:  ID!
+    text:      String!
+    status:    String!
+    createdAt: String!
+}
+
+type UniversityProposal {
+    id:             ID!
+    authorId:       ID!
+    name:           String!
+    shortName:      String!
+    subdomain:      String
+    studentDomain:  String!
+    employeeDomain: String
+    city:           String
+    description:    String
+    status:         String!
+    createdAt:      String!
+    reviewedBy:     ID
+    reviewedAt:     String
+    iconUrl:        String
+}
+
+type FacultyProposal {
+    id:                  ID!
+    authorId:            ID!
+    universityId:        ID!
+    universityName:      String!
+    universityShortName: String!
+    name:                String!
+    shortName:           String!
+    status:              String!
+    createdAt:           String!
+    reviewedBy:          ID
+    reviewedAt:          String
+}
+
+type ProgramProposal {
+    id:                  ID!
+    authorId:            ID!
+    universityId:        ID!
+    universityName:      String!
+    universityShortName: String!
+    facultyId:           ID!
+    facultyName:         String!
+    facultyShortName:    String!
+    name:                String!
+    shortName:           String!
+    status:              String!
+    createdAt:           String!
+    reviewedBy:          ID
+    reviewedAt:          String
+}
