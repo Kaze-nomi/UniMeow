@@ -19,25 +19,7 @@
 
 ## Архитектура
 
-```
-Browser / Frontend (Vite + React 18)
-         │
-         ▼
-   APIGateway :8080
-   (GraphQL, REST, OAuth2, JWT)
-         │
-    gRPC / internal
-    ┌────┼────────────────┐
-    ▼    ▼                ▼
-UserService  PostService  FeedService  MediaService
-(PostgreSQL) (PostgreSQL) (Redis)      (MinIO)
-         │         │           ▲
-         └──Kafka──┘───────────┘
-              (outbox events)
-
-Service Discovery: Eureka
-Monitoring:        Prometheus + Grafana
-```
+![architecture](architecture.jpg)
 
 ## Стек
 
