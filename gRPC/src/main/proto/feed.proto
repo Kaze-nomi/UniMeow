@@ -11,7 +11,6 @@ service FeedService {
 enum FeedType {
     FOLLOWING = 0;
     TRENDING  = 1;
-    GLOBAL    = 2;
 }
 
 message GetFeedRequest {

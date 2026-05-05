@@ -7,7 +7,6 @@ import org.springframework.stereotype.Component;
 @Component
 public class CookieUtil {
 
-	// TODO: Изменить на true в проде
 	@Value("${app.security.secure-cookie:false}")
 	private boolean isSecure;
 

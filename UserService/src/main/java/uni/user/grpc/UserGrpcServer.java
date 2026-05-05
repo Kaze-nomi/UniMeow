@@ -4,13 +4,11 @@ import io.grpc.Status;
 import io.grpc.stub.StreamObserver;
 import lombok.RequiredArgsConstructor;
 import net.devh.boot.grpc.server.service.GrpcService;
-import org.springframework.beans.factory.annotation.Value;
 import uni.grpc.user.*;
 import uni.user.entity.User;
 import uni.user.exception.*;
 import uni.user.service.*;
 
-import java.util.Objects;
 import java.util.UUID;
 import java.time.LocalDateTime;
 
@@ -24,9 +22,6 @@ public class UserGrpcServer extends UserServiceGrpc.UserServiceImplBase {
 	private final UniversityService universityService;
 	private final AdministrationService administrationService;
 
-	@Value("${app.admin.token:}")
-	private String adminToken;
-
 	@Override
 	public void createOrGetUser(CreateOrGetUserRequest req, StreamObserver<UserResponse> obs) {
 		try {
@@ -34,6 +29,8 @@ public class UserGrpcServer extends UserServiceGrpc.UserServiceImplBase {
 					req.getAvatarUrl());
 			obs.onNext(toProto(user));
 			obs.onCompleted();
+		} catch (SecurityException e) {
+			obs.onError(Status.PERMISSION_DENIED.withDescription(e.getMessage()).asRuntimeException());
 		} catch (Exception e) {
 			obs.onError(Status.INTERNAL.withDescription(e.getMessage()).asRuntimeException());
 		}
@@ -66,15 +63,16 @@ public class UserGrpcServer extends UserServiceGrpc.UserServiceImplBase {
 	@Override
 	public void updateUser(UpdateUserRequest req, StreamObserver<UserResponse> obs) {
 		try {
+			Long facultyId = (req.hasFacultyId() && req.getFacultyId() != 0L) ? req.getFacultyId() : null;
+			Long programId = (req.hasProgramId() && req.getProgramId() != 0L) ? req.getProgramId() : null;
 			User user = userService.update(UUID.fromString(req.getId()), req.hasUsername(), req.getUsername(),
-					req.hasName(), req.getName(), req.hasSurname(), req.getSurname(), req.hasPatronymic(),
-					req.getPatronymic(), req.hasStatus(), req.getStatus(), req.hasAvatarUrl(), req.getAvatarUrl(),
-					req.hasFacultyId(), req.hasFacultyId() ? req.getFacultyId() : null, req.hasCourse(),
+					req.hasName(), req.getName(), req.hasSurname(), req.getSurname(), req.hasStatus(), req.getStatus(),
+					req.hasAvatarUrl(), req.getAvatarUrl(), req.hasFacultyId(), facultyId, req.hasCourse(),
 					req.hasCourse() ? req.getCourse() : null, req.hasEducationLevel(),
 					req.hasEducationLevel() ? mapEducationLevelFromProto(req.getEducationLevel()) : null,
 					req.hasGraduationYear(), req.hasGraduationYear() ? req.getGraduationYear() : null, req.hasBio(),
 					req.getBio(), req.hasCoverUrl(), req.hasCoverUrl() ? req.getCoverUrl() : null, req.hasProgramId(),
-					req.hasProgramId() ? req.getProgramId() : null);
+					programId);
 			obs.onNext(toProto(user));
 			obs.onCompleted();
 		} catch (UserNotFoundException e) {
@@ -83,6 +81,21 @@ public class UserGrpcServer extends UserServiceGrpc.UserServiceImplBase {
 			obs.onError(Status.ALREADY_EXISTS.withDescription(e.getMessage()).asRuntimeException());
 		} catch (IllegalArgumentException e) {
 			obs.onError(Status.INVALID_ARGUMENT.withDescription(e.getMessage()).asRuntimeException());
+		}
+	}
+
+	@Override
+	public void deleteAccount(DeleteAccountRequest req, StreamObserver<ModerationResponse> obs) {
+		try {
+			userService.deleteAccount(UUID.fromString(req.getUserId()));
+			obs.onNext(ModerationResponse.newBuilder().setSuccess(true).build());
+			obs.onCompleted();
+		} catch (UserNotFoundException e) {
+			obs.onError(Status.NOT_FOUND.withDescription(e.getMessage()).asRuntimeException());
+		} catch (IllegalArgumentException e) {
+			obs.onError(Status.INVALID_ARGUMENT.withDescription(e.getMessage()).asRuntimeException());
+		} catch (Exception e) {
+			obs.onError(Status.INTERNAL.withDescription(e.getMessage()).asRuntimeException());
 		}
 	}
 
@@ -196,33 +209,6 @@ public class UserGrpcServer extends UserServiceGrpc.UserServiceImplBase {
 	}
 
 	@Override
-	public void uploadUniversityIcon(UploadUniversityIconRequest req,
-			StreamObserver<UploadUniversityIconResponse> obs) {
-		try {
-			if (adminToken == null || adminToken.isBlank()) {
-				obs.onError(Status.FAILED_PRECONDITION.withDescription("Admin token is not configured")
-						.asRuntimeException());
-				return;
-			}
-
-			if (!Objects.equals(adminToken, req.getAdminToken())) {
-				obs.onError(Status.PERMISSION_DENIED.withDescription("Invalid admin token").asRuntimeException());
-				return;
-			}
-
-			String url = universityService.uploadUniversityIcon(req.getUniversityId(), req.getData().toByteArray(),
-					req.getContentType());
-
-			obs.onNext(UploadUniversityIconResponse.newBuilder().setSuccess(true).setIconUrl(url).build());
-			obs.onCompleted();
-		} catch (IllegalArgumentException e) {
-			obs.onError(Status.INVALID_ARGUMENT.withDescription(e.getMessage()).asRuntimeException());
-		} catch (Exception e) {
-			obs.onError(Status.INTERNAL.withDescription(e.getMessage()).asRuntimeException());
-		}
-	}
-
-	@Override
 	public void validateTopicForUniversity(ValidateTopicRequest req, StreamObserver<ValidateTopicResponse> obs) {
 		try {
 			var result = universityService.validateTopicForUniversity(req.getUniversityId(), req.getTopicId());
@@ -317,20 +303,6 @@ public class UserGrpcServer extends UserServiceGrpc.UserServiceImplBase {
 		try {
 			ProgramListResponse.Builder builder = ProgramListResponse.newBuilder();
 			universityService.listPrograms(req.getFacultyId()).forEach(p -> builder.addPrograms(toProgramProto(p)));
-			obs.onNext(builder.build());
-			obs.onCompleted();
-		} catch (IllegalArgumentException e) {
-			obs.onError(Status.INVALID_ARGUMENT.withDescription(e.getMessage()).asRuntimeException());
-		} catch (Exception e) {
-			obs.onError(Status.INTERNAL.withDescription(e.getMessage()).asRuntimeException());
-		}
-	}
-
-	@Override
-	public void listTopics(ListTopicsRequest req, StreamObserver<TopicListResponse> obs) {
-		try {
-			TopicListResponse.Builder builder = TopicListResponse.newBuilder();
-			universityService.listTopics(req.getUniversityId()).forEach(t -> builder.addTopics(toTopicProto(t)));
 			obs.onNext(builder.build());
 			obs.onCompleted();
 		} catch (IllegalArgumentException e) {
@@ -586,22 +558,6 @@ public class UserGrpcServer extends UserServiceGrpc.UserServiceImplBase {
 	}
 
 	@Override
-	public void createFaculty(CreateFacultyRequest req, StreamObserver<ModerationResponse> obs) {
-		try {
-			administrationService.createFaculty(UUID.fromString(req.getAdminId()), req.getUniversityId(), req.getName(),
-					req.getShortName());
-			obs.onNext(ModerationResponse.newBuilder().setSuccess(true).build());
-			obs.onCompleted();
-		} catch (SecurityException e) {
-			obs.onError(Status.PERMISSION_DENIED.withDescription(e.getMessage()).asRuntimeException());
-		} catch (IllegalArgumentException e) {
-			obs.onError(Status.INVALID_ARGUMENT.withDescription(e.getMessage()).asRuntimeException());
-		} catch (Exception e) {
-			obs.onError(Status.INTERNAL.withDescription(e.getMessage()).asRuntimeException());
-		}
-	}
-
-	@Override
 	public void createProgramForUser(CreateProgramForUserRequest req, StreamObserver<CreateProgramResponse> obs) {
 		try {
 			uni.user.entity.UniversityProgram program = administrationService.createProgramForUser(
@@ -621,7 +577,6 @@ public class UserGrpcServer extends UserServiceGrpc.UserServiceImplBase {
 		UserResponse.Builder builder = UserResponse.newBuilder().setId(u.getId().toString())
 				.setEmailGoogle(u.getEmailGoogle()).setUsername(u.getUsername() != null ? u.getUsername() : "")
 				.setName(u.getName()).setSurname(u.getSurname() != null ? u.getSurname() : "")
-				.setPatronymic(u.getPatronymic() != null ? u.getPatronymic() : "")
 				.setEmailUniversity(u.getEmailUniversity() != null ? u.getEmailUniversity() : "")
 				.setAvatarUrl(u.getAvatarUrl() != null ? u.getAvatarUrl() : "")
 				.setStatus(u.getStatus() != null ? u.getStatus() : "").setIsStudentVerified(u.isStudentVerified())
@@ -695,20 +650,6 @@ public class UserGrpcServer extends UserServiceGrpc.UserServiceImplBase {
 	private static Program toProgramProto(uni.user.entity.UniversityProgram p) {
 		return Program.newBuilder().setId(p.getId()).setFacultyId(p.getFaculty().getId()).setName(p.getName())
 				.setShortName(p.getShortName()).build();
-	}
-
-	private static Topic toTopicProto(uni.user.entity.UniversityTopic t) {
-		Topic.Builder builder = Topic.newBuilder().setId(t.getId()).setSlug(t.getSlug()).setName(t.getName())
-				.setIsSystem(t.isSystem());
-
-		if (t.getParent() != null) {
-			builder.setParentId(t.getParent().getId());
-		}
-		if (t.getFaculty() != null) {
-			builder.setFacultyId(t.getFaculty().getId());
-		}
-
-		return builder.build();
 	}
 
 	private static User.EducationLevel mapEducationLevelFromProto(EducationLevel level) {

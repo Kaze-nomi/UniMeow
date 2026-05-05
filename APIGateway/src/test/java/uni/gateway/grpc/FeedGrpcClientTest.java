@@ -34,7 +34,7 @@ class FeedGrpcClientTest {
 				.setNextCursor(1700000000000L).setHasMore(true).build();
 		when(stub.getFeed(any())).thenReturn(expectedResponse);
 
-		StepVerifier.create(feedGrpcClient.getFeed(FeedType.GLOBAL, "user-123", null, 20)).assertNext(response -> {
+		StepVerifier.create(feedGrpcClient.getFeed(FeedType.TRENDING, "user-123", null, 20)).assertNext(response -> {
 			assertThat(response.getPostIdsList()).containsExactly("post1", "post2");
 			assertThat(response.getHasMore()).isTrue();
 			assertThat(response.getNextCursor()).isEqualTo(1700000000000L);
@@ -46,7 +46,7 @@ class FeedGrpcClientTest {
 		ReflectionTestUtils.setField(feedGrpcClient, "stub", stub);
 		when(stub.getFeed(any())).thenReturn(GetFeedResponse.newBuilder().build());
 
-		StepVerifier.create(feedGrpcClient.getFeed(FeedType.GLOBAL, null, null, 20)).expectNextCount(1)
+		StepVerifier.create(feedGrpcClient.getFeed(FeedType.TRENDING, null, null, 20)).expectNextCount(1)
 				.verifyComplete();
 
 		verify(stub).getFeed(argThat(req -> req.getUserId().isBlank()));
@@ -57,7 +57,7 @@ class FeedGrpcClientTest {
 		ReflectionTestUtils.setField(feedGrpcClient, "stub", stub);
 		when(stub.getFeed(any())).thenReturn(GetFeedResponse.newBuilder().build());
 
-		StepVerifier.create(feedGrpcClient.getFeed(FeedType.GLOBAL, "  ", null, 20)).expectNextCount(1)
+		StepVerifier.create(feedGrpcClient.getFeed(FeedType.TRENDING, "  ", null, 20)).expectNextCount(1)
 				.verifyComplete();
 
 		verify(stub).getFeed(argThat(req -> req.getUserId().isBlank()));
@@ -68,7 +68,7 @@ class FeedGrpcClientTest {
 		ReflectionTestUtils.setField(feedGrpcClient, "stub", stub);
 		when(stub.getFeed(any())).thenReturn(GetFeedResponse.newBuilder().build());
 
-		StepVerifier.create(feedGrpcClient.getFeed(FeedType.GLOBAL, "user-123", null, 20)).expectNextCount(1)
+		StepVerifier.create(feedGrpcClient.getFeed(FeedType.TRENDING, "user-123", null, 20)).expectNextCount(1)
 				.verifyComplete();
 
 		verify(stub).getFeed(argThat(req -> req.getUserId().equals("user-123")));
@@ -79,7 +79,7 @@ class FeedGrpcClientTest {
 		ReflectionTestUtils.setField(feedGrpcClient, "stub", stub);
 		when(stub.getFeed(any())).thenReturn(GetFeedResponse.newBuilder().build());
 
-		StepVerifier.create(feedGrpcClient.getFeed(FeedType.GLOBAL, "user-123", null, 20)).expectNextCount(1)
+		StepVerifier.create(feedGrpcClient.getFeed(FeedType.TRENDING, "user-123", null, 20)).expectNextCount(1)
 				.verifyComplete();
 
 		verify(stub).getFeed(argThat(req -> req.getCursor() == 0));
@@ -91,7 +91,7 @@ class FeedGrpcClientTest {
 		when(stub.getFeed(any())).thenReturn(GetFeedResponse.newBuilder().build());
 		long cursor = 1700000001234L;
 
-		StepVerifier.create(feedGrpcClient.getFeed(FeedType.GLOBAL, "user-123", cursor, 20)).expectNextCount(1)
+		StepVerifier.create(feedGrpcClient.getFeed(FeedType.TRENDING, "user-123", cursor, 20)).expectNextCount(1)
 				.verifyComplete();
 
 		verify(stub).getFeed(argThat(req -> req.getCursor() == cursor));
@@ -102,10 +102,21 @@ class FeedGrpcClientTest {
 		ReflectionTestUtils.setField(feedGrpcClient, "stub", stub);
 		when(stub.getFeed(any())).thenReturn(GetFeedResponse.newBuilder().build());
 
-		StepVerifier.create(feedGrpcClient.getFeed(FeedType.GLOBAL, "user-123", null, 50)).expectNextCount(1)
+		StepVerifier.create(feedGrpcClient.getFeed(FeedType.TRENDING, "user-123", null, 50)).expectNextCount(1)
 				.verifyComplete();
 
 		verify(stub).getFeed(argThat(req -> req.getSize() == 50));
+	}
+
+	@Test
+	void getFeed_includes_topic_id_when_provided() {
+		ReflectionTestUtils.setField(feedGrpcClient, "stub", stub);
+		when(stub.getFeed(any())).thenReturn(GetFeedResponse.newBuilder().build());
+
+		StepVerifier.create(feedGrpcClient.getFeed(FeedType.TRENDING, "user-123", null, 20, -1L)).expectNextCount(1)
+				.verifyComplete();
+
+		verify(stub).getFeed(argThat(req -> req.getTopicId() == -1L));
 	}
 
 	@Test
@@ -113,7 +124,7 @@ class FeedGrpcClientTest {
 		ReflectionTestUtils.setField(feedGrpcClient, "stub", stub);
 		when(stub.getFeed(any())).thenReturn(GetFeedResponse.newBuilder().setHasMore(false).build());
 
-		StepVerifier.create(feedGrpcClient.getFeed(FeedType.GLOBAL, "user-empty", null, 20)).assertNext(response -> {
+		StepVerifier.create(feedGrpcClient.getFeed(FeedType.TRENDING, "user-empty", null, 20)).assertNext(response -> {
 			assertThat(response.getPostIdsList()).isEmpty();
 			assertThat(response.getHasMore()).isFalse();
 		}).verifyComplete();
@@ -128,7 +139,7 @@ class FeedGrpcClientTest {
 		}
 		when(stub.getFeed(any())).thenReturn(builder.build());
 
-		StepVerifier.create(feedGrpcClient.getFeed(FeedType.GLOBAL, "user-123", null, 100))
+		StepVerifier.create(feedGrpcClient.getFeed(FeedType.TRENDING, "user-123", null, 100))
 				.assertNext(resp -> assertThat(resp.getPostIdsList()).hasSize(100)).verifyComplete();
 	}
 
@@ -140,7 +151,7 @@ class FeedGrpcClientTest {
 		when(stub.getFeed(any())).thenThrow(new RuntimeException("Temporary failure"))
 				.thenThrow(new RuntimeException("Still failing")).thenReturn(expectedResponse);
 
-		StepVerifier.create(feedGrpcClient.getFeed(FeedType.GLOBAL, "user-123", null, 20))
+		StepVerifier.create(feedGrpcClient.getFeed(FeedType.TRENDING, "user-123", null, 20))
 				.assertNext(response -> assertThat(response.getPostIdsList()).contains("post1")).verifyComplete();
 	}
 
@@ -149,7 +160,7 @@ class FeedGrpcClientTest {
 		ReflectionTestUtils.setField(feedGrpcClient, "stub", stub);
 		when(stub.getFeed(any())).thenThrow(new RuntimeException("Connection failed"));
 
-		StepVerifier.create(feedGrpcClient.getFeed(FeedType.GLOBAL, "user-123", null, 20))
+		StepVerifier.create(feedGrpcClient.getFeed(FeedType.TRENDING, "user-123", null, 20))
 				.expectError(RuntimeException.class).verify(Duration.ofSeconds(5));
 	}
 
@@ -171,7 +182,7 @@ class FeedGrpcClientTest {
 		ReflectionTestUtils.setField(feedGrpcClient, "stub", stub);
 		when(stub.getFeed(any())).thenReturn(GetFeedResponse.newBuilder().build());
 
-		StepVerifier.create(feedGrpcClient.getUniversityFeed(FeedType.GLOBAL, null, null, 20, 42L, 0L, 0L))
+		StepVerifier.create(feedGrpcClient.getUniversityFeed(FeedType.TRENDING, null, null, 20, 42L, 0L, 0L))
 				.expectNextCount(1).verifyComplete();
 
 		verify(stub).getFeed(

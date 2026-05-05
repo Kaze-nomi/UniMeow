@@ -3,6 +3,7 @@ package uni.gateway.grpc;
 import net.devh.boot.grpc.client.inject.GrpcClient;
 import org.springframework.stereotype.Service;
 import uni.grpc.user.CreateOrGetUserRequest;
+import uni.grpc.user.DeleteAccountRequest;
 import uni.grpc.user.GetUserByIdRequest;
 import uni.grpc.user.GetUserByUsernameRequest;
 import uni.grpc.user.UpdateUserRequest;
@@ -29,15 +30,12 @@ import uni.grpc.user.ListFacultiesRequest;
 import uni.grpc.user.FacultyListResponse;
 import uni.grpc.user.ListProgramsRequest;
 import uni.grpc.user.ProgramListResponse;
-import uni.grpc.user.ListTopicsRequest;
-import uni.grpc.user.TopicListResponse;
 import uni.grpc.user.DeleteImprovementSuggestionRequest;
 import uni.grpc.user.CreateProgramForUserRequest;
 import uni.grpc.user.CreateProgramResponse;
 import uni.grpc.user.BanUserRequest;
 import uni.grpc.user.GrantAdminRequest;
 import uni.grpc.user.CreateImprovementSuggestionRequest;
-import uni.grpc.user.CreateFacultyRequest;
 import uni.grpc.user.CreateFacultyProposalRequest;
 import uni.grpc.user.ListFacultyProposalsRequest;
 import uni.grpc.user.FacultyProposalListResponse;
@@ -78,6 +76,12 @@ public class UserGrpcClient {
 
 	public Mono<UserResponse> updateUser(UpdateUserRequest request) {
 		return Mono.fromCallable(() -> stub.updateUser(request)).subscribeOn(Schedulers.boundedElastic()).retry(2);
+	}
+
+	public Mono<Boolean> deleteAccount(String userId) {
+		return Mono.fromCallable(
+				() -> stub.deleteAccount(DeleteAccountRequest.newBuilder().setUserId(userId).build()).getSuccess())
+				.subscribeOn(Schedulers.boundedElastic()).retry(2);
 	}
 
 	public Mono<Void> createSession(String userId, String refreshToken) {
@@ -154,13 +158,6 @@ public class UserGrpcClient {
 	public Mono<ProgramListResponse> listPrograms(long facultyId) {
 		return Mono
 				.fromCallable(() -> stub.listPrograms(ListProgramsRequest.newBuilder().setFacultyId(facultyId).build()))
-				.subscribeOn(Schedulers.boundedElastic()).retry(2);
-	}
-
-	public Mono<TopicListResponse> listTopics(long universityId) {
-		return Mono
-				.fromCallable(
-						() -> stub.listTopics(ListTopicsRequest.newBuilder().setUniversityId(universityId).build()))
 				.subscribeOn(Schedulers.boundedElastic()).retry(2);
 	}
 
@@ -273,15 +270,6 @@ public class UserGrpcClient {
 								.reviewUniversityProposal(ReviewUniversityProposalRequest.newBuilder()
 										.setReviewerId(reviewerId).setProposalId(proposalId).setStatus(status).build())
 								.getSuccess())
-				.subscribeOn(Schedulers.boundedElastic()).retry(2);
-	}
-
-	public Mono<Boolean> createFaculty(String adminId, long universityId, String name, String shortName) {
-		return Mono
-				.fromCallable(() -> stub
-						.createFaculty(CreateFacultyRequest.newBuilder().setAdminId(adminId)
-								.setUniversityId(universityId).setName(name).setShortName(shortName).build())
-						.getSuccess())
 				.subscribeOn(Schedulers.boundedElastic()).retry(2);
 	}
 

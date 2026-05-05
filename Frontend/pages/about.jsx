@@ -32,11 +32,6 @@ function AboutPage({ onNavigate }) {
         <p style={{ fontSize: 15, lineHeight: 1.7, margin: 0 }}>
           Проект разрабатывается как дипломная работа. Если хотите помочь — напишите нам через <span onClick={() => window.dispatchEvent(new CustomEvent('open-modal', { detail: 'suggest' }))} style={{ color: 'var(--accent)', cursor: 'pointer' }}>Обратную связь</span>.
         </p>
-        <div style={{ height: 1, background: 'var(--border)' }} />
-        <div style={{ fontSize: 13, color: 'var(--text-muted)', lineHeight: 1.6 }}>
-          <div style={{ fontWeight: 700, marginBottom: 6, fontSize: 14, color: 'var(--text)' }}>Стек технологий</div>
-          React · Spring WebFlux · gRPC · PostgreSQL · MinIO · GraphQL
-        </div>
       </div>
     </div>
   );

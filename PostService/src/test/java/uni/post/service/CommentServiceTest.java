@@ -13,6 +13,7 @@ import uni.post.entity.CommentLike;
 import uni.post.entity.Post;
 import uni.post.exception.CommentNotFoundException;
 import uni.post.exception.PostNotFoundException;
+import uni.post.outbox.OutboxService;
 import uni.post.record.CommentResult;
 import uni.post.repository.CommentLikeRepository;
 import uni.post.repository.CommentRepository;
@@ -39,6 +40,12 @@ class CommentServiceTest {
 
 	@Mock
 	PostRepository postRepository;
+
+	@Mock
+	OutboxService outboxService;
+
+	@Mock
+	MentionResolver mentionResolver;
 
 	@InjectMocks
 	CommentService commentService;

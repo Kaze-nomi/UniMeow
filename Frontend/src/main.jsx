@@ -19,6 +19,7 @@ await import('../pages/explore.jsx');
 await import('../pages/admin.jsx');
 await import('../App.jsx');
 await import('../pages/about.jsx');
+await import('../pages/notifications.jsx');
 
 const root = ReactDOM.createRoot(document.getElementById('root'));
 root.render(React.createElement(window.App));

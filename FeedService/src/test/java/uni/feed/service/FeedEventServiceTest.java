@@ -92,14 +92,13 @@ class FeedEventServiceTest {
 		feedEventService.processRaw(json);
 
 		verify(redisRepository, never()).addPostToAuthorFeed(any(), any(), anyDouble());
-		verify(redisRepository, never()).addPostToGlobalFeed(any(), anyDouble());
 		verify(redisRepository, never()).markEventProcessed(any(), any());
 	}
 
 	@Test
 	void processRaw_calls_onPostCreated_for_post_created_event() {
 		ReflectionTestUtils.setField(feedEventService, "authorWindowSize", 1000L);
-		ReflectionTestUtils.setField(feedEventService, "globalWindowSize", 5000L);
+		ReflectionTestUtils.setField(feedEventService, "uniWindowSize", 5000L);
 
 		String json = buildEventJson("POST_CREATED", EVENT_ID, """
 				{"authorId": "%s", "postId": "%s"}
@@ -111,13 +110,13 @@ class FeedEventServiceTest {
 		feedEventService.processRaw(json);
 
 		verify(redisRepository).addPostToAuthorFeed(eq(AUTHOR_ID), eq(POST_ID), anyDouble());
-		verify(redisRepository).addPostToGlobalFeed(eq(POST_ID), anyDouble());
+		verify(redisRepository).addPostToOutsideFeed(eq(POST_ID), anyDouble());
+		verify(redisRepository).addPostToOutsidePopularFeed(eq(POST_ID), anyDouble());
 	}
 
 	@Test
 	void onPostCreated_updates_university_and_topic_feeds_when_scope_present() {
 		ReflectionTestUtils.setField(feedEventService, "authorWindowSize", 1000L);
-		ReflectionTestUtils.setField(feedEventService, "globalWindowSize", 5000L);
 		ReflectionTestUtils.setField(feedEventService, "uniWindowSize", 5000L);
 
 		String json = buildEventJson("POST_CREATED", EVENT_ID, """
@@ -131,6 +130,7 @@ class FeedEventServiceTest {
 		verify(redisRepository).addPostToUniversityFeed(eq(7L), eq(POST_ID), anyDouble());
 		verify(redisRepository).addPostToUniversityTopicFeed(eq(7L), eq(5L), eq(POST_ID), anyDouble());
 		verify(redisRepository).addPostToUniversitySubtopicFeed(eq(7L), eq(11L), eq(POST_ID), anyDouble());
+		verify(redisRepository, never()).addPostToOutsideFeed(any(), anyDouble());
 	}
 
 	@Test
@@ -160,7 +160,6 @@ class FeedEventServiceTest {
 	@Test
 	void onPostCreated_adds_post_to_all_follower_feeds() {
 		ReflectionTestUtils.setField(feedEventService, "authorWindowSize", 1000L);
-		ReflectionTestUtils.setField(feedEventService, "globalWindowSize", 5000L);
 
 		String json = buildEventJson("POST_CREATED", EVENT_ID, """
 				{"authorId": "%s", "postId": "%s"}
@@ -179,7 +178,6 @@ class FeedEventServiceTest {
 	@Test
 	void onPostCreated_marks_event_as_processed() {
 		ReflectionTestUtils.setField(feedEventService, "authorWindowSize", 1000L);
-		ReflectionTestUtils.setField(feedEventService, "globalWindowSize", 5000L);
 
 		String json = buildEventJson("POST_CREATED", EVENT_ID, """
 				{"authorId": "%s", "postId": "%s"}
@@ -194,7 +192,7 @@ class FeedEventServiceTest {
 	}
 
 	@Test
-	void onPostDeleted_removes_post_from_global_author_and_popular_feeds() {
+	void onPostDeleted_removes_post_from_author_and_popular_feeds() {
 		String json = buildEventJson("POST_DELETED", EVENT_ID, """
 				{"authorId": "%s", "postId": "%s"}
 				""".formatted(AUTHOR_ID, POST_ID));
@@ -203,13 +201,12 @@ class FeedEventServiceTest {
 
 		feedEventService.processRaw(json);
 
-		verify(redisRepository).removePostFromGlobalFeed(POST_ID);
 		verify(redisRepository).removePostFromAuthorFeed(AUTHOR_ID, POST_ID);
 		verify(redisRepository).removePostFromPopularFeed(POST_ID);
 	}
 
 	@Test
-	void onPostDeleted_removes_from_global_and_popular_when_author_id_missing() {
+	void onPostDeleted_removes_from_outside_and_popular_when_author_id_missing() {
 		String json = buildEventJson("POST_DELETED", EVENT_ID, """
 				{"postId": "%s"}
 				""".formatted(POST_ID));
@@ -218,8 +215,9 @@ class FeedEventServiceTest {
 
 		feedEventService.processRaw(json);
 
-		verify(redisRepository).removePostFromGlobalFeed(POST_ID);
 		verify(redisRepository).removePostFromPopularFeed(POST_ID);
+		verify(redisRepository).removePostFromOutsideFeed(POST_ID);
+		verify(redisRepository).removePostFromOutsidePopularFeed(POST_ID);
 		verify(redisRepository, never()).removePostFromAuthorFeed(any(), any());
 	}
 
@@ -235,6 +233,7 @@ class FeedEventServiceTest {
 
 		verify(redisRepository).addPostToPopularFeed(POST_ID, 1005.0);
 		verify(redisRepository).trimPopularFeed(1000L);
+		verify(redisRepository).addPostToOutsidePopularFeed(POST_ID, 1005.0);
 	}
 
 	@Test
@@ -322,7 +321,6 @@ class FeedEventServiceTest {
 	@Test
 	void onUserFollowed_adds_following_relation_and_posts() {
 		ReflectionTestUtils.setField(feedEventService, "authorWindowSize", 1000L);
-		ReflectionTestUtils.setField(feedEventService, "globalWindowSize", 5000L);
 
 		String json = buildEventJson("USER_FOLLOWED", EVENT_ID, """
 				{"subscriberId": "%s", "targetUserId": "%s"}
@@ -364,6 +362,19 @@ class FeedEventServiceTest {
 
 		verify(redisRepository).removeFollowingRelation(SUBSCRIBER_ID, TARGET_USER_ID);
 		verify(redisRepository).removePostsFromUserFeed(SUBSCRIBER_ID, latestPosts.keySet());
+	}
+
+	@Test
+	void onUserDeleted_removes_all_feed_relations_and_local_keys() {
+		String json = buildEventJson("USER_DELETED", EVENT_ID, """
+				{"userId": "%s"}
+				""".formatted(TARGET_USER_ID));
+
+		when(redisRepository.isEventProcessed(EVENT_ID)).thenReturn(false);
+
+		feedEventService.processRaw(json);
+
+		verify(redisRepository).removeUserFromAllFeeds(TARGET_USER_ID);
 	}
 
 	@Test

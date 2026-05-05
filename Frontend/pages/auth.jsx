@@ -8,11 +8,10 @@ function LoginPage({ onNavigate }) {
       background: 'radial-gradient(circle at 20% 20%, var(--accent-subtle) 0%, transparent 38%), radial-gradient(circle at 80% 0%, var(--surface-2) 0%, transparent 42%), var(--bg)',
       display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24,
     }}>
-      <div style={{ width: '100%', maxWidth: 420 }}>
-        <div style={{ textAlign: 'center', marginBottom: 28 }}>
-          <CatLogo size={80} />
-          <h1 style={{ margin: '8px 0 0', fontSize: 36, fontWeight: 900, letterSpacing: '-1px' }}>UniMeow</h1>
-          <p style={{ margin: '8px 0 0', color: 'var(--text-muted)', fontSize: 15 }}>Социальная сеть университетского сообщества</p>
+      <div style={{ width: '100%', maxWidth: 520 }}>
+        <div style={{ textAlign: 'center', marginBottom: 34 }}>
+          <CatLogo size={92} />
+          <h1 style={{ margin: '10px 0 0', fontSize: 42, fontWeight: 900, letterSpacing: '-1px' }}>UniMeow</h1>
         </div>
 
         {window.MOCK?.enabled && (
@@ -25,17 +24,17 @@ function LoginPage({ onNavigate }) {
           </div>
         )}
 
-        <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 20, padding: 24 }}>
-          <h2 style={{ margin: '0 0 8px', fontSize: 24, fontWeight: 800 }}>Присоединяйтесь к обсуждению</h2>
-          <p style={{ margin: '0 0 24px', color: 'var(--text-muted)', fontSize: 14, lineHeight: 1.6 }}>
+        <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 22, padding: 34 }}>
+          <h2 style={{ margin: '0 0 10px', fontSize: 29, fontWeight: 800 }}>Присоединяйтесь к обсуждению</h2>
+          <p style={{ margin: '0 0 28px', color: 'var(--text-muted)', fontSize: 16, lineHeight: 1.65 }}>
             Войдите через Google, чтобы читать подписки, публиковать записи и подтверждать университетский статус.
           </p>
 
           <button onClick={() => API.loginWithGoogle()} style={{
             width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 12,
-            padding: '13px 20px', borderRadius: 12, border: '1.5px solid var(--border)',
+            padding: '16px 22px', borderRadius: 14, border: '1.5px solid var(--border)',
             background: 'var(--surface)', color: 'var(--text)', fontFamily: 'inherit',
-            fontSize: 15, fontWeight: 600, cursor: 'pointer', marginBottom: 10,
+            fontSize: 16, fontWeight: 700, cursor: 'pointer', marginBottom: 12,
           }}>
             <GoogleIcon /> Войти через Google
           </button>
@@ -43,9 +42,9 @@ function LoginPage({ onNavigate }) {
           {window.MOCK?.enabled && (
             <button onClick={() => window.dispatchEvent(new CustomEvent('mock-show-login'))} style={{
               width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 12,
-              padding: '13px 20px', borderRadius: 12, border: 'none',
+              padding: '16px 22px', borderRadius: 14, border: 'none',
               background: 'var(--accent)', color: '#fff', fontFamily: 'inherit',
-              fontSize: 15, fontWeight: 700, cursor: 'pointer',
+              fontSize: 16, fontWeight: 800, cursor: 'pointer',
             }}>
               Войти как демо-пользователь
             </button>
@@ -67,11 +66,6 @@ function LoginPage({ onNavigate }) {
           fontSize: 12.5,
           color: 'var(--text-muted)',
         }}>
-          <span style={{ cursor: 'pointer' }} onClick={() => window.dispatchEvent(new CustomEvent('open-modal', { detail: 'suggest' }))}>Предложить улучшение</span>
-          <span>·</span>
-          <span style={{ cursor: 'pointer' }} onClick={() => window.dispatchEvent(new CustomEvent('open-modal', { detail: 'add-uni' }))}>Добавить свой ВУЗ</span>
-          <span>·</span>
-          <span style={{ cursor: 'pointer' }} onClick={() => window.dispatchEvent(new CustomEvent('open-modal', { detail: 'add-faculty' }))}>Добавить свой факультет</span>
         </div>
       </div>
     </div>
@@ -156,4 +150,3 @@ function GoogleIcon() {
 }
 
 Object.assign(window, { LoginPage, CompleteRegistrationPage });
-

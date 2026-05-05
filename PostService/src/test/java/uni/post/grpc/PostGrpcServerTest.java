@@ -59,7 +59,8 @@ class PostGrpcServerTest {
 
 	@Test
 	void create_post_calls_on_next_and_on_completed_on_success() {
-		when(postService.createPost(any(), any(), any(), any())).thenReturn(new PostResult(buildPost(), false));
+		when(postService.createPost(any(), any(), any(), any(), any(), any(), any(), any()))
+				.thenReturn(new PostResult(buildPost(), false));
 
 		StreamObserver<PostResponse> obs = mock();
 		server.createPost(
@@ -72,7 +73,8 @@ class PostGrpcServerTest {
 
 	@Test
 	void create_post_maps_updated_at_to_proto() {
-		when(postService.createPost(any(), any(), any(), any())).thenReturn(new PostResult(buildPost(), false));
+		when(postService.createPost(any(), any(), any(), any(), any(), any(), any(), any()))
+				.thenReturn(new PostResult(buildPost(), false));
 
 		StreamObserver<PostResponse> obs = mock();
 		server.createPost(
@@ -85,7 +87,7 @@ class PostGrpcServerTest {
 
 	@Test
 	void create_post_returns_invalid_argument_on_blank_content() {
-		when(postService.createPost(any(), any(), any(), any()))
+		when(postService.createPost(any(), any(), any(), any(), any(), any(), any(), any()))
 				.thenThrow(new IllegalArgumentException("content cannot be empty"));
 
 		StreamObserver<PostResponse> obs = mock();
@@ -96,7 +98,8 @@ class PostGrpcServerTest {
 
 	@Test
 	void create_post_returns_internal_on_unexpected_exception() {
-		when(postService.createPost(any(), any(), any(), any())).thenThrow(new RuntimeException("DB error"));
+		when(postService.createPost(any(), any(), any(), any(), any(), any(), any(), any()))
+				.thenThrow(new RuntimeException("DB error"));
 
 		StreamObserver<PostResponse> obs = mock();
 		server.createPost(CreatePostRequest.newBuilder().setAuthorId(AUTHOR_ID.toString()).setContent("x").build(),

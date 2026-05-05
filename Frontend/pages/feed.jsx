@@ -9,6 +9,7 @@ function FeedPage({ currentUser, onNavigate, universitySlug, composeOpen, setCom
   const [loading, setLoading] = React.useState(false);
   const [loadingMore, setLoadingMore] = React.useState(false);
   const [error, setError] = React.useState('');
+  const loadSeqRef = React.useRef(0);
 
   const [universityId, setUniversityId] = React.useState(null);
   const [facultyId, setFacultyId] = React.useState(null);
@@ -18,12 +19,19 @@ function FeedPage({ currentUser, onNavigate, universitySlug, composeOpen, setCom
 
 
   const [universities, setUniversities] = React.useState([]);
+  const [scopeReady, setScopeReady] = React.useState(!universitySlug || universitySlug === NO_UNIVERSITY_SLUG);
   React.useEffect(() => { API.gql(API.Q.listUniversities).then(d => setUniversities(d.listUniversities || [])); }, []);
   React.useEffect(() => {
+    setScopeReady(false);
+    if (!universitySlug || universitySlug === NO_UNIVERSITY_SLUG) {
+      setUniversityId(null); setFacultyId(null); setProgramId(null); setScopeReady(true); return;
+    }
     if (!universities.length) return;
-    if (!universitySlug || universitySlug === NO_UNIVERSITY_SLUG) { setUniversityId(null); setFacultyId(null); setProgramId(null); return; }
     const selected = universities.find(u => API.universitySlug(u) === universitySlug);
-    if (selected) setUniversityId(selected.id);
+    setUniversityId(selected ? selected.id : null);
+    setFacultyId(null);
+    setProgramId(null);
+    setScopeReady(true);
   }, [universities, universitySlug]);
 
   React.useEffect(() => {
@@ -69,7 +77,6 @@ function FeedPage({ currentUser, onNavigate, universitySlug, composeOpen, setCom
 
 
   React.useEffect(() => {
-    // Миграция: если был сохранён старый таб 'global' — переключаем на trending
     if (tab === 'global') setTab('trending');
   }, [currentUser, isScopedFeed]);
 
@@ -77,6 +84,7 @@ function FeedPage({ currentUser, onNavigate, universitySlug, composeOpen, setCom
   const keyFor = (t) => t === 'following' ? 'followingFeed' : 'trendingFeed';
 
   const loadFeed = React.useCallback(async (t, cur = null, uniId = null, facId = null, progId = null, noUniversity = false) => {
+    const seq = ++loadSeqRef.current;
     if (!cur) setLoading(true);
     else setLoadingMore(true);
     setError('');
@@ -85,23 +93,57 @@ function FeedPage({ currentUser, onNavigate, universitySlug, composeOpen, setCom
       if (uniId) vars.universityId = uniId;
       if (facId) vars.facultyId = facId;
       if (progId) vars.programId = progId;
+      if (noUniversity) vars.topicId = -1;
       const data = await API.gql(queryFor(t), vars);
       const result = data[keyFor(t)];
-      const nextPosts = noUniversity ? result.posts.filter(p => !p.universityId) : result.posts;
+      if (seq !== loadSeqRef.current) return;
+      const nextPosts = result.posts;
       if (!cur) setPosts(nextPosts);
       else setPosts(p => [...p, ...nextPosts]);
       setCursor(result.nextCursor);
       setHasMore(result.hasMore);
     } catch (e) {
+      if (seq !== loadSeqRef.current) return;
       if (e.isUnauth && t === 'following') setError('Войдите, чтобы видеть ленту подписок');
       else setError(e.message || 'Ошибка загрузки');
-    } finally { setLoading(false); setLoadingMore(false); }
+    } finally {
+      if (seq === loadSeqRef.current) { setLoading(false); setLoadingMore(false); }
+    }
   }, []);
 
   React.useEffect(() => {
+    if (!scopeReady) return;
     setPosts([]); setCursor(null); setHasMore(false);
-    loadFeed(isScopedFeed ? 'global' : tab, null, universityId, facultyId, programId, isNoUniversityScope);
-  }, [tab, universityId, facultyId, programId, isNoUniversityScope]);
+    if (universitySlug && universitySlug !== NO_UNIVERSITY_SLUG && !universityId) {
+      setError('Университет не найден');
+      return;
+    }
+    loadFeed(isScopedFeed ? 'trending' : tab, null, universityId, facultyId, programId, isNoUniversityScope);
+  }, [tab, universityId, facultyId, programId, isNoUniversityScope, universitySlug, scopeReady, loadFeed]);
+
+  React.useEffect(() => {
+    const h = (e) => {
+      if (!scopeReady || (universitySlug && universitySlug !== NO_UNIVERSITY_SLUG && !universityId)) return;
+      const newPost = e.detail;
+      if (newPost && !isScopedFeed) {
+        if (newPost.removeTmpId) {
+          setPosts(prev => prev.filter(p => p.id !== newPost.removeTmpId));
+          return;
+        }
+        setPosts(prev => {
+          if (newPost.id && String(newPost.id).startsWith('tmp-')) return [newPost, ...prev];
+          const idx = prev.findIndex(p => p.id && String(p.id).startsWith('tmp-') && p.authorId === newPost.authorId && p.content === newPost.content);
+          if (idx !== -1) { const copy = [...prev]; copy[idx] = newPost; return copy; }
+          if (prev.some(p => p.id === newPost.id)) return prev;
+          return [newPost, ...prev];
+        });
+      } else {
+        loadFeed(isScopedFeed ? 'trending' : tab, null, universityId, facultyId, programId, isNoUniversityScope);
+      }
+    };
+    window.addEventListener('um-post-created', h);
+    return () => window.removeEventListener('um-post-created', h);
+  }, [tab, universityId, facultyId, programId, isNoUniversityScope, universitySlug, scopeReady, isScopedFeed, loadFeed]);
 
   const handleTabClick = (t) => {
     if (t.requireAuth && !currentUser) { onNavigate('/login'); return; }
@@ -109,7 +151,7 @@ function FeedPage({ currentUser, onNavigate, universitySlug, composeOpen, setCom
   };
 
   const currentUni = universities.find(u => u.id === universityId);
-  const currentTitle = isNoUniversityScope ? 'Вне университета' : currentUni ? currentUni.name : 'Главная';
+  const currentTitle = isNoUniversityScope ? 'Без ВУЗа' : currentUni ? currentUni.name : 'Главная';
   return (
     <div>
 
@@ -194,10 +236,28 @@ function FeedPage({ currentUser, onNavigate, universitySlug, composeOpen, setCom
 
       {currentUser && !isScopedFeed && (
         <InlineCompose
-          currentUser={currentUser}
-          defaultTopicId={null}
-          onCreated={() => loadFeed(isScopedFeed ? 'global' : tab, null, universityId, facultyId, programId, isNoUniversityScope)}
-        />
+            currentUser={currentUser}
+            defaultTopicId={null}
+            onCreated={(newPost) => {
+              if (!newPost) {
+                loadFeed(isScopedFeed ? 'trending' : tab, null, universityId, facultyId, programId, isNoUniversityScope);
+                return;
+              }
+              if (newPost.removeTmpId) {
+                setPosts(prev => prev.filter(p => p.id !== newPost.removeTmpId));
+                return;
+              }
+              setPosts(prev => {
+                if (newPost.id && String(newPost.id).startsWith('tmp-')) {
+                  return [newPost, ...prev];
+                }
+                const idx = prev.findIndex(p => p.id && String(p.id).startsWith('tmp-') && p.authorId === newPost.authorId && p.content === newPost.content);
+                if (idx !== -1) { const copy = [...prev]; copy[idx] = newPost; return copy; }
+                if (prev.some(p => p.id === newPost.id)) return prev;
+                return [newPost, ...prev];
+              });
+            }}
+          />
       )}
 
 
@@ -208,10 +268,10 @@ function FeedPage({ currentUser, onNavigate, universitySlug, composeOpen, setCom
           <div style={{ color: 'var(--text-muted)', marginBottom: 12, fontSize: 15 }}>{error}</div>
           {error.includes('Войдите')
             ? <Button onClick={() => onNavigate('/login')}>Войти</Button>
-            : <Button variant="secondary" onClick={() => loadFeed(isScopedFeed ? 'global' : tab, null, universityId, facultyId, programId, isNoUniversityScope)}>Повторить</Button>}
+            : <Button variant="secondary" onClick={() => loadFeed(isScopedFeed ? 'trending' : tab, null, universityId, facultyId, programId, isNoUniversityScope)}>Повторить</Button>}
         </div>
       ) : posts.length === 0 ? (
-        <EmptyState icon={<EmptyBoxIcon />} title="Пока пусто" subtitle={tab === 'following' ? 'Подпишитесь на кого-нибудь' : 'Будьте первым!'} />
+        <EmptyState icon={<EmptyBoxIcon />} title="Пока пусто" subtitle={tab === 'following' && !isScopedFeed ? 'Подпишитесь на кого-нибудь' : undefined} />
       ) : (
         <div>
           {posts.map(post => (
@@ -219,7 +279,7 @@ function FeedPage({ currentUser, onNavigate, universitySlug, composeOpen, setCom
           ))}
           {hasMore && (
             <div style={{ padding: 16, textAlign: 'center' }}>
-              <Button variant="secondary" onClick={() => loadFeed(isScopedFeed ? 'global' : tab, cursor, universityId, facultyId, programId, isNoUniversityScope)} loading={loadingMore}>
+              <Button variant="secondary" onClick={() => loadFeed(isScopedFeed ? 'trending' : tab, cursor, universityId, facultyId, programId, isNoUniversityScope)} loading={loadingMore}>
                 Загрузить ещё
               </Button>
             </div>
@@ -270,10 +330,37 @@ function InlineCompose({ currentUser, onCreated, defaultTopicId }) {
     if ((!text.trim() && mediaFiles.length === 0) || busy || text.length > 1000) return;
     setBusy(true); setError('');
     try {
-      const mediaUrls = mediaFiles.length ? await Promise.all(mediaFiles.map(m => API.uploadFile(m.file, 'post-media'))) : [];
-      const input = { content: text.trim(), mediaUrls };
-      await API.gql(API.M.createPost, { input });
-      setText(''); setMediaFiles([]); onCreated && onCreated();
+      const tmpId = 'tmp-' + Date.now();
+      const optimisticMedia = mediaFiles.map(m => m.previewUrl);
+      const optimisticPost = {
+        id: tmpId,
+        author: currentUser,
+        authorId: currentUser?.id,
+        content: text.trim(),
+        mediaUrls: optimisticMedia,
+        likesCount: 0,
+        commentsCount: 0,
+        likedByMe: false,
+        createdAt: new Date().toISOString(),
+      };
+      onCreated && onCreated(optimisticPost);
+      try {
+        const mediaUrls = mediaFiles.length ? await Promise.all(mediaFiles.map(m => API.uploadFile(m.file, 'post-media'))) : [];
+        const input = { content: text.trim(), mediaUrls };
+        const d = await API.gql(API.M.createPost, { input });
+        const newPost = {
+          ...d.createPost,
+          author: currentUser,
+          likesCount: 0,
+          commentsCount: 0,
+          likedByMe: false,
+        };
+        setText(''); setMediaFiles([]);
+        onCreated && onCreated(newPost);
+      } catch (innerErr) {
+        onCreated && onCreated({ removeTmpId: tmpId });
+        throw innerErr;
+      }
     } catch (e) { setError(e.message || 'Не удалось опубликовать'); }
     finally { setBusy(false); }
   };
@@ -295,14 +382,35 @@ function InlineCompose({ currentUser, onCreated, defaultTopicId }) {
           }}
         />
         {mediaFiles.length > 0 && (
-          <div style={{ display: 'grid', gridTemplateColumns: mediaFiles.length === 1 ? '1fr' : 'repeat(2, 1fr)', gap: 4, borderRadius: 12, overflow: 'hidden', border: '1px solid var(--border)', marginBottom: 8 }}>
-            {mediaFiles.map((m, i) => (
-              <div key={i} style={{ position: 'relative' }}>
-                <img src={m.previewUrl} alt="" style={{ width: '100%', aspectRatio: mediaFiles.length === 1 ? '16/9' : '1', objectFit: 'cover', display: 'block' }} />
-                <button onClick={() => setMediaFiles(prev => prev.filter((_, idx) => idx !== i))} style={{ position: 'absolute', top: 4, right: 4, width: 22, height: 22, borderRadius: '50%', border: 'none', background: 'rgba(0,0,0,0.65)', color: '#fff', cursor: 'pointer', lineHeight: 1 }}>×</button>
-              </div>
-            ))}
-          </div>
+            (() => {
+              const urls = mediaFiles.map(m => m.previewUrl);
+              const count = urls.length;
+              const odd = count % 2 === 1 && count > 1;
+              const columns = count === 1 ? '1fr' : 'repeat(2,1fr)';
+              const removeMedia = (idx) => setMediaFiles(prev => prev.filter((_, i) => i !== idx));
+              return (
+                <div style={{ display: 'grid', gridTemplateColumns: columns, gap: 4, borderRadius: 12, overflow: 'hidden', border: '1px solid var(--border)', marginBottom: 8 }}>
+                  {urls.map((url, i) => {
+                    const isFirst = i === 0;
+                    const style = { width: '100%', objectFit: 'cover', display: 'block' };
+                    if (count === 1) style.aspectRatio = '16/9';
+                    else if (odd && isFirst) { style.gridColumn = '1 / -1'; style.aspectRatio = '16/9'; }
+                    else style.aspectRatio = '1';
+                    return (
+                      <div key={i} style={{ position: 'relative' }}>
+                        <img src={url} alt="" style={style} />
+                        <button onClick={() => removeMedia(i)} style={{
+                          position: 'absolute', top: 4, right: 4,
+                          background: 'rgba(0,0,0,0.6)', color: '#fff', border: 'none',
+                          borderRadius: '50%', width: 22, height: 22, cursor: 'pointer',
+                          fontSize: 14, lineHeight: 1, display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        }}>×</button>
+                      </div>
+                    );
+                  })}
+                </div>
+              );
+            })()
         )}
         {error && <div style={{ color: 'var(--like)', fontSize: 13, marginBottom: 6 }}>{error}</div>}
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10 }}>
@@ -373,7 +481,7 @@ function UniversityPicker({ universities, currentId, onSelect, currentName, noUn
           <button onClick={() => { onSelect('__no_university__'); setOpen(false); }} className="um-side-nav" style={pickerItemStyle(noUniversityActive)}>
             <MessageBubbleIcon size={22} color="var(--text)" />
             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start' }}>
-              <span style={{ fontWeight: 700, fontSize: 14 }}>Вне университета</span>
+              <span style={{ fontWeight: 700, fontSize: 14 }}>Без ВУЗа</span>
               <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>Выбор, поступление и общие вопросы</span>
             </div>
           </button>

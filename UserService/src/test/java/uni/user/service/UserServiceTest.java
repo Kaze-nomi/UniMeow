@@ -24,6 +24,7 @@ import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
@@ -56,9 +57,29 @@ class UserServiceTest {
 				.build();
 	}
 
-	private User updateOnlyUsername(String username) {
+	private User updateUsername(String username) {
 		return userService.update(USER_ID, true, username, false, null, false, null, false, null, false, null, false,
-				null, false, null, false, null, false, null, false, null, false, null, false, null, false, null);
+				null, false, null, false, null, false, null, false, null, false, null, false, null);
+	}
+
+	private User updateName(String name) {
+		return userService.update(USER_ID, false, null, true, name, false, null, false, null, false, null, false, null,
+				false, null, false, null, false, null, false, null, false, null, false, null);
+	}
+
+	private User updateCourse(int course) {
+		return userService.update(USER_ID, false, null, false, null, false, null, false, null, false, null, false, null,
+				true, course, false, null, false, null, false, null, false, null, false, null);
+	}
+
+	private User updateFaculty(long facultyId) {
+		return userService.update(USER_ID, false, null, false, null, false, null, false, null, false, null, true,
+				facultyId, false, null, false, null, false, null, false, null, false, null, false, null);
+	}
+
+	private User updateProgram(long programId) {
+		return userService.update(USER_ID, false, null, false, null, false, null, false, null, false, null, false, null,
+				false, null, false, null, false, null, false, null, false, null, true, programId);
 	}
 
 	private University buildUniversity(long id) {
@@ -74,6 +95,16 @@ class UserServiceTest {
 
 		assertThat(result.getId()).isEqualTo(USER_ID);
 		verify(userRepository, never()).save(any());
+	}
+
+	@Test
+	void create_or_get_throws_when_user_is_permanently_banned() {
+		User banned = buildUser();
+		banned.setBannedPermanent(true);
+		when(userRepository.findByEmailGoogle("banned@gmail.com")).thenReturn(Optional.of(banned));
+
+		assertThatThrownBy(() -> userService.createOrGet("banned@gmail.com", "Иван", "Петров", ""))
+				.isInstanceOf(SecurityException.class).hasMessageContaining("banned");
 	}
 
 	@Test
@@ -149,8 +180,7 @@ class UserServiceTest {
 		when(userRepository.existsByUsername("new_name")).thenReturn(false);
 		when(userRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
 
-		User result = userService.update(USER_ID, true, "new_name", false, null, false, null, false, null, false, null,
-				false, null, false, null, false, null, false, null, false, null, false, null, false, null, false, null);
+		User result = updateUsername("new_name");
 
 		assertThat(result.getUsername()).isEqualTo("new_name");
 	}
@@ -161,7 +191,7 @@ class UserServiceTest {
 		when(userRepository.findById(USER_ID)).thenReturn(Optional.of(user));
 		when(userRepository.existsByUsername("taken_name")).thenReturn(true);
 
-		assertThatThrownBy(() -> updateOnlyUsername("taken_name")).isInstanceOf(UsernameAlreadyTakenException.class)
+		assertThatThrownBy(() -> updateUsername("taken_name")).isInstanceOf(UsernameAlreadyTakenException.class)
 				.hasMessageContaining("taken_name");
 	}
 
@@ -171,7 +201,19 @@ class UserServiceTest {
 		when(userRepository.findById(USER_ID)).thenReturn(Optional.of(user));
 		when(userRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
 
-		assertThatCode(() -> updateOnlyUsername("ivan_petrov")).doesNotThrowAnyException();
+		assertThatCode(() -> updateUsername("ivan_petrov")).doesNotThrowAnyException();
+	}
+
+	@Test
+	void update_normalizes_username_to_lowercase_without_spaces() {
+		User user = buildUser();
+		when(userRepository.findById(USER_ID)).thenReturn(Optional.of(user));
+		when(userRepository.existsByUsername("newname")).thenReturn(false);
+		when(userRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+		User result = updateUsername("  New Name  ");
+
+		assertThat(result.getUsername()).isEqualTo("newname");
 	}
 
 	@Test
@@ -179,9 +221,8 @@ class UserServiceTest {
 		User user = buildUser();
 		when(userRepository.findById(USER_ID)).thenReturn(Optional.of(user));
 
-		assertThatThrownBy(() -> userService.update(USER_ID, true, "", false, null, false, null, false, null, false,
-				null, false, null, false, null, false, null, false, null, false, null, false, null, false, null, false,
-				null)).isInstanceOf(IllegalArgumentException.class).hasMessageContaining("Username cannot be empty");
+		assertThatThrownBy(() -> updateUsername("")).isInstanceOf(IllegalArgumentException.class)
+				.hasMessageContaining("Username cannot be empty");
 	}
 
 	@Test
@@ -190,8 +231,7 @@ class UserServiceTest {
 		when(userRepository.findById(USER_ID)).thenReturn(Optional.of(user));
 		when(userRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
 
-		User result = userService.update(USER_ID, false, null, true, "Петя", false, null, false, null, false, null,
-				false, null, false, null, false, null, false, null, false, null, false, null, false, null, false, null);
+		User result = updateName("Петя");
 
 		assertThat(result.getName()).isEqualTo("Петя");
 		assertThat(result.getUsername()).isEqualTo("ivan_petrov");
@@ -203,8 +243,7 @@ class UserServiceTest {
 		when(userRepository.findById(USER_ID)).thenReturn(Optional.of(user));
 		when(userRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
 
-		User result = userService.update(USER_ID, false, null, false, null, false, null, false, null, false, null,
-				false, null, false, null, true, 4, false, null, false, null, false, null, false, null, false, null);
+		User result = updateCourse(4);
 
 		assertThat(result.getCourse()).isEqualTo((short) 4);
 	}
@@ -214,9 +253,8 @@ class UserServiceTest {
 		User user = buildUser();
 		when(userRepository.findById(USER_ID)).thenReturn(Optional.of(user));
 
-		assertThatThrownBy(() -> userService.update(USER_ID, false, null, false, null, false, null, false, null, false,
-				null, false, null, false, null, true, 9, false, null, false, null, false, null, false, null, false,
-				null)).isInstanceOf(IllegalArgumentException.class).hasMessageContaining("Course must be in range");
+		assertThatThrownBy(() -> updateCourse(9)).isInstanceOf(IllegalArgumentException.class)
+				.hasMessageContaining("Course must be in range");
 	}
 
 	@Test
@@ -232,8 +270,7 @@ class UserServiceTest {
 		when(universityFacultyRepository.findById(77L)).thenReturn(Optional.of(faculty));
 		when(userRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
 
-		User result = userService.update(USER_ID, false, null, false, null, false, null, false, null, false, null,
-				false, null, true, 77L, false, null, false, null, false, null, false, null, false, null, false, null);
+		User result = updateFaculty(77L);
 
 		assertThat(result.getFaculty()).isEqualTo(faculty);
 	}
@@ -249,9 +286,8 @@ class UserServiceTest {
 		when(userRepository.findById(USER_ID)).thenReturn(Optional.of(user));
 		when(universityFacultyRepository.findById(88L)).thenReturn(Optional.of(foreignFaculty));
 
-		assertThatThrownBy(() -> userService.update(USER_ID, false, null, false, null, false, null, false, null, false,
-				null, false, null, true, 88L, false, null, false, null, false, null, false, null, false, null, false,
-				null)).isInstanceOf(IllegalArgumentException.class).hasMessageContaining("Faculty does not belong");
+		assertThatThrownBy(() -> updateFaculty(88L)).isInstanceOf(IllegalArgumentException.class)
+				.hasMessageContaining("Faculty does not belong");
 	}
 
 	@Test
@@ -269,8 +305,7 @@ class UserServiceTest {
 		when(universityProgramRepository.findById(501L)).thenReturn(Optional.of(program));
 		when(userRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
 
-		User result = userService.update(USER_ID, false, null, false, null, false, null, false, null, false, null,
-				false, null, false, null, false, null, false, null, false, null, false, null, false, null, true, 501L);
+		User result = updateProgram(501L);
 
 		assertThat(result.getProgram()).isEqualTo(program);
 	}
@@ -334,5 +369,69 @@ class UserServiceTest {
 
 		assertThatCode(() -> userService.unsubscribe(USER_ID, TARGET_ID)).doesNotThrowAnyException();
 		verify(subscriptionRepository, never()).deleteBySubscriberIdAndTargetUserId(any(), any());
+	}
+
+	@Test
+	void ban_user_permanently_clears_optional_profile_data_and_emits_cleanup_event() {
+		UUID moderatorId = UUID.fromString("11111111-1111-1111-1111-111111111111");
+		User moderator = buildUser();
+		moderator.setId(moderatorId);
+		moderator.setAdmin(true);
+
+		User target = buildUser();
+		target.setId(TARGET_ID);
+		target.setUsername("target_user");
+		target.setSurname("Surname");
+		target.setEmailUniversity("target@uni.edu");
+		target.setAvatarUrl("avatar.png");
+		target.setCoverUrl("cover.png");
+		target.setStatus("status");
+		target.setUniversity(buildUniversity(10L));
+		target.setFaculty(
+				UniversityFaculty.builder().id(11L).name("F").shortName("F").university(buildUniversity(10L)).build());
+		target.setProgram(UniversityProgram.builder().id(12L).name("P").shortName("P").university(buildUniversity(10L))
+				.faculty(target.getFaculty()).build());
+		target.setCourse((short) 3);
+		target.setEducationLevel(User.EducationLevel.BACHELOR);
+		target.setGraduationYear((short) 2030);
+		target.setBio("bio");
+
+		when(userRepository.findById(moderatorId)).thenReturn(Optional.of(moderator));
+		when(userRepository.findById(TARGET_ID)).thenReturn(Optional.of(target));
+		when(userRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+		userService.banUser(moderatorId, TARGET_ID, null, "Permanent ban");
+
+		assertThat(target.isBannedPermanent()).isTrue();
+		assertThat(target.getBannedUntil()).isNull();
+		assertThat(target.getUsername()).isNull();
+		assertThat(target.getSurname()).isNull();
+		assertThat(target.getEmailUniversity()).isNull();
+		assertThat(target.getAvatarUrl()).isNull();
+		assertThat(target.getCoverUrl()).isNull();
+		assertThat(target.getStatus()).isNull();
+		assertThat(target.getUniversity()).isNull();
+		assertThat(target.getFaculty()).isNull();
+		assertThat(target.getProgram()).isNull();
+		assertThat(target.getCourse()).isNull();
+		assertThat(target.getEducationLevel()).isNull();
+		assertThat(target.getGraduationYear()).isNull();
+		assertThat(target.getBio()).isNull();
+
+		verify(outboxService).enqueueUserEvent(eq("USER_PERMANENT_BANNED"), eq(TARGET_ID.toString()),
+				eq(TARGET_ID.toString()), any());
+		verify(userRepository).save(target);
+	}
+
+	@Test
+	void delete_account_removes_user_and_emits_delete_event() {
+		User user = buildUser();
+		when(userRepository.findById(USER_ID)).thenReturn(Optional.of(user));
+
+		userService.deleteAccount(USER_ID);
+
+		verify(outboxService).enqueueUserEvent(eq("USER_DELETED"), eq(USER_ID.toString()), eq(USER_ID.toString()),
+				any());
+		verify(userRepository).delete(user);
 	}
 }

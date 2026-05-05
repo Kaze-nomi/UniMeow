@@ -160,75 +160,30 @@ class FeedReadServiceTest {
 	}
 
 	@Test
-	void globalFeed_returns_all_posts_chronologically() {
-		when(repo.findFeedPostsWithScoresByCursor(isNull(), anyLong(), anyInt()))
-				.thenReturn(lm("newest", 3000.0, "middle", 2000.0, "oldest", 1000.0));
-
-		FeedPageResult r = service.getGlobalFeed(null, 20);
-
-		assertThat(r.postIds()).containsExactly("newest", "middle", "oldest");
-	}
-
-	@Test
-	void globalFeed_uses_global_feed_key() {
-		when(repo.findFeedPostsWithScoresByCursor(isNull(), anyLong(), anyInt())).thenReturn(Map.of());
-
-		service.getGlobalFeed(null, 20);
-
-		verify(repo).findFeedPostsWithScoresByCursor(isNull(), anyLong(), anyInt());
-		verify(repo, never()).findPopularPostsWithScoresByCursor(anyLong(), anyInt());
-	}
-
-	@Test
-	void globalFeed_hasMore_and_cursor_on_overflow() {
-		var posts = new LinkedHashMap<String, Double>();
-		for (int i = 0; i <= 20; i++)
-			posts.put("p" + i, (double) (9000 - i * 100));
-
-		when(repo.findFeedPostsWithScoresByCursor(isNull(), anyLong(), anyInt())).thenReturn(posts);
-
-		FeedPageResult r = service.getGlobalFeed(null, 20);
-
-		assertThat(r.hasMore()).isTrue();
-		assertThat(r.postIds()).hasSize(20);
-		assertThat(r.nextCursor()).isNotNull();
-	}
-
-	@Test
-	void globalFeed_empty_when_no_posts() {
-		when(repo.findFeedPostsWithScoresByCursor(isNull(), anyLong(), anyInt())).thenReturn(Map.of());
-
-		FeedPageResult r = service.getGlobalFeed(null, 20);
-
-		assertThat(r.postIds()).isEmpty();
-		assertThat(r.hasMore()).isFalse();
-	}
-
-	@Test
 	void caps_size_at_max_page_size() {
-		when(repo.findFeedPostsWithScoresByCursor(isNull(), anyLong(), anyInt())).thenReturn(Map.of());
+		when(repo.findPopularPostsWithScoresByCursor(anyLong(), anyInt())).thenReturn(Map.of());
 
-		service.getGlobalFeed(null, 500);
+		service.getTrendingFeed(null, 500);
 
-		verify(repo).findFeedPostsWithScoresByCursor(isNull(), anyLong(), intThat(n -> n <= 101));
+		verify(repo).findPopularPostsWithScoresByCursor(anyLong(), intThat(n -> n <= 101));
 	}
 
 	@Test
 	void uses_default_size_when_null() {
-		when(repo.findFeedPostsWithScoresByCursor(isNull(), anyLong(), anyInt())).thenReturn(Map.of());
+		when(repo.findPopularPostsWithScoresByCursor(anyLong(), anyInt())).thenReturn(Map.of());
 
-		service.getGlobalFeed(null, null);
+		service.getTrendingFeed(null, null);
 
-		verify(repo).findFeedPostsWithScoresByCursor(isNull(), anyLong(), eq(21));
+		verify(repo).findPopularPostsWithScoresByCursor(anyLong(), eq(21));
 	}
 
 	@Test
 	void uses_default_size_when_zero() {
-		when(repo.findFeedPostsWithScoresByCursor(isNull(), anyLong(), anyInt())).thenReturn(Map.of());
+		when(repo.findPopularPostsWithScoresByCursor(anyLong(), anyInt())).thenReturn(Map.of());
 
-		service.getGlobalFeed(null, 0);
+		service.getTrendingFeed(null, 0);
 
-		verify(repo).findFeedPostsWithScoresByCursor(isNull(), anyLong(), eq(21));
+		verify(repo).findPopularPostsWithScoresByCursor(anyLong(), eq(21));
 	}
 
 	@Test
@@ -250,33 +205,30 @@ class FeedReadServiceTest {
 	}
 
 	@Test
-	void globalFeed_uses_university_scope_when_provided() {
-		when(repo.findUniversityFeedPostsWithScoresByCursor(eq(7L), anyLong(), anyInt())).thenReturn(Map.of());
-
-		service.getGlobalFeed(null, 20, 7L, null);
-
-		verify(repo).findUniversityFeedPostsWithScoresByCursor(eq(7L), anyLong(), anyInt());
-		verify(repo, never()).findFeedPostsWithScoresByCursor(any(), anyLong(), anyInt());
-	}
-
-	@Test
-	void globalFeed_uses_topic_scope_when_university_and_topic_provided() {
-		when(repo.findUniversityTopicPostsWithScoresByCursor(eq(7L), eq(3L), anyLong(), anyInt())).thenReturn(Map.of());
-
-		service.getGlobalFeed(null, 20, 7L, 3L);
-
-		verify(repo).findUniversityTopicPostsWithScoresByCursor(eq(7L), eq(3L), anyLong(), anyInt());
-	}
-
-	@Test
-	void trendingFeed_uses_university_topic_popular_scope() {
-		when(repo.findUniversityTopicPopularPostsWithScoresByCursor(eq(7L), eq(3L), anyLong(), anyInt()))
+	void trendingFeed_uses_university_program_popular_scope() {
+		when(repo.findUniversityProgramPopularPostsWithScoresByCursor(eq(7L), eq(3L), anyLong(), anyInt()))
 				.thenReturn(Map.of());
 
 		service.getTrendingFeed(null, 20, 7L, 3L);
 
-		verify(repo).findUniversityTopicPopularPostsWithScoresByCursor(eq(7L), eq(3L), anyLong(), anyInt());
+		verify(repo).findUniversityProgramPopularPostsWithScoresByCursor(eq(7L), eq(3L), anyLong(), anyInt());
 		verify(repo, never()).findPopularPostsWithScoresByCursor(anyLong(), anyInt());
+	}
+
+	@Test
+	void getFeed_uses_outside_popular_scope_when_no_university_topic_requested() {
+		when(repo.findOutsidePopularPostsWithScoresByCursor(anyLong(), anyInt())).thenReturn(Map.of());
+
+		service.getFeed("TRENDING", null, 0, 20, 0, 0, 0, -1);
+
+		verify(repo).findOutsidePopularPostsWithScoresByCursor(eq(Long.MAX_VALUE), anyInt());
+		verify(repo, never()).findPopularPostsWithScoresByCursor(anyLong(), anyInt());
+	}
+
+	@Test
+	void getFeed_rejects_unsupported_feed_type() {
+		assertThatThrownBy(() -> service.getFeed("UNKNOWN", null, 0, 20, 0, 0, 0, 0))
+				.isInstanceOf(IllegalArgumentException.class).hasMessageContaining("Unsupported feed type");
 	}
 
 	@Test
@@ -291,13 +243,13 @@ class FeedReadServiceTest {
 	}
 
 	@Test
-	void followingFeed_uses_intersection_for_university_topic_scope() {
-		when(repo.findFollowingInUniversityTopicWithScoresByCursor(eq("u1"), eq(7L), eq(3L), anyLong(), anyInt(),
+	void followingFeed_uses_intersection_for_university_program_scope() {
+		when(repo.findFollowingInUniversityProgramWithScoresByCursor(eq("u1"), eq(7L), eq(3L), anyLong(), anyInt(),
 				any())).thenReturn(Map.of());
 
 		service.getFollowingFeed("u1", null, 20, 7L, 3L);
 
-		verify(repo).findFollowingInUniversityTopicWithScoresByCursor(eq("u1"), eq(7L), eq(3L), anyLong(), anyInt(),
+		verify(repo).findFollowingInUniversityProgramWithScoresByCursor(eq("u1"), eq(7L), eq(3L), anyLong(), anyInt(),
 				any());
 	}
 

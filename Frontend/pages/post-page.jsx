@@ -17,6 +17,8 @@ function PostPage({ postId, currentUser, onNavigate }) {
   const [editLoading, setEditLoading] = React.useState(false);
   const [deleteModal, setDeleteModal] = React.useState(false);
   const [deleteLoading, setDeleteLoading] = React.useState(false);
+  const [copied, setCopied] = React.useState(false);
+  const [lightboxIdx, setLightboxIdx] = React.useState(null);
 
   React.useEffect(() => {
     setLoading(true);
@@ -81,6 +83,13 @@ function PostPage({ postId, currentUser, onNavigate }) {
     } catch {} finally { setEditLoading(false); }
   };
 
+  const handleShare = async () => {
+    const url = window.location.origin + '/post/' + postId;
+    try { await navigator.clipboard.writeText(url); } catch { return; }
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
   const timeAgo = useTimeAgo(post?.createdAt);
   const displayName = author ? ((author.name && author.surname) ? `${author.name} ${author.surname}` : author.username) : '...';
   const isMyPost = currentUser && post && currentUser.id === post.authorId;
@@ -105,17 +114,17 @@ function PostPage({ postId, currentUser, onNavigate }) {
 
       <div style={{ background: 'var(--bg)', borderBottom: '1px solid var(--border)', padding: '16px 16px 14px' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 14 }}>
-          <div onClick={() => author && onNavigate('/profile/' + author.id)} style={{ cursor: 'pointer' }}>
+          <div onClick={() => author && onNavigate(API.profileUrl(author))} style={{ cursor: 'pointer' }}>
             <Avatar user={author} size={42} />
           </div>
           <div style={{ flex: 1 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-              <span onClick={() => author && onNavigate('/profile/' + author.id)} style={{ fontWeight: 700, fontSize: 15, cursor: 'pointer' }}>{displayName}</span>
+              <span onClick={() => author && onNavigate(API.profileUrl(author))} style={{ fontWeight: 700, fontSize: 15, cursor: 'pointer' }}>{displayName}</span>
               {author?.isStudentVerified && <CheckIcon size={13} color="var(--accent)" />}
             </div>
             <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
               @{author?.username} · {timeAgo}
-              {author?.university?.name && ` · ${author.university.name}`}
+              {post.universityId && author?.university?.name && String(author.university.id) === String(post.universityId) && ` · ${author.university.name}`}
             </div>
           </div>
           {canDeletePost && (
@@ -129,17 +138,37 @@ function PostPage({ postId, currentUser, onNavigate }) {
         <p style={{ margin: '0 0 16px', fontSize: 22, lineHeight: 1.45, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{post.content}</p>
 
         {post.mediaUrls?.length > 0 && (
-          <div style={{ display: 'grid', gridTemplateColumns: post.mediaUrls.length === 1 ? '1fr' : 'repeat(2,1fr)', gap: 2, borderRadius: 14, overflow: 'hidden', marginBottom: 16, border: '1px solid var(--border)' }}>
-            {post.mediaUrls.map((url, i) => <img key={i} src={url} alt="" style={{ width: '100%', aspectRatio: post.mediaUrls.length === 1 ? '16/9' : '1', objectFit: 'cover' }} />)}
-          </div>
+          (() => {
+            const urls = post.mediaUrls;
+            const count = urls.length;
+            const odd = count % 2 === 1 && count > 1;
+            const columns = count === 1 ? '1fr' : 'repeat(2,1fr)';
+            return (
+              <div style={{ display: 'grid', gridTemplateColumns: columns, gap: 2, borderRadius: 14, overflow: 'hidden', marginBottom: 16, border: '1px solid var(--border)' }}>
+                {urls.map((url, i) => {
+                  const isFirst = i === 0;
+                  const style = { width: '100%', objectFit: 'cover', display: 'block', cursor: 'zoom-in' };
+                  if (count === 1) style.aspectRatio = '16/9';
+                  else if (odd && isFirst) { style.gridColumn = '1 / -1'; style.aspectRatio = '16/9'; }
+                  else style.aspectRatio = '1';
+                  return <img key={i} src={url} alt="" onClick={() => setLightboxIdx(i)} style={style} />;
+                })}
+              </div>
+            );
+          })()
         )}
 
-        <div style={{ display: 'flex', gap: 20, paddingTop: 8, borderTop: '1px solid var(--border)' }}>
-          <ActionBtn onClick={handleLike} active={liked} loading={liking}
+        <div className="um-action-bar" style={{ display: 'flex', justifyContent: 'space-between', maxWidth: 420, marginTop: 8, marginLeft: -8, paddingTop: 8 }}>
+          <ActionBtn className="um-reply-btn"
+            icon={<CommentIcon size={18} color="var(--text-muted)" />}
+            label={comments.length} />
+          <ActionBtn onClick={handleLike} active={liked}
             className={`um-like-btn ${likePulse ? 'um-likebtn-active' : ''}`}
-            icon={<HeartIcon size={18} color={liked ? 'oklch(0.6 0.22 15)' : 'var(--text-muted)'} filled={liked} />}
-            label={likes} activeColor="oklch(0.6 0.22 15)" />
-          <ActionBtn icon={<CommentIcon size={18} color="var(--text-muted)" />} label={comments.length} />
+            icon={<HeartIcon size={18} color={liked ? 'var(--like)' : 'var(--text-muted)'} filled={liked} />}
+            label={likes} activeColor="var(--like)" />
+          <ActionBtn className="um-icon-btn" onClick={handleShare}
+            icon={<ShareIcon size={18} color="var(--text-muted)" />}
+            label="" />
         </div>
       </div>
 
@@ -155,22 +184,26 @@ function PostPage({ postId, currentUser, onNavigate }) {
                   <button onClick={() => setReplyTo(null)} style={{ background: 'none', border: 'none', color: 'var(--accent)', cursor: 'pointer', fontFamily: 'inherit', fontSize: 13 }}>Сбросить</button>
                 </div>
               )}
-              <textarea value={commentText} onChange={e => { setCommentText(e.target.value); const t = e.target; t.style.height = 'auto'; t.style.height = Math.max(72, t.scrollHeight) + 'px'; }}
-                placeholder={replyTo ? 'Написать ответ...' : 'Написать комментарий...'}
-                style={{ width: '100%', minHeight: 72, padding: '8px 12px', borderRadius: 16, border: '1.5px solid var(--border)', background: 'var(--bg)', color: 'var(--text)', fontFamily: 'inherit', fontSize: 14, resize: 'none', outline: 'none', boxSizing: 'border-box', overflow: 'hidden' }}
-              />
+                  <textarea value={commentText} onChange={e => { setCommentText(e.target.value.slice(0, 500)); const t = e.target; t.style.height = 'auto'; t.style.height = Math.max(72, t.scrollHeight) + 'px'; }}
+                    placeholder={replyTo ? 'Написать ответ...' : 'Написать комментарий...'}
+                    maxLength={500}
+                    style={{ width: '100%', minHeight: 72, padding: '8px 12px', borderRadius: 16, border: '1.5px solid var(--border)', background: 'var(--bg)', color: 'var(--text)', fontFamily: 'inherit', fontSize: 14, resize: 'none', outline: 'none', boxSizing: 'border-box', overflow: 'hidden' }}
+                  />
               <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
-                <Button size="sm" onClick={handleComment} loading={commenting} disabled={!commentText.trim()}>Отправить</Button>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                      <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>{commentText.length}/500</div>
+                      <Button size="sm" onClick={handleComment} loading={commenting} disabled={!commentText.trim() || commentText.length > 500}>Отправить</Button>
+                    </div>
               </div>
             </div>
           </div>
         </div>
       ) : (
         <div style={{ textAlign: 'center', padding: '16px', background: 'var(--bg)', borderBottom: '1px solid var(--border)' }}>
-          <span style={{ color: 'var(--text-muted)', fontSize: 14 }}>
-            <span onClick={() => onNavigate('/login')} style={{ color: 'var(--accent)', cursor: 'pointer', fontWeight: 600 }}>Войдите</span>, чтобы комментировать
-          </span>
-        </div>
+            <span style={{ color: 'var(--text-muted)', fontSize: 14 }}>
+              <span onClick={() => onNavigate('/login')} style={{ color: 'var(--accent)', cursor: 'pointer', fontWeight: 600 }}>Войдите</span>, чтобы комментировать
+            </span>
+          </div>
       )}
 
 
@@ -219,6 +252,13 @@ function PostPage({ postId, currentUser, onNavigate }) {
           </div>
         </div>
       </Modal>
+      {copied && ReactDOM.createPortal(
+        <div style={{ position: 'fixed', bottom: 88, left: '50%', transform: 'translateX(-50%)', background: 'var(--text)', color: 'var(--bg)', padding: '8px 20px', borderRadius: 9999, fontSize: 13, fontWeight: 600, zIndex: 2000, animation: 'fadein 0.15s ease', boxShadow: '0 4px 16px rgba(0,0,0,0.22)', pointerEvents: 'none', whiteSpace: 'nowrap' }}>Ссылка скопирована</div>,
+        document.body
+      )}
+      {lightboxIdx !== null && post.mediaUrls?.length > 0 && (
+        (window.ImageLightbox ? React.createElement(window.ImageLightbox, { urls: post.mediaUrls, startIndex: lightboxIdx, onClose: () => setLightboxIdx(null) }) : null)
+      )}
     </div>
   );
 }
@@ -281,12 +321,12 @@ function CommentItem({ comment, currentUser, onNavigate, onDelete, onUpdate, onR
   return (
     <div className="um-feed-row" style={{ background: 'var(--bg)', borderBottom: '1px solid var(--border)', padding: nested ? '12px 16px 12px 58px' : '14px 16px' }}>
       <div style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}>
-        <div onClick={() => author && onNavigate('/profile/' + author.id)} style={{ cursor: 'pointer' }}>
+        <div onClick={() => author && onNavigate(API.profileUrl(author))} style={{ cursor: 'pointer' }}>
           <Avatar user={author} size={34} />
         </div>
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4, flexWrap: 'wrap' }}>
-            <span onClick={() => author && onNavigate('/profile/' + author.id)} style={{ fontWeight: 700, fontSize: 13, cursor: 'pointer' }}>
+            <span onClick={() => author && onNavigate(API.profileUrl(author))} style={{ fontWeight: 700, fontSize: 13, cursor: 'pointer' }}>
               {author ? (author.name && author.surname ? `${author.name} ${author.surname}` : author.name || author.username) : '...'}
             </span>
             {author?.username && <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>@{author.username}</span>}
@@ -300,18 +340,19 @@ function CommentItem({ comment, currentUser, onNavigate, onDelete, onUpdate, onR
           </div>
           {editing ? (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-              <textarea value={editText} onChange={e => setEditText(e.target.value)}
-                style={{ width: '100%', padding: '6px 10px', borderRadius: 8, border: '1.5px solid var(--border)', background: 'var(--bg)', color: 'var(--text)', fontFamily: 'inherit', fontSize: 13, resize: 'vertical', outline: 'none', boxSizing: 'border-box' }} rows={3} />
+              <textarea value={editText} onChange={e => setEditText(e.target.value.slice(0, 500))}
+                maxLength={500}
+                style={{ width: '100%', padding: '6px 10px', borderRadius: 8, border: '1.5px solid var(--border)', background: 'var(--bg)', color: 'var(--text)', fontFamily: 'inherit', fontSize: 13, resize: 'vertical', outline: 'none', boxSizing: 'border-box', wordBreak: 'break-word', overflowWrap: 'anywhere' }} rows={3} />
               <div style={{ display: 'flex', gap: 6 }}>
                 <Button size="sm" onClick={handleEdit} loading={loading}>Сохранить</Button>
                 <Button size="sm" variant="secondary" onClick={() => setEditing(false)}>Отмена</Button>
               </div>
             </div>
           ) : (
-            <p style={{ margin: '0 0 6px', fontSize: 14, lineHeight: 1.6, whiteSpace: 'pre-wrap' }}>{comment.content}</p>
+            <p style={{ margin: '0 0 6px', fontSize: 14, lineHeight: 1.6, whiteSpace: 'pre-wrap', wordBreak: 'break-word', overflowWrap: 'break-word' }}>{comment.content}</p>
           )}
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 2, marginLeft: -8 }}>
-            <ActionBtn onClick={handleLike} active={liked} loading={liking}
+            <ActionBtn onClick={handleLike} active={liked}
               className={`um-like-btn ${likePulse ? 'um-likebtn-active' : ''}`}
               icon={<HeartIcon size={14} color={liked ? 'oklch(0.6 0.22 15)' : 'var(--text-muted)'} filled={liked} />}
               label={likes} activeColor="oklch(0.6 0.22 15)" />

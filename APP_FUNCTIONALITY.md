@@ -1,12 +1,12 @@
 # UniMeow: функционал приложения
 
-Документ описывает фактический функционал приложения по текущему коду: GraphQL schema, gateway-контроллеры, gRPC-контракты, feed-сервис, тестовый frontend и docker-compose окружение.
+Краткое описание ключевых возможностей UniMeow: GraphQL API, gateway, gRPC-контракты, сервисы, frontend и docker-compose окружение.
 
 ---
 
 ## 1. Назначение
 
-UniMeow — университетская социальная сеть с пользователями, университетской верификацией, постами, комментариями, лайками, подписками, административными заявками и несколькими типами ленты.
+UniMeow — университетская социальная сеть с пользователями, университетской верификацией, постами, комментариями, лайками, подписками, уведомлениями, административными заявками и несколькими типами ленты.
 
 ### Внешние точки входа
 
@@ -25,7 +25,8 @@ UniMeow — университетская социальная сеть с по
 | `APIGateway` | GraphQL/REST API, OAuth2, JWT cookie auth, агрегация gRPC |
 | `UserService` | Пользователи, сессии, refresh tokens, university email-верификация, подписки, университеты/факультеты/программы, администрирование |
 | `PostService` | Посты, комментарии, лайки, CRUD и события для ленты |
-| `FeedService` | Redis-backed ленты: global, trending, following, scoped university/faculty/program feeds |
+| `FeedService` | Redis-backed ленты: trending, following, scoped university/faculty/program feeds и лента «Без вуза» |
+| `NotificationService` | Pull-based уведомления: хранит события (лайки, комментарии, упоминания, подписки, модерация), gRPC API для APIGateway |
 | `MediaService` | MinIO-backed медиа: upload, delete, presigned upload URL |
 | `Eureka` | Service discovery |
 
@@ -65,18 +66,33 @@ UniMeow — университетская социальная сеть с по
 
 - `POST /api/auth/refresh` — обновляет access/refresh tokens по cookie `REFRESH_TOKEN`.
 - `POST /api/auth/logout` — отзывает refresh token, очищает `ACCESS_TOKEN` и `REFRESH_TOKEN`.
-- `POST /graphql` доступен без HTTP auth; конкретные resolver'ы сами проверяют авторизацию.
+- `POST /graphql` доступен без HTTP auth; gateway добавляет `userId` в GraphQL context при наличии валидной cookie. Авторизация resolver'ов и централизованное ограничение незавершенной регистрации выполняются на уровне GraphQL gateway.
+
+### Конфигурация безопасности (env)
+
+- `app.security.secure-cookie` (`APP_SECURITY_SECURE_COOKIE`, default `false`) — выставляет `Secure` флаг на cookies `ACCESS_TOKEN` и `REFRESH_TOKEN`. В production-развёртывании с HTTPS значение должно быть `true`, чтобы cookies передавались только по защищённому соединению.
+- `app.security.allowed-origins` (`APP_SECURITY_ALLOWED_ORIGINS`, default `http://localhost:*,null`) — список разрешённых CORS origin'ов через запятую. В production указывается реальный домен фронтенда, например `https://unimeow.ru,https://*.unimeow.ru`.
+- `app.security.oauth2-success-redirect` (`APP_SECURITY_OAUTH2_SUCCESS_REDIRECT`, default `http://localhost:5173/`) — URL, на который gateway редиректит браузер после успешной авторизации Google OAuth2. В production указывается публичный URL фронтенда, например `https://unimeow.ru/`.
+- `VITE_API_BASE` (build-time, default `http://localhost:8080`) — базовый URL API Gateway, в который встраивается frontend на этапе сборки Vite. Используется в `Frontend/api.js` для всех HTTP-вызовов (`/graphql`, `/api/upload`, `/api/auth/*`, `/oauth2/authorization/google`). В production указывается публичный URL gateway, например `https://api.unimeow.ru` или `https://unimeow.ru` если gateway за тем же доменом.
 
 ### Матрица доступа
 
 **Публичные операции (без авторизации):**
-`trendingFeed`, `getPost`, `getUser`, `getUserByUsername`, `getUserPosts`, `getComments`
+`trendingFeed`, `getPost`, `getUser`, `getUserByUsername`, `getUserPosts`, `getComments`, `listUniversities`, `listFaculties`, `listPrograms`, `followingFeed` (только при наличии `universityId` — хронологическая лента ВУЗа)
 
 **Требуют авторизации:**
-`me`, `updateProfile`, `sendVerificationCode`, `verifyEmailCode`, `subscribe`, `unsubscribe`, `followingFeed`, `createPost`, `editPost`, `deletePost`, `likePost`, `unlikePost`, `addComment`, `editComment`, `deleteComment`, `likeComment`, `unlikeComment`, `createImprovementSuggestion`, `createUniversityProposal`, `createFacultyProposal`
+`me`, `updateProfile`, `sendVerificationCode`, `verifyEmailCode`, `subscribe`, `unsubscribe`, `followingFeed` (без `universityId` — персональная лента подписок), `createPost`, `editPost`, `deletePost`, `likePost`, `unlikePost`, `addComment`, `editComment`, `deleteComment`, `likeComment`, `unlikeComment`, `createImprovementSuggestion`, `createUniversityProposal`, `createFacultyProposal`, `createProgramProposal`, `deleteAccount`, `getNotifications`, `getUnreadNotificationCount`, `markAllNotificationsRead`
+
+**Требуют завершенной регистрации (`username`):**
+все GraphQL mutations, кроме `updateProfile` и `deleteAccount`. До появления `username` gateway централизованно отклоняет такие mutations.
+
+`updateProfile`, `me` и `deleteAccount` доступны авторизованному пользователю до завершения регистрации. Это позволяет странице `/complete-registration` сохранить username и позволяет удалить незавершенный аккаунт. Queries остаются доступными согласно обычным требованиям авторизации.
 
 **Требуют прав администратора:**
-`adminImprovementSuggestions`, `adminUniversityProposals`, `adminFacultyProposals`, `adminProgramProposals`, `adminReviewUniversityProposal`, `adminReviewFacultyProposal`, `adminReviewProgramProposal`, `adminCreateFaculty`, `adminGrantAdmin`, `adminBanUser`, `adminDeletePost`, `adminDeleteComment`, `adminDeleteSuggestion`
+`adminImprovementSuggestions`, `adminUniversityProposals`, `adminFacultyProposals`, `adminProgramProposals`, `adminReviewUniversityProposal`, `adminReviewFacultyProposal`, `adminReviewProgramProposal`, `adminBanUser`, `adminDeletePost`, `adminDeleteComment`, `adminDeleteSuggestion`
+
+**Доступно только пользователю с username `kazenomi`:**
+`adminGrantAdmin`
 
 ---
 
@@ -85,8 +101,8 @@ UniMeow — университетская социальная сеть с по
 ### GraphQL queries
 
 - `me: User` — текущий пользователь по auth cookie.
-- `getUser(id: ID!): User` — профиль по UUID.
-- `getUserByUsername(username: String!): User` — профиль по username.
+- `getUser(id: ID!): User` — профиль по UUID; UUID-ссылки поддерживаются для обратной совместимости.
+- `getUserByUsername(username: String!): User` — профиль по username; используется при загрузке `/profile/{username}`.
 - `listUniversities: [University!]!` — список университетов для onboarding/фильтров/профиля.
 - `listFaculties(universityId: ID!): [Faculty!]!` — факультеты университета.
 - `listPrograms(facultyId: ID!): [Program!]!` — образовательные программы факультета.
@@ -99,16 +115,19 @@ UniMeow — университетская социальная сеть с по
 - `subscribe(targetUserId: ID!): SubscribeResult`
 - `unsubscribe(targetUserId: ID!): SubscribeResult`
 - `createProgramProposal(input: ProgramProposalInput!): AdminActionResult!`
+- `deleteAccount: DeleteResult!` — удаляет аккаунт текущего пользователя; доступно в настройках профиля. При удалении из PostService удаляются все посты и комментарии пользователя (включая ответы на эти комментарии и ответы на ответы — рекурсивно), все его лайки на чужих постах и комментариях с пересчётом денормализованных счётчиков `likesCount`/`commentsCount`. FeedService очищает подписки и Redis-следы пользователя.
 
 ### Поля профиля
 
-**Базовые:** `id`, `emailGoogle`, `username`, `name`, `surname`, `patronymic`, `avatarUrl`, `status`, `bio`, `createdAt`
+**Базовые:** `id`, `emailGoogle`, `username`, `name`, `surname`, `avatarUrl`, `status`, `bio`, `createdAt`
 
 **Университетские:** `emailUniversity`, `university`, `faculty`, `program`, `course`, `educationLevel`, `graduationYear`
 
 **Верификация:** `isStudentVerified`, `isEmployeeVerified`
 
-**Обновляемые через `updateProfile`:** `username`, `name`, `surname`, `patronymic`, `status`, `avatarUrl`, `coverUrl`, `bio`, `facultyId`, `programId`, `course`, `educationLevel` (`BACHELOR`/`MASTER`/`PHD`/`SPECIALIST`), `graduationYear`
+**Обновляемые через `updateProfile`:** `username`, `name`, `surname`, `status`, `avatarUrl`, `coverUrl`, `bio`, `facultyId`, `programId`, `course`, `educationLevel` (`BACHELOR`/`MASTER`/`PHD`/`SPECIALIST`), `graduationYear`
+
+Username нормализуется при сохранении: приводится к нижнему регистру и пробелы удаляются (`strip().toLowerCase().replaceAll("\\s+", "")`). Проверка на уникальность выполняется после нормализации.
 
 ### Типы
 
@@ -121,8 +140,8 @@ UniMeow — университетская социальная сеть с по
 ### Email-верификация
 
 1. Пользователь вводит университетский email и запрашивает код.
-2. `UserService` отправляет код; пользователь вводит его — backend выставляет `isStudentVerified`/`isEmployeeVerified` согласно домену.
-3. После подтверждения frontend предлагает выбрать факультет и программу; если нужной программы нет — пользователь отправляет заявку через `createProgramProposal`; завершением сохраняется `facultyId` + `programId` через `updateProfile`.
+2. `UserService` отправляет код; пользователь вводит его — backend выставляет `isStudentVerified`/`isEmployeeVerified` и автоматически привязывает пользователя к ВУЗу по `universityDomain`.
+3. После подтверждения frontend предлагает выбрать факультет и программу уже внутри определённого ВУЗа; если нужной программы нет — пользователь отправляет заявку через `createProgramProposal`; завершением сохраняется `facultyId` + `programId` через `updateProfile`.
 
 ### Подписки
 
@@ -149,7 +168,7 @@ UniMeow — университетская социальная сеть с по
 
 ### Типы
 
-**`CreatePostInput`:** `content: String!`, `mediaUrls: [String!]`, `topicId: ID` (legacy/compatibility, игнорируется backend'ом)
+**`CreatePostInput`:** `content: String!`, `mediaUrls: [String!]`, `topicId: ID`; scope создаваемого поста определяется профилем автора в `UserService`
 
 **`EditPostInput`:** `content: String`, `updateMediaUrls: Boolean`, `mediaUrls: [String!]`
 
@@ -158,10 +177,17 @@ UniMeow — университетская социальная сеть с по
 ### Поведение
 
 - Создание, редактирование, удаление и лайки требуют авторизации.
+- Создание, редактирование, удаление, лайки и комментарии требуют завершенной регистрации (`username`).
 - `likedByMe` считается относительно текущего пользователя, если он авторизован.
 - Посты создаются только через главную ленту; university ленты — read-only проекции.
-- Backend определяет `universityId`/`facultyId`/`programId` из профиля автора; клиент ничего не указывает.
-- Если у автора нет университета, создается глобальный пост без university scope.
+- APIGateway определяет `universityId`/`facultyId`/`programId` из профиля автора в `UserService` и передаёт в PostService; клиент ничего не указывает.
+- Scope поста строится по самому нижнему доступному уровню профиля автора:
+  - есть программа: пост попадает в программу, факультет и ВУЗ;
+  - есть факультет, но нет программы: пост попадает в факультет и ВУЗ;
+  - есть только ВУЗ: пост попадает только в ВУЗ;
+  - нет ВУЗа: пост попадает в ленту «Без вуза».
+- Лента факультета («Факультет → Все программы») показывает все посты с этим `facultyId`, включая посты авторов без программы и посты авторов с любой программой данного факультета. Появление у автора программы не убирает его прежние посты из ленты факультета.
+- Лента конкретной программы показывает только посты, созданные с указанием `programId` этой программы.
 - Принадлежность автора к университету, факультету и программе показывается в карточке автора.
 
 ---
@@ -196,8 +222,8 @@ UniMeow — университетская социальная сеть с по
 
 ### GraphQL queries
 
-- `trendingFeed(cursor: String, size: Int, universityId: ID, facultyId: ID, programId: ID): FeedPage`
-- `followingFeed(cursor: String, size: Int, universityId: ID, facultyId: ID, programId: ID): FeedPage`
+- `trendingFeed(cursor: String, size: Int, universityId: ID, facultyId: ID, programId: ID, topicId: ID): FeedPage`
+- `followingFeed(cursor: String, size: Int, universityId: ID, facultyId: ID, programId: ID, topicId: ID): FeedPage`
 
 ### Тип `FeedPage`
 
@@ -225,34 +251,41 @@ score = createdAtMs + likesCount × trendingLikeBoostMs
 - Пост B: создан только что, 0 лайков → score = now + 0h
 - Пост A выше Поста B — пока не появится пост с 28 лайками той же свежести.
 
-Score обновляется при каждом лайке/анлайке. Redis key: `feed:popular` (глобальная), `feed:uni:{id}:popular`, `feed:uni:{id}:topic:{id}:popular`. Окно: последние 5000 постов (`app.feed.trending-window-size`).
+Score обновляется при каждом лайке/анлайке. Redis key: `feed:popular` (общая внутренняя), `feed:outside:popular` (без вуза), `feed:uni:{id}:popular`, `feed:uni:{id}:topic:{id}:popular`. Окно: последние 5000 постов (`app.feed.trending-window-size`).
 
 ---
 
-### `followingFeed` — вкладка «Подписки»
+### `followingFeed` — вкладка «Подписки» и ленты университетов
 
-Персональная хронологическая лента из постов авторов, на которых подписан пользователь. Требует авторизации. Доступна только в главной ленте.
+Хронологическая лента. Доступна в двух режимах:
 
-**Алгоритм:**
+**Режим «Подписки» (главная лента):** персональная лента из постов авторов, на которых подписан пользователь. Требует авторизации.
 - Score = `occurredAt` в мс. Порядок: новые выше.
 - При подписке: последние 100 постов автора backfill-ятся в ленту подписчика.
 - При отписке: последние 500 постов автора удаляются из ленты подписчика.
 - Новый пост автора добавляется всем его подписчикам.
+- Redis key: `feed:user:{userId}`. При фильтре по ВУЗу: временное пересечение `ZINTERSTORE(feed:user:{id}, feed:uni:{uniId})` с TTL 60 с.
 
-Redis key: `feed:user:{userId}`. При фильтре по ВУЗу: временное пересечение `ZINTERSTORE(feed:user:{id}, feed:uni:{uniId})` с TTL 60 с.
+**Режим «Лента ВУЗа»:** публичная лента всех постов университета, отсортированных по trending score. Авторизация не требуется. Лента доступна всем посетителям без фильтрации по подпискам.
+
+GraphQL-запросы ленты: `trendingFeed` (рекомендации с time-decay; главная лента и ВУЗ-ленты), `followingFeed` (персональная лента подписок — только главная).
+
 
 ---
 
 ### Скоупы
 
-| Параметры запроса | Читается из Redis |
-|---|---|
-| нет universityId | `feed:popular` / `feed:user:{id}` |
-| universityId | `feed:uni:{id}` / `feed:uni:{id}:popular` |
-| universityId + facultyId | `feed:uni:{id}:topic:{facId}` / `...:popular` |
-| universityId + programId | `feed:uni:{id}:subtopic:{progId}` / `...:popular` |
+| Параметры запроса | Запрос | Читается из Redis |
+|---|---|---|
+| нет universityId | `trendingFeed` | `feed:popular` |
+| нет universityId | `followingFeed` | `feed:user:{id}` |
+| `topicId = "-1"` без universityId | `trendingFeed` | `feed:outside:popular` |
+| universityId | `trendingFeed` | `feed:uni:{id}:popular` |
+| universityId + facultyId | `trendingFeed` | `feed:uni:{id}:topic:{facId}:popular` |
+| universityId + programId | `trendingFeed` | `feed:uni:{id}:subtopic:{progId}:popular` |
 
-ВУЗ-скоупы read-only: inline-compose скрыт, вкладка «Подписки» не показывается.
+ВУЗ-скоупы read-only: inline-compose скрыт, вкладки «Рекомендации»/«Подписки» не показываются — лента университета всегда хронологическая.
+Контекст «Без вуза» использует отдельный backend scope и не фильтрует общую ленту на клиенте.
 
 ### Пагинация
 
@@ -266,10 +299,12 @@ Redis key: `feed:user:{userId}`. При фильтре по ВУЗу: време
 
 | Событие | Когда |
 |---|---|
-| `POST_CREATED` | Пост создан |
+| `POST_CREATED` | Пост создан (включает `mentionedUserIds`) |
 | `POST_DELETED` | Пост удалён |
-| `POST_LIKED` | Лайк поставлен |
+| `POST_LIKED` | Лайк поставлен (включает `actorId`, `authorId`) |
 | `POST_UNLIKED` | Лайк снят |
+| `COMMENT_CREATED` | Добавлен комментарий (включает `postAuthorId`, `parentCommentId`, `parentAuthorId`, `mentionedUserIds`) |
+| `COMMENT_LIKED` | Лайк на комментарий (включает `commentAuthorId`, `actorId`, `postId`) |
 
 **UserService** публикует в Kafka топик `user-events` через outbox:
 
@@ -277,14 +312,19 @@ Redis key: `feed:user:{userId}`. При фильтре по ВУЗу: време
 |---|---|
 | `USER_FOLLOWED` | Пользователь подписался |
 | `USER_UNFOLLOWED` | Пользователь отписался |
+| `USER_DELETED` | Аккаунт удалён, нужно очистить внешние следы |
+| `USER_PERMANENT_BANNED` | Пользователь забанен навсегда, нужно очистить внешний контент |
+| `ADMIN_GRANTED` | Пользователю выданы права администратора |
+| `USER_BANNED` | Пользователь заблокирован |
 
 **FeedService** (`FeedKafkaConsumer` → `FeedEventService`) слушает оба топика и обновляет Redis sorted sets:
 
-- `POST_CREATED` — добавляет пост в global feed, university/faculty/program feeds, author feed, trending feed, и во все personal feeds подписчиков автора.
+- `POST_CREATED` — добавляет пост в university/faculty/program feeds или «Без вуза», author feed, trending feed и во все personal feeds подписчиков автора.
 - `POST_DELETED` — удаляет пост из всех feeds.
 - `POST_LIKED` / `POST_UNLIKED` — пересчитывает trending score поста.
 - `USER_FOLLOWED` — backfill последних 100 постов автора в personal feed подписчика.
 - `USER_UNFOLLOWED` — удаляет последние 500 постов автора из personal feed подписчика.
+- `USER_DELETED` — убирает подписки, связанные с аккаунтом, и чистит Redis-следы пользователя.
 
 Дедупликация: каждый Kafka-event помечается в Redis на 7 дней (`feed:processed:event:{eventId}`).
 
@@ -365,9 +405,89 @@ mutation {
 
 Пост появляется в: university feed автора, following feed подписчиков автора, и учитывается в `trendingFeed` после лайков.
 
+### Пользователь без ВУЗа
+
+```graphql
+query {
+  trendingFeed(topicId: "-1", size: 10) {
+    posts { id content universityId }
+  }
+}
+```
+
+Посты авторов без `universityId` читаются из отдельной ленты «Без вуза».
+
 ---
 
-## 9. Медиа
+## 9. Уведомления
+
+Уведомления реализованы по pull-модели: клиент запрашивает список при каждой навигации.
+
+### GraphQL queries
+
+- `getNotifications(page: Int, size: Int): NotificationPage!` — список уведомлений текущего пользователя, отсортированных по убыванию даты.
+- `getUnreadNotificationCount: Int!` — количество непрочитанных уведомлений (polling каждые 60 с для отображения бейджа на иконке колокольчика).
+
+### GraphQL mutations
+
+- `markAllNotificationsRead: Boolean!` — помечает все уведомления прочитанными; вызывается автоматически при открытии страницы уведомлений.
+
+### Тип `Notification`
+
+`id`, `userId`, `actorId`, `actor: User`, `type`, `entityId`, `entityType`, `parentEntityId`, `isRead`, `createdAt`
+
+`parentEntityId` хранит идентификатор родительской сущности: для уведомлений о комментариях (`COMMENT_ON_POST`, `REPLY_TO_COMMENT`, `LIKE_COMMENT`, `MENTION_IN_COMMENT`) это `postId` поста, к которому относится комментарий. Frontend использует его, чтобы клик по уведомлению про комментарий открывал страницу поста.
+
+### Типы уведомлений
+
+| Тип | Описание |
+|---|---|
+| `LIKE_POST` | Кто-то поставил лайк на пост пользователя |
+| `LIKE_COMMENT` | Кто-то поставил лайк на комментарий |
+| `COMMENT_ON_POST` | Кто-то прокомментировал пост пользователя |
+| `REPLY_TO_COMMENT` | Кто-то ответил на комментарий пользователя |
+| `MENTION_IN_POST` | Упоминание через @username в посте |
+| `MENTION_IN_COMMENT` | Упоминание через @username в комментарии |
+| `FOLLOW` | Кто-то подписался на пользователя |
+| `ADMIN_GRANTED` | Пользователю выданы права администратора |
+| `BANNED` | Пользователь заблокирован |
+
+### Источники событий
+
+**PostService** дополнительно публикует:
+
+| Событие | Когда |
+|---|---|
+| `COMMENT_CREATED` | Добавлен комментарий (включает `postAuthorId`, `parentCommentId`, `parentAuthorId`, `mentionedUserIds`) |
+| `COMMENT_LIKED` | Лайк на комментарий (включает `commentAuthorId`, `actorId`, `postId`) |
+| `POST_LIKED` | Лайк поставлен (включает `actorId`, `authorId`) |
+
+**UserService** дополнительно публикует:
+
+| Событие | Когда |
+|---|---|
+| `ADMIN_GRANTED` | Пользователю выданы права администратора |
+| `USER_BANNED` | Пользователь заблокирован |
+
+**@mentions:** PostService разбирает контент на наличие `@username` через regex, резолвит username→userId через gRPC `GetUserByUsername` в UserService и передаёт массив `mentionedUserIds` в событии.
+
+### NotificationService
+
+- Слушает топики `post-events` и `user-events`.
+- Дедупликация: таблица `processed_events` с eventId.
+- TTL: уведомления старше 90 дней удаляются по расписанию (каждую ночь в 3:00).
+- gRPC сервер: `GetNotifications`, `MarkAllRead`, `GetUnreadCount`.
+- Порты: `9006` (HTTP/health), `9095` (gRPC).
+- БД: отдельный `notification_db` в PostgreSQL.
+
+### Отображение
+
+- В боковом меню и мобильной навигации — иконка колокольчика с красным бейджем количества непрочитанных.
+- Страница `/notifications` — список уведомлений с аватаром актора, типом действия, временем. Непрочитанные помечены синей точкой и выделенным фоном.
+
+---
+
+## 10. Медиа
 
 `MediaService` предоставляет gRPC API: `UploadFile`, `DeleteFile`, `GeneratePresignedUploadUrl`.
 
@@ -394,21 +514,15 @@ mutation {
 
 ---
 
-## 10. Администрирование
+## 11. Администрирование
 
-`is_admin` выставляется только через `adminGrantAdmin` — исключительно пользователем с username `kazenomi` (суперадмин, зашит в `UserService.grantAdmin()`).
-
-### Флоу получения прав
-
-1. `kazenomi` входит через Google OAuth2, устанавливает username через `updateProfile`.
-2. Другой пользователь входит и устанавливает свой username.
-3. `kazenomi` вызывает `adminGrantAdmin(targetUserId: ID!)` → `is_admin = true` в БД.
+`is_admin` выставляется через `adminGrantAdmin`. Доступ к этой операции ограничен проверкой username `kazenomi` в `UserService.grantAdmin()` — только `kazenomi` может выдавать права администратора, в том числе самому себе.
 
 ### Действия администратора
 
 | Mutation | Описание |
 |---|---|
-| `adminGrantAdmin(targetUserId: ID!)` | Выдать права администратора (только kazenomi) |
+| `adminGrantAdmin(targetUserId: ID!)` | Выдать права администратора любому пользователю (включая себя); доступно только `kazenomi` |
 | `adminBanUser(input: BanUserInput!)` | Бан навсегда или до даты с причиной |
 | `adminDeletePost(postId: ID!)` | Удалить любой пост |
 | `adminDeleteComment(commentId: ID!)` | Удалить любой комментарий |
@@ -416,13 +530,12 @@ mutation {
 | `adminReviewUniversityProposal(proposalId: ID!, status: String!)` | Одобрить/отклонить заявку ВУЗа |
 | `adminReviewFacultyProposal(proposalId: ID!, status: String!)` | Одобрить/отклонить заявку факультета |
 | `adminReviewProgramProposal(proposalId: ID!, status: String!)` | Одобрить/отклонить заявку программы |
-| `adminCreateFaculty(input: CreateFacultyInput!)` | Создать факультет в существующем ВУЗе |
 
 **Queries только для администратора:** `adminImprovementSuggestions`, `adminUniversityProposals`, `adminFacultyProposals`, `adminProgramProposals`
 
-**Queries для любого авторизованного пользователя:** `createImprovementSuggestion`, `createUniversityProposal`, `createFacultyProposal`, `createProgramProposal`
+**Mutations для любого авторизованного пользователя:** `createImprovementSuggestion`, `createUniversityProposal`, `createFacultyProposal`, `createProgramProposal`
 
-Бан хранится в `users.banned_permanent`, `users.banned_until`, `users.ban_reason`. Gateway блокирует все мутации для забаненных пользователей. Деструктивные действия на фронтенде подтверждаются через кастомный modal.
+Бан хранится в `users.banned_permanent`, `users.banned_until`, `users.ban_reason`. Gateway блокирует все мутации для забаненных пользователей.
 
 ### Флоу заявки на университет
 
@@ -445,7 +558,7 @@ mutation {
 - Иконка загружается в MinIO `university-icons`; в БД хранится только `icon_url`.
 
 **Факультеты:**
-- Добавляются администратором через `adminCreateFaculty` или через заявку пользователя.
+- Создаются при одобрении заявки пользователя.
 - Backend проверяет уникальность `shortName` внутри университета.
 
 **Программы:**
@@ -455,32 +568,37 @@ mutation {
 
 ---
 
-## 11. Frontend
+## 12. Frontend
 
 Основная точка входа: `Frontend/index.html`.
 
-**Сборка:** Vite + React 18. JSX не транспилируется в браузере через Babel Standalone.
+**Сборка:** Vite + React 18.
 
 **Demo/mock режим:** `Frontend/mock.js` перехватывает GraphQL-вызовы в `Frontend/api.js`. Доступны моковые университеты, факультеты, программы, пользователи, посты, комментарии, предложения улучшений, заявки на университеты и программы — для документации и скриншотов без реального backend.
 
 **Функции:**
 
 - Auth: Google login, refresh, logout, status bar.
-- Профиль: загрузка `me`, обновление профиля, поиск по id/username, email-верификация, аватар/баннер.
-- Лента: вкладки «Рекомендации» (`trendingFeed`), «Подписки» (`followingFeed`); фильтры по университету, факультету, программе; preview активного GraphQL query/variables.
-- ВУЗ-контекст: read-only лента без compose и без вкладки «Подписки»; чипы факультетов и программ.
-- Контекст «Вне университета»: посты без `universityId` (поступление, общие вопросы).
-- Посты: создание, редактирование, удаление, лайк/анлайк, выбор поста из ленты для операций.
+- Профиль: загрузка `me`, обновление профиля, поиск по username (`/explore`), email-верификация, аватар/баннер. URL профиля — `/profile/{username}`; поддерживается также `/profile/{userId}` (UUID) для обратной совместимости.
+- Лента: вкладки «Рекомендации» (`trendingFeed`), «Подписки» (`followingFeed`); фильтры по университету, факультету, программе.
+- ВУЗ-контекст: read-only лента (`trendingFeed`) без compose и без вкладки «Подписки»; чипы факультетов и программ. URL — `/{subdomain}/` (если задан subdomain) или генерируется из shortName.
+- Контекст «Без ВУЗа»: отдельная trending-лента постов авторов без `universityId` (поступление, общие вопросы). URL — `/outside/`.
+- Посты: создание, редактирование, удаление, лайк/анлайк, share (копирует ссылку на пост в буфер обмена). Страница поста `/post/{id}` содержит кнопки лайк, комментарий, share.
 - Комментарии: получение, добавление, редактирование, удаление, лайк/анлайк.
 - Подписки: подписаться/отписаться.
 - Медиа: загрузка аватара (`user-avatars`), баннера (`user-banners`), иконки ВУЗа (`university-icons`, svg/png), медиа постов (`post-media`).
 - Заявки: предложение улучшения, заявка ВУЗа (название, shortName, subdomain, student domain, employee domain, иконка), заявка факультета, заявка программы.
-- Админка: просмотр предложений улучшения, заявок ВУЗов, факультетов, программ; одобрение/отклонение; создание факультета; деструктивные действия через modal.
-- Дефолтный аватар: если у пользователя нет аватарки, frontend показывает `default_pic.png`.
+- Админка: просмотр предложений улучшения, заявок ВУЗов, факультетов, программ; одобрение/отклонение заявок с подтверждением. В заявке на ВУЗ — ссылка на ленту по subdomain.
+- Уведомления: страница `/notifications` со списком уведомлений, бейдж непрочитанных на иконке колокольчика в боковом меню. Время отображается в таймзоне пользователя.
+- Дефолтный аватар: если у пользователя нет аватарки, frontend показывает цветной аватар с инициалами.
+- Email подтверждения: письмо содержит preview text «Ваш код для подтверждения университетского email...» и HTML-шаблон с кодом подтверждения.
+- GraphQL-таймаут запроса: 30 секунд. При сетевой ошибке, abort или транспортной ошибке апстрима (`UPSTREAM_ERROR`, `UNAVAILABLE`, `INTERNAL`/`end-of-stream`) клиент автоматически повторяет запрос один раз — кроме не-идемпотентных мутаций (`createPost`, `addComment`, `createImprovementSuggestion`, `createUniversityProposal`, `createFacultyProposal`, `createProgramProposal`, `createProgram`, `verifyEmailCode`, `sendVerificationCode`), которые не повторяются, чтобы не создать дубль или не использовать одноразовый код повторно.
+- gRPC-вызовы из API Gateway имеют дедлайн 8 секунд: подвисший backend не задерживает GraphQL-запрос дольше этого времени и возвращает `DEADLINE_EXCEEDED` → 504 `GATEWAY_TIMEOUT`. Длительные (>1с) и неуспешные gRPC-вызовы логируются на gateway, длительные GraphQL-запросы (>1с) логируются с операцией.
+- gRPC keep-alive: клиент пингует канал каждые 60 секунд (только при наличии активных вызовов), таймаут пинга 10 секунд. Сервер допускает пинги не чаще раза в 30 секунд. Эти параметры обнаруживают молчаливо умершие соединения, типичные для WSL2/Docker bridge, не создавая лишней сетевой нагрузки.
 
 ---
 
-## 12. GraphQL surface
+## 13. GraphQL surface
 
 ### Queries
 
@@ -498,8 +616,10 @@ adminProgramProposals: [ProgramProposal!]!
 getUserPosts(userId: ID!, page: Int, size: Int): PostPage!
 getPost(id: ID!): Post
 getComments(postId: ID!, page: Int, size: Int): CommentPage!
-trendingFeed(cursor: String, size: Int, universityId: ID, facultyId: ID, programId: ID): FeedPage!
-followingFeed(cursor: String, size: Int, universityId: ID, facultyId: ID, programId: ID): FeedPage!
+trendingFeed(cursor: String, size: Int, universityId: ID, facultyId: ID, programId: ID, topicId: ID): FeedPage!
+followingFeed(cursor: String, size: Int, universityId: ID, facultyId: ID, programId: ID, topicId: ID): FeedPage!
+getNotifications(page: Int, size: Int): NotificationPage!
+getUnreadNotificationCount: Int!
 ```
 
 ### Mutations
@@ -525,7 +645,8 @@ createUniversityProposal(input: UniversityProposalInput!): AdminActionResult!
 createFacultyProposal(input: FacultyProposalInput!): AdminActionResult!
 createProgramProposal(input: ProgramProposalInput!): AdminActionResult!
 createProgram(facultyId: ID!, name: String!, shortName: String!): Program!
-adminGrantAdmin(targetUserId: ID!): AdminActionResult!
+deleteAccount: DeleteResult!
+adminGrantAdmin(targetUserId: ID!): User
 adminBanUser(input: BanUserInput!): AdminActionResult!
 adminDeletePost(postId: ID!): DeleteResult!
 adminDeleteComment(commentId: ID!): DeleteResult!
@@ -533,20 +654,29 @@ adminDeleteSuggestion(id: ID!): DeleteResult!
 adminReviewUniversityProposal(proposalId: ID!, status: String!): AdminActionResult!
 adminReviewFacultyProposal(proposalId: ID!, status: String!): AdminActionResult!
 adminReviewProgramProposal(proposalId: ID!, status: String!): AdminActionResult!
-adminCreateFaculty(input: CreateFacultyInput!): AdminActionResult!
+markAllNotificationsRead: Boolean!
 ```
 
 ---
 
-## 13. gRPC surface
+## 14. gRPC surface
+
+### Межсервисные gRPC-взаимодействия
+
+- `APIGateway` → `UserService` — `CreateOrGetUser`, `GetUserById`, `GetUserByUsername`, `UpdateUser`, `DeleteAccount`, `CreateSession`, `RefreshSession`, `RevokeRefreshToken`, `SendVerificationCode`, `VerifyEmailCode`, `Subscribe`, `Unsubscribe`, `IsSubscribed`, `ListUniversities`, `ListFaculties`, `ListPrograms`, `BanUser`, `DeleteImprovementSuggestion`, `CreateImprovementSuggestion`, `ListImprovementSuggestions`, `CreateUniversityProposal`, `ListUniversityProposals`, `CreateFacultyProposal`, `ListFacultyProposals`, `ReviewFacultyProposal`, `CreateProgramProposal`, `ListProgramProposals`, `ReviewProgramProposal`, `ReviewUniversityProposal`, `CreateProgramForUser`, `GrantAdmin`
+- `APIGateway` → `PostService` — `CreatePost`, `GetPostById`, `GetPostsByUser`, `GetPostsByIds`, `EditPost`, `DeletePost`, `LikePost`, `UnlikePost`, `AddComment`, `GetComments`, `EditComment`, `DeleteComment`, `LikeComment`, `UnlikeComment`
+- `APIGateway` → `FeedService` — `GetFeed` (`TRENDING` и `FOLLOWING`)
+- `APIGateway` → `MediaService` — `UploadFile`
+- `APIGateway` → `NotificationService` — `GetNotifications`, `MarkAllRead`, `GetUnreadCount`
+- `PostService` → `UserService` — `GetUserByUsername` (резолвинг `@username`)
 
 ### UserService
 
-`CreateOrGetUser`, `GetUserById`, `GetUserByUsername`, `UpdateUser`, `CreateSession`, `RefreshSession`, `RevokeRefreshToken`, `SendVerificationCode`, `VerifyEmailCode`, `Subscribe`, `Unsubscribe`, `ListUniversities`, `ListFaculties`, `ListTopics`, `CreateImprovementSuggestion`, `ListImprovementSuggestions`, `DeleteImprovementSuggestion`, `ListPrograms`, `CreateProgramForUser`, `CreateUniversityProposal`, `ListUniversityProposals`, `ReviewUniversityProposal`, `CreateFaculty`, `GrantAdmin`, `BanUser`, `UploadUniversityIcon`, `ValidateTopicForUniversity`, `GetGeneralTopicForUniversity`, `ResolvePostTarget`
+`CreateOrGetUser`, `GetUserById`, `GetUserByUsername`, `UpdateUser`, `DeleteAccount`, `CreateSession`, `RefreshSession`, `RevokeRefreshToken`, `SendVerificationCode`, `VerifyEmailCode`, `Subscribe`, `Unsubscribe`, `IsSubscribed`, `ListUniversities`, `ListFaculties`, `CreateImprovementSuggestion`, `ListImprovementSuggestions`, `DeleteImprovementSuggestion`, `ListPrograms`, `CreateProgramForUser`, `CreateUniversityProposal`, `ListUniversityProposals`, `ReviewUniversityProposal`, `CreateFacultyProposal`, `ListFacultyProposals`, `ReviewFacultyProposal`, `CreateProgramProposal`, `ListProgramProposals`, `ReviewProgramProposal`, `GrantAdmin`, `BanUser`, `ValidateTopicForUniversity`, `GetGeneralTopicForUniversity`, `ResolvePostTarget`
 
 ### PostService
 
-`CreatePost` (клиентский `topicId` игнорируется), `GetPostById`, `GetPostsByUser`, `GetPostsByIds`, `EditPost`, `DeletePost`, `LikePost`, `UnlikePost`, `AddComment`, `GetComments`, `EditComment`, `DeleteComment`, `LikeComment`, `UnlikeComment`
+`CreatePost`, `GetPostById`, `GetPostsByUser`, `GetPostsByIds`, `EditPost`, `DeletePost`, `LikePost`, `UnlikePost`, `AddComment`, `GetComments`, `EditComment`, `DeleteComment`, `LikeComment`, `UnlikeComment`
 
 ### FeedService
 
@@ -556,9 +686,13 @@ adminCreateFaculty(input: CreateFacultyInput!): AdminActionResult!
 
 `UploadFile`, `DeleteFile`, `GeneratePresignedUploadUrl`
 
+### NotificationService
+
+`GetNotifications`, `MarkAllRead`, `GetUnreadCount`
+
 ---
 
-## 14. Docker / local окружение
+## 15. Docker / local окружение
 
 `docker-compose.yml` поднимает все сервисы и инфраструктуру.
 
@@ -573,23 +707,25 @@ adminCreateFaculty(input: CreateFacultyInput!): AdminActionResult!
 | PostService | 9005 | 9091 |
 | FeedService | 9002 | 9092 |
 | MediaService | 9003 | 9093 |
+| NotificationService | 9007 | 9095 |
 | MinIO API | 9000 | — |
 | MinIO Console | 9001 | — |
 | Kafka external | 9094 | — |
 | Kafka UI | 8085 | — |
 | User DB (PostgreSQL) | 5432 | — |
 | Post DB (PostgreSQL) | 5433 | — |
+| Notification DB (PostgreSQL) | 5435 | — |
 | Redis | 6379 | — |
 | Prometheus | 9700 | — |
 | Grafana | 3000 | — |
 
 ### Volumes
 
-`postgres_user_data`, `postgres_post_data`, `redis_data`, `kafka_data`, `minio_data`, `prometheus_data`, `grafana_data`
+`postgres_user_data`, `postgres_post_data`, `postgres_notification_data`, `redis_data`, `kafka_data`, `minio_data`, `prometheus_data`, `grafana_data`
 
 ---
 
-## 15. Мониторинг и метрики
+## 16. Мониторинг и метрики
 
 Каждый сервис (APIGateway, UserService, PostService, FeedService, MediaService) предоставляет:
 
@@ -618,7 +754,7 @@ adminCreateFaculty(input: CreateFacultyInput!): AdminActionResult!
 
 ---
 
-## 16. Логирование
+## 17. Логирование
 
 Все сервисы используют SLF4J + Logback (стандартный Spring Boot). `@Slf4j` (Lombok) расставлен на сервисах.
 
@@ -643,13 +779,13 @@ adminCreateFaculty(input: CreateFacultyInput!): AdminActionResult!
 
 ---
 
-## 17. Сборка и качество кода
+## 18. Сборка и качество кода
 
 **Сборщик:** Gradle 9.1.0, multi-project build, Kotlin DSL.
 
 ### Подпроекты
 
-`:gRPC`, `:APIGateway`, `:UserService`, `:PostService`, `:Eureka`, `:FeedService`, `:MediaService`
+`:gRPC`, `:APIGateway`, `:UserService`, `:PostService`, `:Eureka`, `:FeedService`, `:MediaService`, `:NotificationService`
 
 ### Инструменты качества кода
 
@@ -663,14 +799,13 @@ adminCreateFaculty(input: CreateFacultyInput!): AdminActionResult!
 - `config/pmd/ruleset.xml` — набор PMD правил с исключениями (GuardLogStatement, AvoidCatchingGenericException, CyclomaticComplexity и др.).
 - `config/spotbugs/exclude.xml` — исключения SpotBugs (EI_EXPOSE_REP, EI_EXPOSE_REP2).
 
-**Полезные команды Gradle:**
+**Линтеры:**
 
 ```bash
 ./gradlew spotlessApply          # применить форматирование
-./gradlew spotlessCheck          # проверить форматирование без изменений
+./gradlew spotlessCheck          # проверить форматирование
 ./gradlew pmdMain                # запустить PMD
 ./gradlew spotbugsMain           # запустить SpotBugs
-./gradlew build                  # полная сборка
 ```
 
 ### Тесты
@@ -681,9 +816,9 @@ adminCreateFaculty(input: CreateFacultyInput!): AdminActionResult!
 
 ---
 
-## 18. Миграции базы данных
+## 19. Миграции базы данных
 
-### UserService (V1–V11)
+### UserService (V1–V8)
 
 | Версия | Содержимое |
 |---|---|
@@ -705,5 +840,47 @@ adminCreateFaculty(input: CreateFacultyInput!): AdminActionResult!
 | V3 | `comments` (+ parent_comment_id) |
 | V4 | `comment_likes` |
 | V5 | `outbox_events` |
+
+### NotificationService (V1–V2)
+
+| Версия | Содержимое |
+|---|---|
+| V1 | `notifications` (user_id, actor_id, type, entity_id, entity_type, parent_entity_id, is_read, created_at) |
+| V2 | `processed_events` (event_id, processed_at) |
+
+---
+
+## 20. Известные проблемы и ограничения
+
+### Транспорт gRPC между gateway и сервисами
+
+В контейнерной среде наблюдались случайные транспортные ошибки gRPC: `INTERNAL: Encountered end-of-stream mid-frame`, `INTERNAL: http2 exception` и эпизодические зависания на дедлайне 8 секунд (`DEADLINE_EXCEEDED`). Симптомы: ~95% запросов проходят за 200–300 мс, но небольшая доля случайно подвисает или возвращает ошибку, при этом сервер уже успел выполнить операцию. Применённые меры:
+
+- gRPC keepalive: клиент пингует канал каждые 60 секунд при наличии активных вызовов, таймаут 10 секунд; сервер допускает пинги не чаще раза в 30 секунд. Снижает вероятность работы с молчаливо умершими TCP-соединениями.
+- Глобальный gRPC client-side дедлайн 8 секунд через `GrpcDeadlineInterceptor` — подвисший backend возвращает `DEADLINE_EXCEEDED` → 504 `GATEWAY_TIMEOUT`, не блокирует поток `boundedElastic`.
+- Логирование медленных (`>1с`) и неуспешных gRPC-вызовов на gateway, длительных GraphQL-запросов на уровне `GraphQlAuthInterceptor`.
+- Frontend auto-retry: при сетевой ошибке, abort, `UPSTREAM_ERROR`, `UNAVAILABLE`, `INTERNAL`/`end-of-stream` клиент `Frontend/api.js` повторяет запрос один раз. Не повторяются не-идемпотентные мутации (`createPost`, `addComment`, `create*Proposal`, `createImprovementSuggestion`, `createProgram`, `verifyEmailCode`, `sendVerificationCode`), чтобы не создать дубль уже выполненной операции.
+
+При этом для не-идемпотентных мутаций пользователь может увидеть ошибку, хотя действие выполнено. Полное решение — идемпотентный ключ запроса (`clientRequestId`) на стороне сервиса — не реализовано; рассматривается как отдельная фича.
+
+### Ленты в Redis при коллизии идентификаторов
+
+Faculty и program используют независимые последовательности ID. Если у факультета и программы совпадает числовой ID, прежняя реализация `resolveTopicScopedFeedKey`/`resolveTopicScopedPopularFeedKey` могла переключаться между `topic:{id}` и `subtopic:{id}` ключами, из-за чего посты «исчезали» из ленты факультета. Текущая реализация хранит и читает ленты по разным ключам строго: `findUniversityFacultyPostsWithScoresByCursor` всегда читает `feed:uni:{X}:topic:{facultyId}`, `findUniversityProgramPostsWithScoresByCursor` — `feed:uni:{X}:subtopic:{programId}`.
+
+### Денормализованные счётчики при удалении аккаунта
+
+`posts.likes_count`, `posts.comments_count`, `comments.likes_count` — денормализованные счётчики, поддерживаемые приложением, без БД-триггеров. При удалении аккаунта пересчитываются вручную в `PostService.deleteAllContentByAuthor`: декрементируются счётчики на чужих постах/комментариях, удаляются собственные посты, комментарии и поддерево ответов на них (BFS по `parent_comment_id`), удаляются все лайки удаляемого пользователя и все лайки на удаляемых сущностях. Если процесс прервётся посередине транзакции, возможны рассогласования, требующие ручного пересчёта.
+
+### Курсорная пагинация trending feed
+
+Cursor — это `score = createdAtMs + likesCount * trendingLikeBoostMs`. При совпадающих score у двух постов один из них может быть пропущен на границе страниц — известное ограничение, не критичное при типичном размере страницы 20.
+
+### Optimistic UI при создании поста
+
+Frontend в `InlineCompose`/`ComposeModal` показывает пост «оптимистично» сразу после нажатия «Опубликовать», ещё до ответа сервера. При отказе сети или транспортной ошибке оптимистичный пост убирается через коллбек `removeTmpId`. Однако если backend выполнил операцию, а ответ потерялся (см. транспортные ошибки выше), пост будет создан, но фронт может удалить оптимистичный экземпляр и показать ошибку — реальный пост появится после следующего обновления ленты.
+
+### Production-конфигурация
+
+В dev-режиме по умолчанию: `APP_SECURITY_SECURE_COOKIE=false`, `APP_SECURITY_ALLOWED_ORIGINS=http://localhost:*,null`, `APP_SECURITY_OAUTH2_SUCCESS_REDIRECT=http://localhost:5173/`, `VITE_API_BASE=http://localhost:8080`. На проде эти значения **обязаны** быть заменены: cookies выставляются `Secure` только под HTTPS, CORS должен указывать реальный домен, OAuth redirect — публичный URL фронтенда. Также в Google Cloud Console должен быть зарегистрирован authorized redirect URI вида `https://<домен>/login/oauth2/code/google`.
 
 ---

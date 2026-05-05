@@ -16,14 +16,21 @@ public class PostGrpcClient {
 	@GrpcClient("post-service")
 	private PostServiceGrpc.PostServiceBlockingStub stub;
 
-	public Mono<PostResponse> createPost(String authorId, String content, List<String> mediaUrls, Long topicId) {
+	public Mono<PostResponse> createPost(String authorId, String content, List<String> mediaUrls, Long universityId,
+			Long facultyId, Long programId, Long topicId, Long parentTopicId) {
 		CreatePostRequest.Builder builder = CreatePostRequest.newBuilder().setAuthorId(authorId).setContent(content)
 				.addAllMediaUrls(mediaUrls == null ? List.of() : mediaUrls);
-		if (topicId != null) {
+		if (universityId != null)
+			builder.setUniversityId(universityId);
+		if (facultyId != null)
+			builder.setFacultyId(facultyId);
+		if (programId != null)
+			builder.setProgramId(programId);
+		if (topicId != null)
 			builder.setTopicId(topicId);
-		}
-		return Mono.fromCallable(() -> stub.createPost(builder.build())).subscribeOn(Schedulers.boundedElastic())
-				.retry(2);
+		if (parentTopicId != null)
+			builder.setParentTopicId(parentTopicId);
+		return Mono.fromCallable(() -> stub.createPost(builder.build())).subscribeOn(Schedulers.boundedElastic());
 	}
 
 	public Mono<PostResponse> getPostById(String postId, String viewerId) {
@@ -63,8 +70,7 @@ public class PostGrpcClient {
 		if (updateMediaUrls && mediaUrls != null)
 			builder.addAllMediaUrls(mediaUrls);
 
-		return Mono.fromCallable(() -> stub.editPost(builder.build())).subscribeOn(Schedulers.boundedElastic())
-				.retry(2);
+		return Mono.fromCallable(() -> stub.editPost(builder.build())).subscribeOn(Schedulers.boundedElastic());
 	}
 
 	public Mono<Boolean> deletePost(String postId, String requesterId) {
@@ -75,19 +81,19 @@ public class PostGrpcClient {
 		return Mono
 				.fromCallable(() -> stub.deletePost(DeletePostRequest.newBuilder().setPostId(postId)
 						.setRequesterId(requesterId).setAdminOverride(adminOverride).build()).getSuccess())
-				.subscribeOn(Schedulers.boundedElastic()).retry(2);
+				.subscribeOn(Schedulers.boundedElastic());
 	}
 
 	public Mono<Boolean> likePost(String postId, String userId) {
 		return Mono.fromCallable(() -> stub
 				.likePost(LikePostRequest.newBuilder().setPostId(postId).setUserId(userId).build()).getSuccess())
-				.subscribeOn(Schedulers.boundedElastic()).retry(2);
+				.subscribeOn(Schedulers.boundedElastic());
 	}
 
 	public Mono<Boolean> unlikePost(String postId, String userId) {
 		return Mono.fromCallable(() -> stub
 				.unlikePost(UnlikePostRequest.newBuilder().setPostId(postId).setUserId(userId).build()).getSuccess())
-				.subscribeOn(Schedulers.boundedElastic()).retry(2);
+				.subscribeOn(Schedulers.boundedElastic());
 	}
 
 	public Mono<CommentResponse> addComment(String postId, String authorId, String content, String parentCommentId) {
@@ -96,8 +102,7 @@ public class PostGrpcClient {
 		if (parentCommentId != null && !parentCommentId.isBlank()) {
 			builder.setParentCommentId(parentCommentId);
 		}
-		return Mono.fromCallable(() -> stub.addComment(builder.build())).subscribeOn(Schedulers.boundedElastic())
-				.retry(2);
+		return Mono.fromCallable(() -> stub.addComment(builder.build())).subscribeOn(Schedulers.boundedElastic());
 	}
 
 	public Mono<CommentListResponse> getComments(String postId, int page, int size, String viewerId) {
@@ -114,7 +119,7 @@ public class PostGrpcClient {
 		return Mono
 				.fromCallable(() -> stub.editComment(EditCommentRequest.newBuilder().setCommentId(commentId)
 						.setRequesterId(requesterId).setContent(content).build()))
-				.subscribeOn(Schedulers.boundedElastic()).retry(2);
+				.subscribeOn(Schedulers.boundedElastic());
 	}
 
 	public Mono<Boolean> deleteComment(String commentId, String requesterId) {
@@ -128,19 +133,19 @@ public class PostGrpcClient {
 								.deleteComment(DeleteCommentRequest.newBuilder().setCommentId(commentId)
 										.setRequesterId(requesterId).setAdminOverride(adminOverride).build())
 								.getSuccess())
-				.subscribeOn(Schedulers.boundedElastic()).retry(2);
+				.subscribeOn(Schedulers.boundedElastic());
 	}
 
 	public Mono<Boolean> likeComment(String commentId, String userId) {
 		return Mono.fromCallable(() -> stub
 				.likeComment(LikeCommentRequest.newBuilder().setCommentId(commentId).setUserId(userId).build())
-				.getSuccess()).subscribeOn(Schedulers.boundedElastic()).retry(2);
+				.getSuccess()).subscribeOn(Schedulers.boundedElastic());
 	}
 
 	public Mono<Boolean> unlikeComment(String commentId, String userId) {
 		return Mono.fromCallable(() -> stub
 				.unlikeComment(UnlikeCommentRequest.newBuilder().setCommentId(commentId).setUserId(userId).build())
-				.getSuccess()).subscribeOn(Schedulers.boundedElastic()).retry(2);
+				.getSuccess()).subscribeOn(Schedulers.boundedElastic());
 
 	}
 

@@ -5,20 +5,20 @@ type Query {
     listUniversities: [University!]!
     listFaculties(universityId: ID!): [Faculty!]!
     listPrograms(facultyId: ID!): [Program!]!
-    listTopics(universityId: ID!): [Topic!]!
     adminImprovementSuggestions: [ImprovementSuggestion!]!
     adminUniversityProposals: [UniversityProposal!]!
     adminFacultyProposals: [FacultyProposal!]!
     adminProgramProposals: [ProgramProposal!]!
 
-    # Feed — three separate tabs
     followingFeed(cursor: String, size: Int, universityId: ID, facultyId: ID, programId: ID, topicId: ID): FeedPage!
     trendingFeed(cursor: String, size: Int, universityId: ID, facultyId: ID, programId: ID, topicId: ID):  FeedPage!
-    globalFeed(cursor: String, size: Int, universityId: ID, facultyId: ID, programId: ID, topicId: ID):    FeedPage!
 
     getPost(id: ID!):                               Post
     getUserPosts(userId: ID!, page: Int, size: Int): PostPage!
     getComments(postId: ID!, page: Int, size: Int):  CommentPage!
+
+    getNotifications(page: Int, size: Int): NotificationPage!
+    getUnreadNotificationCount: Int!
 }
 
 type Mutation {
@@ -45,24 +45,23 @@ type Mutation {
     createUniversityProposal(input: UniversityProposalInput!): AdminActionResult!
     createFacultyProposal(input: FacultyProposalInput!): AdminActionResult!
     createProgramProposal(input: ProgramProposalInput!): AdminActionResult!
-    adminGrantAdmin(targetUserId: ID!): AdminActionResult!
+    deleteAccount: DeleteResult!
     adminBanUser(input: BanUserInput!): AdminActionResult!
+    adminGrantAdmin(targetUserId: ID!): User
     adminDeletePost(postId: ID!): DeleteResult!
     adminDeleteComment(commentId: ID!): DeleteResult!
     adminDeleteSuggestion(id: ID!): DeleteResult!
     adminReviewUniversityProposal(proposalId: ID!, status: String!): AdminActionResult!
     adminReviewFacultyProposal(proposalId: ID!, status: String!): AdminActionResult!
     adminReviewProgramProposal(proposalId: ID!, status: String!): AdminActionResult!
-    adminCreateFaculty(input: CreateFacultyInput!): AdminActionResult!
-}
 
-# ── Inputs ──────────────────────────────────────────────────────────────────
+    markAllNotificationsRead: Boolean!
+}
 
 input UpdateProfileInput {
     username:       String
     name:           String
     surname:        String
-    patronymic:     String
     status:         String
     avatarUrl:      String
     coverUrl:       String
@@ -103,12 +102,6 @@ input BanUserInput {
     reason:       String
 }
 
-input CreateFacultyInput {
-    universityId: ID!
-    name:         String!
-    shortName:    String!
-}
-
 input FacultyProposalInput {
     universityId: ID!
     name:         String!
@@ -121,15 +114,12 @@ input ProgramProposalInput {
     shortName: String!
 }
 
-# ── Types ───────────────────────────────────────────────────────────────────
-
 type User {
     id:                 ID!
     emailGoogle:        String!
     username:           String
     name:               String!
     surname:            String
-    patronymic:         String
     emailUniversity:    String
     avatarUrl:          String
     coverUrl:           String
@@ -170,15 +160,6 @@ type Program {
     facultyId: ID!
     name:      String!
     shortName: String!
-}
-
-type Topic {
-    id:        ID!
-    slug:      String!
-    name:      String!
-    isSystem:  Boolean!
-    facultyId: ID
-    subtopics: [Topic!]!
 }
 
 enum EducationLevel {
@@ -233,7 +214,25 @@ type CommentPage {
     total:    Int!
 }
 
-type VerificationResult { success: Boolean! }
+type Notification {
+    id:              ID!
+    userId:          String!
+    actorId:         String!
+    actor:           User
+    type:            String!
+    entityId:        String!
+    entityType:      String!
+    parentEntityId:  String
+    isRead:          Boolean!
+    createdAt:       String!
+}
+
+type NotificationPage {
+    notifications: [Notification!]!
+    total:         Int!
+}
+
+type VerificationResult { success: Boolean!  message: String }
 type VerifyResult       { success: Boolean!  error: String }
 type SubscribeResult    { success: Boolean! }
 type DeleteResult       { success: Boolean! }

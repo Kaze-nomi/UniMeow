@@ -62,10 +62,24 @@ function Sidebar({ currentUser, onNavigate, currentPath, collapsed, width, openC
     document.addEventListener('mousedown', h);
     return () => document.removeEventListener('mousedown', h);
   }, [accountMenuOpen]);
+  const [unreadCount, setUnreadCount] = React.useState(0);
+  React.useEffect(() => {
+    if (!currentUser) { setUnreadCount(0); return; }
+    const load = () => API.gql(API.Q.getUnreadNotificationCount).then(d => setUnreadCount(d.getUnreadNotificationCount || 0)).catch(() => {});
+    load();
+    const id = setInterval(load, 60000);
+    const h = () => setUnreadCount(0);
+    window.addEventListener('um-notifications-marked-read', h);
+    return () => { clearInterval(id); window.removeEventListener('um-notifications-marked-read', h); };
+  }, [currentUser]);
+
   const mainNav = [
     { path: '/feed', label: 'Главная', icon: HomeIcon },
     { path: '/explore', label: 'Поиск', icon: SearchIcon },
-    ...(currentUser ? [{ path: '/profile/' + currentUser.id, label: 'Профиль', icon: UserIcon }] : []),
+    ...(currentUser ? [
+      { path: API.profileUrl(currentUser), label: 'Профиль', icon: UserIcon },
+      { path: '/notifications', label: 'Уведомления', icon: BellIcon, badge: unreadCount },
+    ] : []),
     ...(currentUser?.isAdmin ? [
       { path: '/admin/suggestions', label: 'Предложения', icon: StarIcon },
       { path: '/admin/universities', label: 'ВУЗы', icon: UniIcon },
@@ -73,9 +87,9 @@ function Sidebar({ currentUser, onNavigate, currentPath, collapsed, width, openC
     { path: '/settings', label: 'Настройки', icon: GearIcon },
   ];
 
-  const NavBtn = ({ path, label, Icon }) => {
+  const NavBtn = ({ path, label, Icon, badge }) => {
     const active = path === '/feed'
-      ? (currentPath === '/feed' || currentPath === '/' || !['/explore', '/profile', '/post', '/settings', '/admin', '/login'].some(prefix => currentPath.startsWith(prefix)))
+      ? (currentPath === '/feed' || currentPath === '/' || !['/explore', '/profile', '/post', '/settings', '/admin', '/login', '/notifications'].some(prefix => currentPath.startsWith(prefix)))
       : currentPath.startsWith(path);
     return (
       <button
@@ -93,16 +107,28 @@ function Sidebar({ currentUser, onNavigate, currentPath, collapsed, width, openC
           color: active ? 'var(--accent)' : 'var(--text)',
           fontFamily: 'inherit', fontSize: 19, fontWeight: active ? 700 : 400,
           cursor: 'pointer', textAlign: 'left',
-          alignSelf: 'flex-start',
+          position: 'relative',
         }}>
-        <Icon size={26} color={active ? 'var(--accent)' : 'var(--text)'} filled={active} />
+        <span style={{ position: 'relative', display: 'inline-flex' }}>
+          <Icon size={26} color={active ? 'var(--accent)' : 'var(--text)'} filled={active} />
+          {badge > 0 && (
+            <span style={{
+              position: 'absolute', top: -4, right: -6,
+              background: 'var(--accent)', color: '#fff',
+              borderRadius: 9999, fontSize: 10, fontWeight: 800,
+              minWidth: 16, height: 16, padding: '0 3px',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              lineHeight: 1,
+            }}>{badge > 99 ? '99+' : badge}</span>
+          )}
+        </span>
         {!collapsed && label}
       </button>
     );
   };
 
   const accountClick = () => {
-    if (currentUser) onNavigate('/profile/' + currentUser.id);
+    if (currentUser) onNavigate(API.profileUrl(currentUser));
     else onNavigate('/login');
   };
   const logout = async (e) => {
@@ -118,23 +144,24 @@ function Sidebar({ currentUser, onNavigate, currentPath, collapsed, width, openC
       position: 'sticky', top: 0, alignSelf: 'flex-start',
       height: '100vh', width,
       display: 'flex', flexDirection: 'column',
-      padding: collapsed ? '4px 6px 12px' : '4px 12px 12px',
+      padding: collapsed ? '4px 14px 12px 6px' : '4px 12px 12px',
       flexShrink: 0,
+      alignItems: collapsed ? 'center' : 'stretch',
     }}>
 
       <button onClick={() => onNavigate('/feed')} style={{
         display: 'flex', alignItems: 'center', gap: 8,
         background: 'none', border: 'none', cursor: 'pointer',
         padding: collapsed ? 10 : '10px 12px', borderRadius: 9999,
-        color: 'var(--text)', alignSelf: 'flex-start',
+        color: 'var(--text)', alignSelf: collapsed ? 'center' : 'flex-start',
       }}>
         <CatLogo size={collapsed ? 31 : 34} />
         {!collapsed && <span style={{ fontWeight: 800, fontSize: 17, letterSpacing: '-0.45px' }}>UniMeow</span>}
       </button>
 
 
-      <nav style={{ display: 'flex', flexDirection: 'column', gap: 2, marginTop: 4, alignItems: collapsed ? 'center' : 'stretch' }}>
-        {mainNav.map(item => <NavBtn key={item.path} path={item.path} label={item.label} Icon={item.icon} />)}
+      <nav style={{ display: 'flex', flexDirection: 'column', gap: 2, marginTop: 4, alignItems: collapsed ? 'center' : 'stretch', width: '100%' }}>
+        {mainNav.map(item => <NavBtn key={item.path} path={item.path} label={item.label} Icon={item.icon} badge={item.badge || 0} />)}
       </nav>
 
 
@@ -221,7 +248,7 @@ function BottomNav({ currentUser, onNavigate, currentPath, openCompose }) {
   const items = [
     { path: '/feed', label: 'Главная', Icon: HomeIcon },
     { path: '/explore', label: 'Поиск', Icon: SearchIcon },
-    ...(currentUser ? [{ path: '/profile/' + currentUser.id, label: 'Профиль', Icon: UserIcon }] : []),
+    ...(currentUser ? [{ path: API.profileUrl(currentUser), label: 'Профиль', Icon: UserIcon }] : []),
     { path: '/settings', label: 'Ещё', Icon: GearIcon },
   ];
   return (
@@ -314,7 +341,7 @@ function RightRail({ width, currentUser, onNavigate }) {
             <MessageBubbleIcon size={21} color="currentColor" />
           </div>
           <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ fontWeight: 700, fontSize: 14.5, color: 'var(--text)' }}>Вне университета</div>
+            <div style={{ fontWeight: 700, fontSize: 14.5, color: 'var(--text)' }}>Без вуза</div>
             <div style={{ fontSize: 13, color: 'var(--text-muted)' }}>Выбор, поступление, общие вопросы</div>
           </div>
         </button>
@@ -340,9 +367,9 @@ function RightRail({ width, currentUser, onNavigate }) {
 
 
       <div style={{ marginTop: 16, padding: '0 14px', fontSize: 12, color: 'var(--text-muted)', lineHeight: 1.6 }}>
-        UniMeow · университетская соцсеть<br />
+        UniMeow<br />
         <span style={{ cursor: 'pointer' }} onClick={() => onNavigate('/about')}>О проекте</span> ·{' '}
-        <span style={{ cursor: 'pointer' }} onClick={() => window.dispatchEvent(new CustomEvent('open-modal', { detail: 'suggest' }))}>Предложить улучшение</span> ·{' '}
+        <span style={{ cursor: 'pointer' }} onClick={() => window.dispatchEvent(new CustomEvent('open-modal', { detail: 'suggest' }))}>Обратная связь</span> ·{' '}
         <span style={{ cursor: 'pointer' }} onClick={() => window.dispatchEvent(new CustomEvent('open-modal', { detail: 'add-uni' }))}>Добавить свой ВУЗ</span> ·{' '}
         <span style={{ cursor: 'pointer' }} onClick={() => window.dispatchEvent(new CustomEvent('open-modal', { detail: 'add-faculty' }))}>Добавить свой факультет</span> ·{' '}
         <span style={{ cursor: 'pointer' }} onClick={() => window.dispatchEvent(new CustomEvent('open-modal', { detail: 'add-program' }))}>Добавить свою программу</span>
@@ -357,7 +384,7 @@ function UniBadge({ uni, size = 36 }) {
   return (
     <div style={{
       width: size, height: size, borderRadius: 10,
-      background: iconUrl ? '#fff' : (uni?.color || 'var(--accent)'),
+      background: iconUrl ? 'transparent' : (uni?.color || 'var(--accent)'),
       color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center',
       fontWeight: 800, fontSize: size * 0.42, flexShrink: 0,
       overflow: 'hidden',
@@ -460,6 +487,9 @@ function UniIcon({ size = 16, color = 'currentColor' }) {
 }
 function StarIcon({ size = 16, color = 'currentColor' }) {
   return <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>;
+}
+function BellIcon({ size = 20, color = 'currentColor', filled }) {
+  return <svg width={size} height={size} viewBox="0 0 24 24" fill={filled ? color : 'none'} stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 01-3.46 0"/></svg>;
 }
 
 function TwitterModal({ open, onClose, title, width = 520, children }) {
@@ -724,7 +754,7 @@ function AppModals() {
       </TwitterModal>
 
 
-      <TwitterModal open={modal === 'suggest'} onClose={close} title="Предложить улучшение" width={520}>
+      <TwitterModal open={modal === 'suggest'} onClose={close} title="Обратная связь" width={520}>
         {submitted ? (
           <div style={{ textAlign: 'center', padding: '32px 16px' }}>
             <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 12 }}><HeartIcon size={40} color="var(--like)" filled /></div>
@@ -735,9 +765,9 @@ function AppModals() {
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
             <p style={{ margin: 0, fontSize: 14, color: 'var(--text-muted)', lineHeight: 1.6 }}>
-              Опишите что можно улучшить, какой функционал добавить или что работает не так. Мы серьёзно к этому подходим.
+              Предложите улучшение, опишите новый функционал или сообщите о баге. Мы читаем каждое сообщение.
             </p>
-            <Input label="Ваше предложение *" value={suggestion} onChange={e => setSuggestion(e.target.value)} multiline rows={5} placeholder="Было бы круто, если бы..." />
+            <Input label="Сообщение *" value={suggestion} onChange={e => setSuggestion(e.target.value)} multiline rows={5} placeholder="Опишите улучшение или баг..." />
             {error && <div style={{ color: 'var(--like)', fontSize: 13 }}>{error}</div>}
             <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
               <Button variant="secondary" onClick={close}>Отмена</Button>
@@ -754,5 +784,5 @@ Object.assign(window, {
   AppLayout, Sidebar, BottomNav, RightRail, UniBadge, ThemeToggle, CatLogo, AppModals, TwitterModal,
   HomeIcon, SearchIcon, UserIcon, GearIcon, HeartIcon, CommentIcon, ShareIcon, FeatherIcon,
   PlusIcon, TrashIcon, EditIcon, CheckIcon, ShieldIcon, DotsIcon, InfoIcon, UniIcon, StarIcon,
-  ChevronDownIcon, BackArrowIcon, TeacherIcon,
+  ChevronDownIcon, BackArrowIcon, TeacherIcon, BellIcon,
 });

@@ -5,6 +5,7 @@ import graphql.GraphqlErrorBuilder;
 import graphql.schema.DataFetchingEnvironment;
 import io.grpc.Status;
 import io.grpc.StatusRuntimeException;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.graphql.data.method.annotation.GraphQlExceptionHandler;
 import org.springframework.graphql.execution.ErrorType;
 import org.springframework.web.bind.annotation.ControllerAdvice;
@@ -15,6 +16,7 @@ import java.util.Map;
 import javax.security.auth.login.CredentialException;
 
 @ControllerAdvice
+@Slf4j
 public class GraphQlExceptionAdvice {
 
 	@GraphQlExceptionHandler(CredentialException.class)
@@ -27,6 +29,11 @@ public class GraphQlExceptionAdvice {
 		Status status = ex.getStatus();
 		Status.Code grpc = status.getCode();
 		String description = status.getDescription();
+
+		if (grpc == Status.Code.INTERNAL || grpc == Status.Code.UNAVAILABLE || grpc == Status.Code.UNKNOWN) {
+			log.warn("Upstream gRPC transport error on {}: code={} description={}",
+					env.getField() != null ? env.getField().getName() : "?", grpc, description, ex);
+		}
 
 		String msg = (description != null && !description.isBlank()) ? description : defaultMessage(grpc);
 

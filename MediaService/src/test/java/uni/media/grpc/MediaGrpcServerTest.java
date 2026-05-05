@@ -36,7 +36,6 @@ class MediaGrpcServerTest {
 	void uploadFile_returns_url_on_success() {
 		when(minioService.upload("university-icons", "logo.png", "image/png", new byte[]{1}))
 				.thenReturn("http://cdn/university-icons/logo.png");
-		@SuppressWarnings("unchecked")
 		StreamObserver<UploadFileResponse> obs = mock(StreamObserver.class);
 
 		mediaGrpcServer.uploadFile(UploadFileRequest.newBuilder().setBucket("university-icons").setFilename("logo.png")
@@ -50,7 +49,6 @@ class MediaGrpcServerTest {
 
 	@Test
 	void deleteFile_returns_success_true() {
-		@SuppressWarnings("unchecked")
 		StreamObserver<DeleteFileResponse> obs = mock(StreamObserver.class);
 
 		mediaGrpcServer.deleteFile(DeleteFileRequest.newBuilder().setBucket("post-media").setFilename("p.png").build(),
@@ -65,7 +63,6 @@ class MediaGrpcServerTest {
 	void generatePresignedUploadUrl_returns_urls() {
 		when(minioService.generatePresignedUploadUrl("post-media", "a.webp", "image/webp", 600))
 				.thenReturn(new MinioService.PresignResult("http://upload", "http://final"));
-		@SuppressWarnings("unchecked")
 		StreamObserver<PresignResponse> obs = mock(StreamObserver.class);
 
 		mediaGrpcServer.generatePresignedUploadUrl(PresignRequest.newBuilder().setBucket("post-media")
@@ -80,7 +77,6 @@ class MediaGrpcServerTest {
 	@Test
 	void uploadFile_maps_illegal_argument_to_invalid_argument_status() {
 		when(minioService.upload(any(), any(), any(), any())).thenThrow(new IllegalArgumentException("bad input"));
-		@SuppressWarnings("unchecked")
 		StreamObserver<UploadFileResponse> obs = mock(StreamObserver.class);
 
 		mediaGrpcServer.uploadFile(UploadFileRequest.newBuilder().setBucket("x").setFilename("f")

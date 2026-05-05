@@ -41,38 +41,6 @@ class FeedRedisRepositoryTest {
 	FeedRedisRepository feedRedisRepository;
 
 	@Test
-	void countFeed_returns_count_for_user_feed() {
-		when(redis.opsForZSet()).thenReturn(zSetOps);
-		when(zSetOps.zCard("feed:user:user-123")).thenReturn(42L);
-
-		long result = feedRedisRepository.countFeed("user-123");
-
-		assertThat(result).isEqualTo(42L);
-		verify(zSetOps).zCard("feed:user:user-123");
-	}
-
-	@Test
-	void countFeed_returns_count_for_global_feed_when_user_id_null() {
-		when(redis.opsForZSet()).thenReturn(zSetOps);
-		when(zSetOps.zCard("feed:global")).thenReturn(100L);
-
-		long result = feedRedisRepository.countFeed(null);
-
-		assertThat(result).isEqualTo(100L);
-		verify(zSetOps).zCard("feed:global");
-	}
-
-	@Test
-	void countFeed_returns_zero_when_redis_returns_null() {
-		when(redis.opsForZSet()).thenReturn(zSetOps);
-		when(zSetOps.zCard("feed:user:user-123")).thenReturn(null);
-
-		long result = feedRedisRepository.countFeed("user-123");
-
-		assertThat(result).isZero();
-	}
-
-	@Test
 	void addPostToAuthorFeed_adds_post_with_score() {
 		when(redis.opsForZSet()).thenReturn(zSetOps);
 
@@ -82,30 +50,12 @@ class FeedRedisRepositoryTest {
 	}
 
 	@Test
-	void addPostToGlobalFeed_adds_post_with_score() {
-		when(redis.opsForZSet()).thenReturn(zSetOps);
-
-		feedRedisRepository.addPostToGlobalFeed("post-456", 2000.0);
-
-		verify(zSetOps).add("feed:global", "post-456", 2000.0);
-	}
-
-	@Test
 	void addPostToUserFeed_adds_post_with_score() {
 		when(redis.opsForZSet()).thenReturn(zSetOps);
 
 		feedRedisRepository.addPostToUserFeed("user-123", "post-456", 3000.0);
 
 		verify(zSetOps).add("feed:user:user-123", "post-456", 3000.0);
-	}
-
-	@Test
-	void removePostFromGlobalFeed_removes_post() {
-		when(redis.opsForZSet()).thenReturn(zSetOps);
-
-		feedRedisRepository.removePostFromGlobalFeed("post-456");
-
-		verify(zSetOps).remove("feed:global", "post-456");
 	}
 
 	@Test
@@ -135,16 +85,6 @@ class FeedRedisRepositoryTest {
 		feedRedisRepository.trimAuthorFeed("author-123", 1000);
 
 		verify(zSetOps, never()).removeRange(any(), anyLong(), anyLong());
-	}
-
-	@Test
-	void trimGlobalFeed_removes_excess_posts() {
-		when(redis.opsForZSet()).thenReturn(zSetOps);
-		when(zSetOps.zCard("feed:global")).thenReturn(6000L);
-
-		feedRedisRepository.trimGlobalFeed(5000);
-
-		verify(zSetOps).removeRange("feed:global", 0, 999);
 	}
 
 	@Test
@@ -307,39 +247,6 @@ class FeedRedisRepositoryTest {
 	}
 
 	@Test
-	void findFeedPostIdsByCursor_queries_user_feed_with_score_range() {
-		when(redis.opsForZSet()).thenReturn(zSetOps);
-		when(zSetOps.reverseRangeByScore("feed:user:user-123", Double.NEGATIVE_INFINITY, (double) (1700000000000L - 1),
-				0, 20)).thenReturn(Set.of("post1", "post2"));
-
-		List<String> result = feedRedisRepository.findFeedPostIdsByCursor("user-123", 1700000000000L, 20);
-
-		assertThat(result).containsAll(List.of("post1", "post2"));
-	}
-
-	@Test
-	void findFeedPostIdsByCursor_uses_global_feed_for_null_user() {
-		when(redis.opsForZSet()).thenReturn(zSetOps);
-		when(zSetOps.reverseRangeByScore(eq("feed:global"), anyDouble(), anyDouble(), eq(0L), eq(20L)))
-				.thenReturn(Set.of("post1"));
-
-		List<String> result = feedRedisRepository.findFeedPostIdsByCursor(null, 1700000000000L, 20);
-
-		assertThat(result).contains("post1");
-		verify(zSetOps).reverseRangeByScore(eq("feed:global"), anyDouble(), anyDouble(), anyLong(), anyLong());
-	}
-
-	@Test
-	void findFeedPostIdsByCursor_returns_empty_list_when_redis_returns_null() {
-		when(redis.opsForZSet()).thenReturn(zSetOps);
-		when(zSetOps.reverseRangeByScore(any(), anyDouble(), anyDouble(), anyLong(), anyLong())).thenReturn(null);
-
-		List<String> result = feedRedisRepository.findFeedPostIdsByCursor("user-123", 1700000000000L, 20);
-
-		assertThat(result).isEmpty();
-	}
-
-	@Test
 	void countPopular_returns_count() {
 		when(redis.opsForZSet()).thenReturn(zSetOps);
 		when(zSetOps.zCard("feed:popular")).thenReturn(55L);
@@ -389,11 +296,20 @@ class FeedRedisRepositoryTest {
 	}
 
 	@Test
-	void findUniversityTopicPostsWithScoresByCursor_prefers_subtopic_key_when_present() {
+	void findUniversityFacultyPostsWithScoresByCursor_uses_topic_key() {
 		when(redis.opsForZSet()).thenReturn(zSetOps);
-		when(redis.hasKey("feed:uni:7:subtopic:11")).thenReturn(true);
 
-		feedRedisRepository.findUniversityTopicPostsWithScoresByCursor(7L, 11L, 500L, 10);
+		feedRedisRepository.findUniversityFacultyPostsWithScoresByCursor(7L, 11L, 500L, 10);
+
+		verify(zSetOps).reverseRangeByScoreWithScores(eq("feed:uni:7:topic:11"), anyDouble(), anyDouble(), eq(0L),
+				eq(10L));
+	}
+
+	@Test
+	void findUniversityProgramPostsWithScoresByCursor_uses_subtopic_key() {
+		when(redis.opsForZSet()).thenReturn(zSetOps);
+
+		feedRedisRepository.findUniversityProgramPostsWithScoresByCursor(7L, 11L, 500L, 10);
 
 		verify(zSetOps).reverseRangeByScoreWithScores(eq("feed:uni:7:subtopic:11"), anyDouble(), anyDouble(), eq(0L),
 				eq(10L));

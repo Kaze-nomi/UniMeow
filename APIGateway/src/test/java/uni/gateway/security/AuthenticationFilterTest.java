@@ -39,7 +39,7 @@ class AuthenticationFilterTest {
 	@Test
 	void graphql_endpoint_is_accessible_without_token() {
 		client.post().uri("/graphql").header("Content-Type", "application/json")
-				.bodyValue("{\"query\": \"{ globalFeed { posts { id } hasMore } }\"}").exchange().expectStatus()
+				.bodyValue("{\"query\": \"{ trendingFeed { posts { id } hasMore } }\"}").exchange().expectStatus()
 				.value(status -> org.assertj.core.api.Assertions.assertThat(status).isNotEqualTo(401));
 	}
 
@@ -47,7 +47,7 @@ class AuthenticationFilterTest {
 	void graphql_endpoint_with_invalid_token_still_passes_as_unauthenticated() {
 		client.post().uri("/graphql").cookie("ACCESS_TOKEN", "totally.wrong.token")
 				.header("Content-Type", "application/json")
-				.bodyValue("{\"query\": \"{ globalFeed { posts { id } hasMore } }\"}").exchange().expectStatus()
+				.bodyValue("{\"query\": \"{ trendingFeed { posts { id } hasMore } }\"}").exchange().expectStatus()
 				.value(status -> org.assertj.core.api.Assertions.assertThat(status).isNotEqualTo(401));
 	}
 

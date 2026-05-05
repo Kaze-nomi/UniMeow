@@ -33,13 +33,19 @@ public class UserService {
 
 	@Transactional
 	public User createOrGet(String emailGoogle, String name, String surname, String avatarUrl) {
-		return userRepository.findByEmailGoogle(emailGoogle).orElseGet(() -> {
+		User user = userRepository.findByEmailGoogle(emailGoogle).orElseGet(() -> {
 			log.info("Creating new user for email {}", emailGoogle);
 			return userRepository.save(User.builder().id(UUID.randomUUID()).emailGoogle(emailGoogle).username(null)
 					.name(name).surname(surname.isBlank() ? null : surname)
 					.avatarUrl(avatarUrl.isBlank() ? null : avatarUrl).isStudentVerified(false)
 					.isEmployeeVerified(false).createdAt(LocalDateTime.now()).build());
 		});
+
+		if (isBanned(user)) {
+			throw new SecurityException("User is banned");
+		}
+
+		return user;
 	}
 
 	@Transactional(readOnly = true)
@@ -55,11 +61,10 @@ public class UserService {
 
 	@Transactional
 	public User update(UUID id, boolean hasUsername, String username, boolean hasName, String name, boolean hasSurname,
-			String surname, boolean hasPatronymic, String patronymic, boolean hasStatus, String status,
-			boolean hasAvatarUrl, String avatarUrl, boolean hasFacultyId, Long facultyId, boolean hasCourse,
-			Integer course, boolean hasEducationLevel, User.EducationLevel educationLevel, boolean hasGraduationYear,
-			Integer graduationYear, boolean hasBio, String bio, boolean hasCoverUrl, String coverUrl,
-			boolean hasProgramId, Long programId) {
+			String surname, boolean hasStatus, String status, boolean hasAvatarUrl, String avatarUrl,
+			boolean hasFacultyId, Long facultyId, boolean hasCourse, Integer course, boolean hasEducationLevel,
+			User.EducationLevel educationLevel, boolean hasGraduationYear, Integer graduationYear, boolean hasBio,
+			String bio, boolean hasCoverUrl, String coverUrl, boolean hasProgramId, Long programId) {
 
 		User user = getById(id);
 
@@ -67,17 +72,16 @@ public class UserService {
 			if (username == null || username.isBlank()) {
 				throw new IllegalArgumentException("Username cannot be empty");
 			}
-			if (!username.equals(user.getUsername()) && userRepository.existsByUsername(username)) {
-				throw new UsernameAlreadyTakenException("Username already taken: " + username);
+			String normalizedUsername = username.strip().toLowerCase().replaceAll("\\s+", "");
+			if (!normalizedUsername.equals(user.getUsername()) && userRepository.existsByUsername(normalizedUsername)) {
+				throw new UsernameAlreadyTakenException("Username already taken: " + normalizedUsername);
 			}
-			user.setUsername(username);
+			user.setUsername(normalizedUsername);
 		}
 		if (hasName)
 			user.setName(name);
 		if (hasSurname)
 			user.setSurname(surname);
-		if (hasPatronymic)
-			user.setPatronymic(patronymic);
 		if (hasStatus)
 			user.setStatus(status);
 		if (hasAvatarUrl)
@@ -219,13 +223,17 @@ public class UserService {
 	@Transactional
 	public void grantAdmin(UUID granterId, UUID targetUserId) {
 		User granter = getById(granterId);
-		if (!"kazenomi".equals(granter.getUsername())) {
+		if (granter.getUsername() == null || !"kazenomi".equalsIgnoreCase(granter.getUsername())) {
 			throw new SecurityException("Only kazenomi can grant admin privileges");
 		}
 		User target = getById(targetUserId);
 		target.setAdmin(true);
 		userRepository.save(target);
 		log.warn("Admin granted to user {} by {}", targetUserId, granterId);
+
+		outboxService.enqueueUserEvent("ADMIN_GRANTED", targetUserId.toString(), targetUserId.toString(),
+				Map.of("targetUserId", targetUserId.toString(), "granterId", granterId.toString(), "grantedAt",
+						LocalDateTime.now().toString()));
 	}
 
 	@Transactional
@@ -239,11 +247,55 @@ public class UserService {
 		if (target.isAdmin()) {
 			throw new IllegalArgumentException("Cannot ban an admin user");
 		}
+
+		boolean permanentBan = bannedUntil == null;
 		target.setBannedUntil(bannedUntil);
-		target.setBannedPermanent(bannedUntil == null);
+		target.setBannedPermanent(permanentBan);
 		target.setBanReason(reason == null || reason.isBlank() ? null : reason.trim());
+
+		if (permanentBan) {
+			clearOptionalProfileData(target);
+			outboxService.enqueueUserEvent("USER_PERMANENT_BANNED", targetUserId.toString(), targetUserId.toString(),
+					Map.of("userId", targetUserId.toString(), "moderatorId", moderatorId.toString(), "reason",
+							target.getBanReason() == null ? "" : target.getBanReason()));
+		}
+
+		outboxService.enqueueUserEvent("USER_BANNED", targetUserId.toString(), targetUserId.toString(),
+				Map.of("targetUserId", targetUserId.toString(), "moderatorId", moderatorId.toString(), "bannedAt",
+						LocalDateTime.now().toString()));
+
 		userRepository.save(target);
 		log.warn("User {} banned by admin {}; until={}, reason={}", targetUserId, moderatorId, bannedUntil, reason);
+	}
+
+	@Transactional
+	public void deleteAccount(UUID userId) {
+		User user = getById(userId);
+		outboxService.enqueueUserEvent("USER_DELETED", userId.toString(), userId.toString(),
+				Map.of("userId", userId.toString(), "deletedAt", LocalDateTime.now().toString()));
+		userRepository.delete(user);
+		log.warn("User {} deleted their account", userId);
+	}
+
+	private static boolean isBanned(User user) {
+		LocalDateTime bannedUntil = user.getBannedUntil();
+		return user.isBannedPermanent() || (bannedUntil != null && bannedUntil.isAfter(LocalDateTime.now()));
+	}
+
+	private static void clearOptionalProfileData(User target) {
+		target.setUsername(null);
+		target.setSurname(null);
+		target.setEmailUniversity(null);
+		target.setAvatarUrl(null);
+		target.setCoverUrl(null);
+		target.setStatus(null);
+		target.setUniversity(null);
+		target.setFaculty(null);
+		target.setProgram(null);
+		target.setCourse(null);
+		target.setEducationLevel(null);
+		target.setGraduationYear(null);
+		target.setBio(null);
 	}
 
 }

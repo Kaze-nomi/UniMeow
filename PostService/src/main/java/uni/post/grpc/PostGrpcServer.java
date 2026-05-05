@@ -29,7 +29,9 @@ public class PostGrpcServer extends PostServiceGrpc.PostServiceImplBase {
 	public void createPost(CreatePostRequest req, StreamObserver<PostResponse> obs) {
 		try {
 			PostResult result = postService.createPost(UUID.fromString(req.getAuthorId()), req.getContent(),
-					req.getMediaUrlsList(), req.hasTopicId() ? req.getTopicId() : null);
+					req.getMediaUrlsList(), req.hasUniversityId() ? req.getUniversityId() : null,
+					req.hasFacultyId() ? req.getFacultyId() : null, req.hasProgramId() ? req.getProgramId() : null,
+					req.hasTopicId() ? req.getTopicId() : null, req.hasParentTopicId() ? req.getParentTopicId() : null);
 			obs.onNext(toProto(result));
 			obs.onCompleted();
 		} catch (IllegalArgumentException e) {

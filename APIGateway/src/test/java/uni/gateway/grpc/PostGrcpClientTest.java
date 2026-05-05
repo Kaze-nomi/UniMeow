@@ -52,7 +52,7 @@ class PostGrpcClientTest {
 	void create_post_returns_post_response_on_success() {
 		when(stub.createPost(any())).thenReturn(buildPostResponse());
 
-		StepVerifier.create(client.createPost(AUTHOR_ID, "Hello!", List.of(), null))
+		StepVerifier.create(client.createPost(AUTHOR_ID, "Hello!", List.of(), null, null, null, null, null))
 				.assertNext(r -> assertThat(r.getId()).isEqualTo(POST_ID)).verifyComplete();
 	}
 
@@ -62,13 +62,18 @@ class PostGrpcClientTest {
 
 		ArgumentCaptor<CreatePostRequest> captor = ArgumentCaptor.forClass(CreatePostRequest.class);
 
-		StepVerifier.create(client.createPost(AUTHOR_ID, "Hello!", List.of("url1"), null)).expectNextCount(1)
-				.verifyComplete();
+		StepVerifier.create(client.createPost(AUTHOR_ID, "Hello!", List.of("url1"), 1L, 2L, 3L, 4L, 5L))
+				.expectNextCount(1).verifyComplete();
 
 		verify(stub).createPost(captor.capture());
 		assertThat(captor.getValue().getAuthorId()).isEqualTo(AUTHOR_ID);
 		assertThat(captor.getValue().getContent()).isEqualTo("Hello!");
 		assertThat(captor.getValue().getMediaUrlsList()).containsExactly("url1");
+		assertThat(captor.getValue().getUniversityId()).isEqualTo(1L);
+		assertThat(captor.getValue().getFacultyId()).isEqualTo(2L);
+		assertThat(captor.getValue().getProgramId()).isEqualTo(3L);
+		assertThat(captor.getValue().getTopicId()).isEqualTo(4L);
+		assertThat(captor.getValue().getParentTopicId()).isEqualTo(5L);
 	}
 
 	@Test
@@ -76,10 +81,12 @@ class PostGrpcClientTest {
 		when(stub.createPost(any()))
 				.thenThrow(Status.INVALID_ARGUMENT.withDescription("content cannot be empty").asRuntimeException());
 
-		StepVerifier.create(client.createPost(AUTHOR_ID, "", List.of(), null)).expectErrorSatisfies(e -> {
-			assertThat(e).isInstanceOf(StatusRuntimeException.class);
-			assertThat(((StatusRuntimeException) e).getStatus().getCode()).isEqualTo(Status.INVALID_ARGUMENT.getCode());
-		}).verify();
+		StepVerifier.create(client.createPost(AUTHOR_ID, "", List.of(), null, null, null, null, null))
+				.expectErrorSatisfies(e -> {
+					assertThat(e).isInstanceOf(StatusRuntimeException.class);
+					assertThat(((StatusRuntimeException) e).getStatus().getCode())
+							.isEqualTo(Status.INVALID_ARGUMENT.getCode());
+				}).verify();
 	}
 
 	@Test

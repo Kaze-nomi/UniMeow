@@ -6,10 +6,14 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import uni.post.entity.Comment;
+import uni.post.entity.CommentLike;
 import uni.post.entity.PostLike;
 import uni.post.entity.Post;
 import uni.post.exception.PostNotFoundException;
 import uni.post.outbox.OutboxService;
+import uni.post.repository.CommentLikeRepository;
+import uni.post.repository.CommentRepository;
 import uni.post.repository.PostLikeRepository;
 import uni.post.repository.PostRepository;
 import uni.post.record.PostPageResult;
@@ -19,9 +23,9 @@ import java.time.LocalDateTime;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
-
-import uni.post.grpc.UserGrpcClient;
+import java.util.stream.Collectors;
 
 @Slf4j
 @Service
@@ -32,48 +36,50 @@ public class PostService {
 	private static final int DEFAULT_SIZE = 20;
 
 	private final PostRepository postRepository;
+	private final CommentRepository commentRepository;
 	private final PostLikeRepository likeRepository;
+	private final CommentLikeRepository commentLikeRepository;
 	private final OutboxService outboxService;
-	private final UserGrpcClient userGrpcClient;
+	private final MentionResolver mentionResolver;
 
 	@Transactional
-	public PostResult createPost(UUID authorId, String content, List<String> mediaUrls, Long topicId) {
+	public PostResult createPost(UUID authorId, String content, List<String> mediaUrls, Long universityId,
+			Long facultyId, Long programId, Long topicId, Long parentTopicId) {
 		if (content == null || content.isBlank()) {
 			throw new IllegalArgumentException("Post content cannot be empty");
-		}
-
-		UserGrpcClient.PostTarget target = userGrpcClient.resolvePostTarget(authorId.toString(), null);
-		if (!target.success()) {
-			throw new IllegalArgumentException(target.error());
 		}
 
 		LocalDateTime now = LocalDateTime.now();
 
 		Post post = postRepository.save(Post.builder().id(UUID.randomUUID()).authorId(authorId).content(content.trim())
-				.mediaUrls(mediaUrls == null ? List.of() : mediaUrls).universityId(target.universityId())
-				.facultyId(target.facultyId()).programId(target.programId()).topicId(target.topicId())
-				.parentTopicId(target.parentTopicId()).likesCount(0).commentsCount(0).createdAt(now).updatedAt(now)
-				.build());
+				.mediaUrls(mediaUrls == null ? List.of() : mediaUrls).universityId(universityId).facultyId(facultyId)
+				.programId(programId).topicId(topicId).parentTopicId(parentTopicId).likesCount(0).commentsCount(0)
+				.createdAt(now).updatedAt(now).build());
+
+		List<String> mentionedUserIds = mentionResolver.resolveUserIds(content);
 
 		Map<String, Object> payload = new LinkedHashMap<>();
 		payload.put("postId", post.getId().toString());
 		payload.put("authorId", post.getAuthorId().toString());
-		if (target.universityId() != null) {
-			payload.put("authorUniversityId", target.universityId().toString());
+		if (universityId != null) {
+			payload.put("authorUniversityId", universityId.toString());
 		}
-		if (target.topicId() != null) {
-			payload.put("topicId", target.topicId().toString());
+		if (topicId != null) {
+			payload.put("topicId", topicId.toString());
 		}
-		if (target.facultyId() != null) {
-			payload.put("facultyId", target.facultyId().toString());
+		if (facultyId != null) {
+			payload.put("facultyId", facultyId.toString());
 		}
-		if (target.programId() != null) {
-			payload.put("programId", target.programId().toString());
+		if (programId != null) {
+			payload.put("programId", programId.toString());
 		}
-		if (target.parentTopicId() != null) {
-			payload.put("parentTopicId", target.parentTopicId().toString());
+		if (parentTopicId != null) {
+			payload.put("parentTopicId", parentTopicId.toString());
 		}
 		payload.put("createdAt", post.getCreatedAt().toString());
+		if (!mentionedUserIds.isEmpty()) {
+			payload.put("mentionedUserIds", mentionedUserIds);
+		}
 
 		outboxService.enqueuePostEvent("POST_CREATED", post.getAuthorId().toString(), post.getId().toString(), payload);
 
@@ -175,6 +181,92 @@ public class PostService {
 	}
 
 	@Transactional
+	public void deleteAllContentByAuthor(UUID authorId) {
+		List<PostLike> postLikes = likeRepository.findByUserId(authorId);
+		List<CommentLike> commentLikes = commentLikeRepository.findByUserId(authorId);
+		List<Comment> ownComments = commentRepository.findByAuthorId(authorId);
+		List<Post> authoredPosts = postRepository.findByAuthorId(authorId);
+		Set<UUID> authoredPostIds = authoredPosts.stream().map(Post::getId).collect(Collectors.toSet());
+
+		Set<UUID> commentsToDelete = collectCommentSubtree(
+				ownComments.stream().map(Comment::getId).collect(Collectors.toSet()));
+
+		int decrementedPostLikes = 0;
+		for (PostLike like : postLikes) {
+			if (authoredPostIds.contains(like.getPostId())) {
+				continue;
+			}
+			Post post = postRepository.findById(like.getPostId()).orElse(null);
+			if (post != null) {
+				post.setLikesCount(Math.max(0, post.getLikesCount() - 1));
+				postRepository.save(post);
+				decrementedPostLikes++;
+			}
+		}
+		likeRepository.deleteByUserId(authorId);
+
+		int decrementedCommentLikes = 0;
+		for (CommentLike like : commentLikes) {
+			if (commentsToDelete.contains(like.getCommentId())) {
+				continue;
+			}
+			Comment comment = commentRepository.findById(like.getCommentId()).orElse(null);
+			if (comment != null) {
+				comment.setLikesCount(Math.max(0, comment.getLikesCount() - 1));
+				commentRepository.save(comment);
+				decrementedCommentLikes++;
+			}
+		}
+		commentLikeRepository.deleteByUserId(authorId);
+
+		Map<UUID, Long> commentsCountDecrementByPost = new java.util.HashMap<>();
+		for (UUID commentId : commentsToDelete) {
+			Comment c = commentRepository.findById(commentId).orElse(null);
+			if (c != null && !authoredPostIds.contains(c.getPostId())) {
+				commentsCountDecrementByPost.merge(c.getPostId(), 1L, Long::sum);
+			}
+		}
+
+		if (!commentsToDelete.isEmpty()) {
+			commentLikeRepository.deleteByCommentIdIn(commentsToDelete);
+			commentRepository.deleteAllByIds(commentsToDelete);
+		}
+
+		for (Map.Entry<UUID, Long> entry : commentsCountDecrementByPost.entrySet()) {
+			postRepository.findById(entry.getKey()).ifPresent(post -> {
+				post.setCommentsCount(Math.max(0, post.getCommentsCount() - entry.getValue().intValue()));
+				postRepository.save(post);
+			});
+		}
+
+		if (!authoredPostIds.isEmpty()) {
+			likeRepository.deleteByPostIdIn(authoredPostIds);
+		}
+
+		int deletedPosts = postRepository.deleteAllByAuthorId(authorId);
+		log.info(
+				"Deleted all content for user {}: {} comments (incl. replies), {} posts, {} post-likes (decremented {} foreign posts), {} comment-likes (decremented {} foreign comments)",
+				authorId, commentsToDelete.size(), deletedPosts, postLikes.size(), decrementedPostLikes,
+				commentLikes.size(), decrementedCommentLikes);
+	}
+
+	private Set<UUID> collectCommentSubtree(Set<UUID> rootIds) {
+		Set<UUID> all = new java.util.HashSet<>(rootIds);
+		Set<UUID> frontier = new java.util.HashSet<>(rootIds);
+		while (!frontier.isEmpty()) {
+			List<Comment> children = commentRepository.findByParentCommentIdIn(frontier);
+			Set<UUID> next = new java.util.HashSet<>();
+			for (Comment child : children) {
+				if (all.add(child.getId())) {
+					next.add(child.getId());
+				}
+			}
+			frontier = next;
+		}
+		return all;
+	}
+
+	@Transactional
 	public void likePost(UUID postId, UUID userId) {
 		Post post = findOrThrow(postId);
 
@@ -190,6 +282,7 @@ public class PostService {
 		Map<String, Object> payload = new LinkedHashMap<>();
 		payload.put("postId", post.getId().toString());
 		payload.put("authorId", post.getAuthorId().toString());
+		payload.put("actorId", userId.toString());
 		payload.put("userId", userId.toString());
 		payload.put("likesCount", post.getLikesCount());
 		payload.put("createdAtMs", post.getCreatedAt().toInstant(java.time.ZoneOffset.UTC).toEpochMilli());

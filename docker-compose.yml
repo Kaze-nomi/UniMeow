@@ -11,11 +11,32 @@ services:
     volumes:
       - postgres_user_data:/var/lib/postgresql/data
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"
     networks:
       - uni-network
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${DB_USERNAME:-postgres} -d user_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  postgres-notification:
+    image: postgres:16-alpine
+    container_name: uni-postgres-notification
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB:       notification_db
+      POSTGRES_USER:     ${DB_USERNAME:-postgres}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-postgres}
+    volumes:
+      - postgres_notification_data:/var/lib/postgresql/data
+    ports:
+      - "127.0.0.1:5435:5432"
+    networks:
+      - uni-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USERNAME:-postgres} -d notification_db"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -32,7 +53,7 @@ services:
     volumes:
       - postgres_post_data:/var/lib/postgresql/data
     ports:
-      - "5433:5432"
+      - "127.0.0.1:5433:5432"
     networks:
       - uni-network
     healthcheck:
@@ -48,7 +69,7 @@ services:
     restart: unless-stopped
     command: redis-server --appendonly yes --appendfsync everysec
     ports:
-      - "6379:6379"
+      - "127.0.0.1:6379:6379"
     volumes:
       - redis_data:/data
     networks:
@@ -71,8 +92,8 @@ services:
     volumes:
       - minio_data:/data
     ports:
-      - "9000:9000"
-      - "9001:9001"
+      - "127.0.0.1:9000:9000"
+      - "127.0.0.1:9001:9001"
     networks:
       - uni-network
     healthcheck:
@@ -104,7 +125,7 @@ services:
     volumes:
       - kafka_data:/var/lib/kafka/data
     ports:
-      - "9094:9092"
+      - "127.0.0.1:9094:9092"
     networks:
       - uni-network
     healthcheck:
@@ -126,7 +147,7 @@ services:
       KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:9092
       KAFKA_CLUSTERS_0_PROPERTIES_SECURITY_PROTOCOL: PLAINTEXT
     ports:
-      - "8085:8080"
+      - "127.0.0.1:8085:8080"
     networks:
       - uni-network
 
@@ -137,7 +158,7 @@ services:
     container_name: uni-eureka
     restart: unless-stopped
     ports:
-      - "8761:8761"
+      - "127.0.0.1:8761:8761"
     networks:
       - uni-network
     healthcheck:
@@ -170,12 +191,9 @@ services:
       SPRING_MAIL_USERNAME: ${MAIL_USERNAME}
       SPRING_MAIL_PASSWORD: ${MAIL_PASSWORD}
       SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:9092
-      MEDIA_GRPC_HOST: media-service
-      MEDIA_GRPC_PORT: 9093
-      ADMIN_TOKEN: ${ADMIN_TOKEN:-changeme-admin-token}
     ports:
-      - "9004:9000"
-      - "9090:9090"
+      - "127.0.0.1:9004:9000"
+      - "127.0.0.1:9090:9090"
     networks:
       - uni-network
     healthcheck:
@@ -203,8 +221,8 @@ services:
       MINIO_PUBLIC_URL: ${MINIO_PUBLIC_URL:-http://localhost:9000}
       EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://eureka-server:8761/eureka/
     ports:
-      - "9003:9003"
-      - "9093:9093"
+      - "127.0.0.1:9003:9003"
+      - "127.0.0.1:9093:9093"
     networks:
       - uni-network
     healthcheck:
@@ -234,8 +252,8 @@ services:
       EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://eureka-server:8761/eureka/
       SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:9092
     ports:
-      - "9005:9001"
-      - "9091:9091"
+      - "127.0.0.1:9005:9001"
+      - "127.0.0.1:9091:9091"
     networks:
       - uni-network
     healthcheck:
@@ -264,12 +282,43 @@ services:
       SPRING_DATA_REDIS_HOST: redis
       SPRING_DATA_REDIS_PORT: 6379
     ports:
-      - "9002:9002"
-      - "9092:9092"
+      - "127.0.0.1:9002:9002"
+      - "127.0.0.1:9092:9092"
     networks:
       - uni-network
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://localhost:9002/actuator/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 60s
+
+  notification-service:
+    build:
+      context: .
+      dockerfile: NotificationService/Dockerfile
+    container_name: uni-notification-service
+    restart: unless-stopped
+    depends_on:
+      postgres-notification:
+        condition: service_healthy
+      eureka-server:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    environment:
+      SPRING_DATASOURCE_URL:      jdbc:postgresql://postgres-notification:5432/notification_db
+      SPRING_DATASOURCE_USERNAME: ${DB_USERNAME:-postgres}
+      SPRING_DATASOURCE_PASSWORD: ${DB_PASSWORD:-postgres}
+      EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://eureka-server:8761/eureka/
+      SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+    ports:
+      - "127.0.0.1:9007:9006"
+      - "127.0.0.1:9095:9095"
+    networks:
+      - uni-network
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:9006/actuator/health || exit 1"]
       interval: 15s
       timeout: 5s
       retries: 5
@@ -290,13 +339,18 @@ services:
         condition: service_healthy
       feed-service:
         condition: service_healthy
+      notification-service:
+        condition: service_healthy
     environment:
-      GOOGLE_CLIENT_ID:     ${GOOGLE_CLIENT_ID}
-      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET}
-      JWT_SECRET:           ${JWT_SECRET}
+      GOOGLE_CLIENT_ID:                       ${GOOGLE_CLIENT_ID}
+      GOOGLE_CLIENT_SECRET:                   ${GOOGLE_CLIENT_SECRET}
+      JWT_SECRET:                             ${JWT_SECRET}
+      APP_SECURITY_SECURE_COOKIE:             ${APP_SECURITY_SECURE_COOKIE:-false}
+      APP_SECURITY_ALLOWED_ORIGINS:           ${APP_SECURITY_ALLOWED_ORIGINS:-http://localhost:*,null}
+      APP_SECURITY_OAUTH2_SUCCESS_REDIRECT:   ${APP_SECURITY_OAUTH2_SUCCESS_REDIRECT:-http://localhost:5173/}
       EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://eureka-server:8761/eureka/
     ports:
-      - "8080:8080"
+      - "127.0.0.1:8080:8080"
     networks:
       - uni-network
     healthcheck:
@@ -310,13 +364,15 @@ services:
     build:
       context: .
       dockerfile: Frontend/Dockerfile
+      args:
+        VITE_API_BASE: ${VITE_API_BASE:-http://localhost:8080}
     container_name: uni-frontend
     restart: unless-stopped
-    # depends_on:
-    #   api-gateway:
-    #     condition: service_healthy
+    depends_on:
+      api-gateway:
+        condition: service_healthy
     ports:
-      - "5173:80"
+      - "127.0.0.1:5173:80"
     networks:
       - uni-network
 
@@ -332,7 +388,7 @@ services:
       - '--storage.tsdb.path=/prometheus'
       - '--storage.tsdb.retention.time=15d'
     ports:
-      - "9700:9090"
+      - "127.0.0.1:9700:9090"
     networks:
       - uni-network
 
@@ -350,13 +406,14 @@ services:
       - grafana_data:/var/lib/grafana
       - ./Monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
     ports:
-      - "3000:3000"
+      - "127.0.0.1:3000:3000"
     networks:
       - uni-network
 
 volumes:
   postgres_user_data:
   postgres_post_data:
+  postgres_notification_data:
   redis_data:
   kafka_data:
   minio_data:

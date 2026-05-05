@@ -70,7 +70,7 @@ function App() {
 
 
   React.useEffect(() => {
-    API.gql(API.Q.me, {}, false)
+    API.gql(API.Q.me)
       .then(d => {
         const user = d.me;
         setCurrentUser(user);
@@ -104,9 +104,9 @@ function App() {
     if (authLoading) {
       return (
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '100vh' }}>
-          <div style={{ textAlign: 'center' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12 }}>
             <CatLogo size={64} />
-            <div style={{ marginTop: 12 }}><Spinner size={28} /></div>
+            <Spinner size={28} />
           </div>
         </div>
       );
@@ -115,7 +115,7 @@ function App() {
     if (route === 'login') return <LoginPage onNavigate={navigate} />;
     if (route === 'complete-registration') return <CompleteRegistrationPage onNavigate={navigate} onUserUpdated={handleUserUpdated} />;
 
-    const universitySlug = route && !['feed', 'profile', 'post', 'settings', 'explore', 'about', 'admin', 'login', 'complete-registration'].includes(route)
+    const universitySlug = route && !['feed', 'profile', 'post', 'settings', 'explore', 'notifications', 'about', 'admin', 'login', 'complete-registration'].includes(route)
       ? route
       : null;
 
@@ -131,6 +131,8 @@ function App() {
           <SettingsPage currentUser={currentUser} onNavigate={navigate} />
         ) : route === 'explore' ? (
           <ExplorePage currentUser={currentUser} onNavigate={navigate} />
+        ) : route === 'notifications' ? (
+          <NotificationsPage currentUser={currentUser} onNavigate={navigate} />
         ) : route === 'about' ? (
           <AboutPage onNavigate={navigate} />
         ) : route === 'admin' && param === 'suggestions' ? (
@@ -147,7 +149,7 @@ function App() {
   return (
     <>
       {renderPage()}
-      <ComposeModal open={composeOpen} onClose={() => setComposeOpen(false)} currentUser={currentUser} onNavigate={navigate} onCreated={() => window.dispatchEvent(new CustomEvent('um-post-created'))} />
+      <ComposeModal open={composeOpen} onClose={() => setComposeOpen(false)} currentUser={currentUser} onNavigate={navigate} onCreated={(newPost) => { if (newPost) window.dispatchEvent(new CustomEvent('um-post-created', { detail: newPost })); }} />
       <MockUserPicker onUserChange={handleUserUpdated} />
       <AppModals />
     </>

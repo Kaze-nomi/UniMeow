@@ -16,6 +16,10 @@ public class FeedGrpcClient {
 	private FeedServiceGrpc.FeedServiceBlockingStub stub;
 
 	public Mono<GetFeedResponse> getFeed(FeedType feedType, String userId, Long cursor, int size) {
+		return getFeed(feedType, userId, cursor, size, null);
+	}
+
+	public Mono<GetFeedResponse> getFeed(FeedType feedType, String userId, Long cursor, int size, Long topicId) {
 		GetFeedRequest.Builder builder = GetFeedRequest.newBuilder().setFeedType(feedType).setSize(size);
 
 		if (userId != null && !userId.isBlank()) {
@@ -23,6 +27,9 @@ public class FeedGrpcClient {
 		}
 		if (cursor != null) {
 			builder.setCursor(cursor);
+		}
+		if (topicId != null) {
+			builder.setTopicId(topicId);
 		}
 
 		return Mono.fromCallable(() -> stub.getFeed(builder.build())).subscribeOn(Schedulers.boundedElastic()).retry(2);

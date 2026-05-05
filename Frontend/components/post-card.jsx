@@ -1,14 +1,44 @@
 
 
+function ImageLightbox({ urls, startIndex, onClose }) {
+  const [idx, setIdx] = React.useState(startIndex);
+  React.useEffect(() => {
+    const h = (e) => { if (e.key === 'Escape') onClose(); if (e.key === 'ArrowRight') setIdx(i => Math.min(i + 1, urls.length - 1)); if (e.key === 'ArrowLeft') setIdx(i => Math.max(i - 1, 0)); };
+    document.addEventListener('keydown', h);
+    return () => document.removeEventListener('keydown', h);
+  }, [urls.length, onClose]);
+  return ReactDOM.createPortal(
+    <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.92)', zIndex: 9000, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+      <button onClick={onClose} style={{ position: 'absolute', top: 16, right: 16, background: 'rgba(255,255,255,0.12)', border: 'none', borderRadius: '50%', width: 40, height: 40, color: '#fff', fontSize: 22, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>×</button>
+      {urls.length > 1 && idx > 0 && (
+        <button onClick={e => { e.stopPropagation(); setIdx(i => i - 1); }} style={{ position: 'absolute', left: 16, background: 'rgba(255,255,255,0.12)', border: 'none', borderRadius: '50%', width: 44, height: 44, color: '#fff', fontSize: 24, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>‹</button>
+      )}
+      {urls.length > 1 && idx < urls.length - 1 && (
+        <button onClick={e => { e.stopPropagation(); setIdx(i => i + 1); }} style={{ position: 'absolute', right: 16, background: 'rgba(255,255,255,0.12)', border: 'none', borderRadius: '50%', width: 44, height: 44, color: '#fff', fontSize: 24, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>›</button>
+      )}
+      <img src={urls[idx]} alt="" onClick={e => e.stopPropagation()} style={{ maxWidth: 'calc(100vw - 96px)', maxHeight: 'calc(100vh - 80px)', objectFit: 'contain', borderRadius: 8 }} />
+      {urls.length > 1 && (
+        <div style={{ position: 'absolute', bottom: 16, left: '50%', transform: 'translateX(-50%)', display: 'flex', gap: 6 }}>
+          {urls.map((_, i) => <div key={i} style={{ width: 7, height: 7, borderRadius: '50%', background: i === idx ? '#fff' : 'rgba(255,255,255,0.4)' }} />)}
+        </div>
+      )}
+    </div>,
+    document.body
+  );
+}
+
 function PostCard({ post, onNavigate, currentUser, onLike }) {
   const [author, setAuthor] = React.useState(post.author || null);
   const [liked, setLiked] = React.useState(post.likedByMe);
   const [likes, setLikes] = React.useState(post.likesCount);
-  const [liking, setLiking] = React.useState(false);
+  const [likePulse, setLikePulse] = React.useState(false);
   const [copied, setCopied] = React.useState(false);
-  const [hoverCard, setHoverCard] = React.useState(false);
+  const [hoverCardOpen, setHoverCardOpen] = React.useState(false);
+  const [hoverCardClosing, setHoverCardClosing] = React.useState(false);
   const [hoverPos, setHoverPos] = React.useState({ top: 0, left: 0 });
+  const [lightboxIdx, setLightboxIdx] = React.useState(null);
   const hoverTimer = React.useRef(null);
+  const closeTimer = React.useRef(null);
   const canHover = React.useMemo(() => window.matchMedia('(hover: hover)').matches, []);
 
   React.useEffect(() => {
@@ -17,17 +47,30 @@ function PostCard({ post, onNavigate, currentUser, onLike }) {
   }, [post.authorId, post.author]);
   React.useEffect(() => { setLiked(post.likedByMe); setLikes(post.likesCount); }, [post.likedByMe, post.likesCount]);
 
+  const likeInFlight = React.useRef(false);
   const handleLike = async (e) => {
     e.stopPropagation();
     if (!currentUser) { onNavigate('/login'); return; }
-    if (liking) return;
-    setLiking(true);
+    if (likeInFlight.current) return;
+    likeInFlight.current = true;
+    const wasLiked = liked;
+    setLiked(!wasLiked);
+    setLikes(l => wasLiked ? l - 1 : l + 1);
     try {
-      if (liked) { await API.gql(API.M.unlikePost, { postId: post.id }); setLiked(false); setLikes(l => l - 1); }
-      else { await API.gql(API.M.likePost, { postId: post.id }); setLiked(true); setLikes(l => l + 1); }
-      onLike && onLike(post.id, !liked);
-    } catch (err) { if (err.isUnauth) onNavigate('/login'); }
-    finally { setLiking(false); }
+      if (wasLiked) {
+        await API.gql(API.M.unlikePost, { postId: post.id });
+      } else {
+        await API.gql(API.M.likePost, { postId: post.id });
+        setLikePulse(false);
+        requestAnimationFrame(() => setLikePulse(true));
+        setTimeout(() => setLikePulse(false), 380);
+      }
+      onLike && onLike(post.id, !wasLiked);
+    } catch (err) {
+      setLiked(wasLiked);
+      setLikes(l => wasLiked ? l + 1 : l - 1);
+      if (err.isUnauth) onNavigate('/login');
+    } finally { likeInFlight.current = false; }
   };
 
   const handleShare = async (e) => {
@@ -42,18 +85,39 @@ function PostCard({ post, onNavigate, currentUser, onLike }) {
 
   const onAuthorHoverStart = (e) => {
     if (!canHover || !author) return;
+    clearTimeout(hoverTimer.current);
+    clearTimeout(closeTimer.current);
     const rect = e.currentTarget.getBoundingClientRect();
     hoverTimer.current = setTimeout(() => {
       setHoverPos({
         top: Math.min(rect.bottom + 8, window.innerHeight - 240),
         left: Math.max(8, Math.min(rect.left - 20, window.innerWidth - 296)),
       });
-      setHoverCard(true);
+      setHoverCardClosing(false);
+      setHoverCardOpen(true);
     }, 450);
+  };
+  const scheduleHoverClose = () => {
+    clearTimeout(closeTimer.current);
+    if (!hoverCardOpen && !hoverCardClosing) return;
+    closeTimer.current = setTimeout(() => {
+      setHoverCardClosing(true);
+      closeTimer.current = setTimeout(() => {
+        setHoverCardOpen(false);
+        setHoverCardClosing(false);
+      }, 150);
+    }, 1000);
   };
   const onAuthorHoverEnd = () => {
     clearTimeout(hoverTimer.current);
-    setTimeout(() => setHoverCard(false), 100);
+    scheduleHoverClose();
+  };
+  const onHoverCardEnter = () => {
+    clearTimeout(closeTimer.current);
+    setHoverCardClosing(false);
+  };
+  const onHoverCardLeave = () => {
+    scheduleHoverClose();
   };
 
   const timeAgo = useTimeAgo(post.createdAt);
@@ -72,8 +136,8 @@ function PostCard({ post, onNavigate, currentUser, onLike }) {
         cursor: 'pointer', background: 'var(--bg)',
       }}>
 
-      <div style={{ flexShrink: 0 }}
-        onClick={e => { e.stopPropagation(); author && onNavigate('/profile/' + author.id); }}
+      <div style={{ flexShrink: 0, width: 42, height: 42, alignSelf: 'flex-start' }}
+        onClick={e => { e.stopPropagation(); author && onNavigate(API.profileUrl(author)); }}
         onMouseEnter={onAuthorHoverStart}
         onMouseLeave={onAuthorHoverEnd}>
         <Avatar user={author} size={42} />
@@ -82,24 +146,25 @@ function PostCard({ post, onNavigate, currentUser, onLike }) {
 
       <div style={{ flex: 1, minWidth: 0 }}>
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: 4, color: 'var(--text-muted)', fontSize: 14.5, lineHeight: 1.3 }}>
-          <span
-            style={{ fontWeight: 700, color: 'var(--text)', cursor: 'pointer', position: 'relative' }}
-            onClick={e => { e.stopPropagation(); author && onNavigate('/profile/' + author.id); }}
-            onMouseEnter={onAuthorHoverStart}
-            onMouseLeave={onAuthorHoverEnd}>
-            {displayName}
-          </span>
-          {author?.isStudentVerified && <span title="Студент верифицирован"><CheckIcon size={15} color="var(--accent)" /></span>}
-          {author?.isEmployeeVerified && <span title="Преподаватель/сотрудник верифицирован"><TeacherIcon size={15} color="oklch(0.55 0.18 150)" /></span>}
-          {author?.username && <span>@{author.username}</span>}
-          <span aria-hidden>·</span>
-          <span>{timeAgo}</span>
-          {post.universityId && author?.university?.shortName && (
-            <>
-              <span aria-hidden>·</span>
-              <span style={{ color: 'var(--accent)', fontWeight: 600 }}>{author.university.shortName}</span>
-            </>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, color: 'var(--text-muted)', fontSize: 14.5, lineHeight: 1.3 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 4, flex: 1, minWidth: 0, overflow: 'hidden' }}>
+            <span
+              style={{ fontWeight: 700, color: 'var(--text)', cursor: 'pointer', position: 'relative', flexShrink: 1, minWidth: 0, overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis' }}
+              onClick={e => { e.stopPropagation(); author && onNavigate(API.profileUrl(author)); }}
+              onMouseEnter={onAuthorHoverStart}
+              onMouseLeave={onAuthorHoverEnd}>
+              {displayName}
+            </span>
+            {author?.isStudentVerified && <span title="Студент верифицирован" style={{ flexShrink: 0, display: 'inline-flex' }}><CheckIcon size={15} color="var(--accent)" /></span>}
+            {author?.isEmployeeVerified && <span title="Преподаватель/сотрудник верифицирован" style={{ flexShrink: 0, display: 'inline-flex' }}><TeacherIcon size={15} color="oklch(0.55 0.18 150)" /></span>}
+            {author?.username && <span style={{ flexShrink: 1, minWidth: 0, overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis' }}>@{author.username}</span>}
+            <span aria-hidden style={{ flexShrink: 0 }}>·</span>
+            <span style={{ flexShrink: 0, whiteSpace: 'nowrap' }}>{timeAgo}</span>
+          </div>
+            {post.universityId && author?.university && String(author.university.id) === String(post.universityId) && (
+            <div style={{ flexShrink: 0 }}>
+              <UniBadge uni={author.university} size={22} />
+            </div>
           )}
         </div>
 
@@ -114,17 +179,37 @@ function PostCard({ post, onNavigate, currentUser, onLike }) {
 
 
         {post.mediaUrls?.length > 0 && (
-          <div style={{
-            display: 'grid', marginTop: 12,
-            gridTemplateColumns: post.mediaUrls.length === 1 ? '1fr' : 'repeat(2, 1fr)',
-            gap: 2, borderRadius: 16, overflow: 'hidden',
-            border: '1px solid var(--border)',
-          }}>
-            {post.mediaUrls.slice(0, 4).map((url, i) => (
-              <img key={i} src={url} alt="" onClick={e => e.stopPropagation()}
-                style={{ width: '100%', aspectRatio: post.mediaUrls.length === 1 ? '16/9' : '1', objectFit: 'cover', display: 'block' }} />
-            ))}
-          </div>
+          (() => {
+            const urls = post.mediaUrls.slice(0, 4);
+            const count = urls.length;
+            const odd = count % 2 === 1 && count > 1;
+            const columns = count === 1 ? '1fr' : 'repeat(2, 1fr)';
+            return (
+              <div style={{
+                display: 'grid', marginTop: 12,
+                gridTemplateColumns: columns,
+                gap: 2, borderRadius: 16, overflow: 'hidden',
+                border: '1px solid var(--border)',
+              }}>
+                {urls.map((url, i) => {
+                  const isFirst = i === 0;
+                  const style = {
+                    width: '100%',
+                    objectFit: 'cover',
+                    display: 'block',
+                    background: 'var(--surface-2)',
+                    cursor: 'zoom-in',
+                  };
+                  if (count === 1) style.maxHeight = 480;
+                  else if (odd && isFirst) { style.gridColumn = '1 / -1'; style.aspectRatio = '16/9'; }
+                  else style.aspectRatio = '1';
+                  return (
+                    <img key={i} src={url} alt="" onClick={e => { e.stopPropagation(); setLightboxIdx(i); }} style={style} />
+                  );
+                })}
+              </div>
+            );
+          })()
         )}
 
 
@@ -134,8 +219,8 @@ function PostCard({ post, onNavigate, currentUser, onLike }) {
             icon={<CommentIcon size={18} color="var(--text-muted)" />}
             label={post.commentsCount} />
           <ActionBtn
-            className={`um-like-btn ${liked ? 'um-likebtn-active' : ''}`}
-            onClick={handleLike} active={liked} loading={liking}
+            className={`um-like-btn ${likePulse ? 'um-likebtn-active' : ''}`}
+            onClick={handleLike} active={liked}
             activeColor="var(--like)"
             icon={<HeartIcon size={18} color={liked ? 'var(--like)' : 'var(--text-muted)'} filled={liked} />}
             label={likes} />
@@ -158,8 +243,11 @@ function PostCard({ post, onNavigate, currentUser, onLike }) {
       }}>Ссылка скопирована</div>,
       document.body
     )}
-    {hoverCard && author && (
-      <ProfileHoverCard user={author} pos={hoverPos} onNavigate={onNavigate} onClose={() => setHoverCard(false)} />
+    {(hoverCardOpen || hoverCardClosing) && author && (
+      <ProfileHoverCard user={author} pos={hoverPos} onNavigate={onNavigate} onClose={() => setHoverCardOpen(false)} onMouseEnter={onHoverCardEnter} onMouseLeave={onHoverCardLeave} closing={hoverCardClosing} />
+    )}
+    {lightboxIdx !== null && post.mediaUrls?.length > 0 && (
+      <ImageLightbox urls={post.mediaUrls} startIndex={lightboxIdx} onClose={() => setLightboxIdx(null)} />
     )}
     </>
   );
@@ -235,17 +323,43 @@ function ComposeModal({ open, onClose, currentUser, onNavigate, onCreated, defau
     if (!content.trim() && mediaFiles.length === 0) return;
     setLoading(true); setUploading(mediaFiles.length > 0); setError('');
     try {
-      let mediaUrls = [];
-      if (mediaFiles.length > 0) {
-        mediaUrls = await Promise.all(mediaFiles.map(m => API.uploadFile(m.file, 'post-media')));
+      const tmpId = 'tmp-' + Date.now();
+      const optimisticMedia = mediaFiles.map(m => m.previewUrl);
+      const optimisticPost = {
+        id: tmpId,
+        author: currentUser,
+        authorId: currentUser?.id,
+        content: content.trim(),
+        mediaUrls: optimisticMedia,
+        likesCount: 0,
+        commentsCount: 0,
+        likedByMe: false,
+        createdAt: new Date().toISOString(),
+      };
+      onCreated && onCreated(optimisticPost);
+      try {
+        let mediaUrls = [];
+        if (mediaFiles.length > 0) {
+          mediaUrls = await Promise.all(mediaFiles.map(m => API.uploadFile(m.file, 'post-media')));
+        }
+        setUploading(false);
+        const input = { content: content.trim(), mediaUrls };
+        if (topicId) input.topicId = topicId;
+        const d = await API.gql(API.M.createPost, { input });
+        const newPost = {
+          ...d.createPost,
+          author: currentUser,
+          likesCount: 0,
+          commentsCount: 0,
+          likedByMe: false,
+        };
+        setContent('');
+        onClose();
+        onCreated && onCreated(newPost);
+      } catch (innerErr) {
+        onCreated && onCreated({ removeTmpId: tmpId });
+        throw innerErr;
       }
-      setUploading(false);
-      const input = { content: content.trim(), mediaUrls };
-      if (topicId) input.topicId = topicId;
-      await API.gql(API.M.createPost, { input });
-      setContent('');
-      onClose();
-      onCreated && onCreated();
     } catch (e) {
       if (e.isUnauth) { onNavigate('/login'); onClose(); }
       else setError(e.message);
@@ -273,7 +387,20 @@ function ComposeModal({ open, onClose, currentUser, onNavigate, onCreated, defau
           }}>×</button>
         </div>
         <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start', padding: '10px 8px 12px' }}>
-          <Avatar user={currentUser} size={42} />
+          <div style={{ position: 'relative' }}>
+            <Avatar user={currentUser} size={42} />
+            {currentUser?.university && (
+              <div style={{
+                position: 'absolute', bottom: -2, right: -2,
+                width: 20, height: 20, borderRadius: 6,
+                background: 'var(--bg)', border: '2px solid var(--bg)',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                overflow: 'hidden',
+              }}>
+                <UniBadge uni={currentUser.university} size={16} />
+              </div>
+            )}
+          </div>
           <div style={{ flex: 1 }}>
             <textarea
               ref={textareaRef}
@@ -292,24 +419,39 @@ function ComposeModal({ open, onClose, currentUser, onNavigate, onCreated, defau
             />
 
             {mediaFiles.length > 0 && (
-              <div style={{
-                display: 'grid',
-                gridTemplateColumns: mediaFiles.length === 1 ? '1fr' : 'repeat(2, 1fr)',
-                gap: 4, borderRadius: 12, overflow: 'hidden', marginBottom: 8,
-                border: '1px solid var(--border)',
-              }}>
-                {mediaFiles.map((m, i) => (
-                  <div key={i} style={{ position: 'relative' }}>
-                    <img src={m.previewUrl} alt="" style={{ width: '100%', aspectRatio: mediaFiles.length === 1 ? '16/9' : '1', objectFit: 'cover', display: 'block' }} />
-                    <button onClick={() => removeMedia(i)} style={{
-                      position: 'absolute', top: 4, right: 4,
-                      background: 'rgba(0,0,0,0.6)', color: '#fff', border: 'none',
-                      borderRadius: '50%', width: 22, height: 22, cursor: 'pointer',
-                      fontSize: 14, lineHeight: 1, display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    }}>×</button>
+              (() => {
+                const urls = mediaFiles.map(m => m.previewUrl);
+                const count = urls.length;
+                const odd = count % 2 === 1 && count > 1;
+                const columns = count === 1 ? '1fr' : 'repeat(2, 1fr)';
+                return (
+                  <div style={{
+                    display: 'grid',
+                    gridTemplateColumns: columns,
+                    gap: 4, borderRadius: 12, overflow: 'hidden', marginBottom: 8,
+                    border: '1px solid var(--border)',
+                  }}>
+                    {urls.map((url, i) => {
+                      const isFirst = i === 0;
+                      const style = { width: '100%', objectFit: 'cover', display: 'block' };
+                      if (count === 1) style.aspectRatio = '16/9';
+                      else if (odd && isFirst) { style.gridColumn = '1 / -1'; style.aspectRatio = '16/9'; }
+                      else style.aspectRatio = '1';
+                      return (
+                        <div key={i} style={{ position: 'relative' }}>
+                          <img src={url} alt="" style={style} />
+                          <button onClick={() => removeMedia(i)} style={{
+                            position: 'absolute', top: 4, right: 4,
+                            background: 'rgba(0,0,0,0.6)', color: '#fff', border: 'none',
+                            borderRadius: '50%', width: 22, height: 22, cursor: 'pointer',
+                            fontSize: 14, lineHeight: 1, display: 'flex', alignItems: 'center', justifyContent: 'center',
+                          }}>×</button>
+                        </div>
+                      );
+                    })}
                   </div>
-                ))}
-              </div>
+                );
+              })()
             )}
             {error && <div style={{ color: 'var(--like)', fontSize: 13, margin: '6px 0' }}>{error}</div>}
           </div>
@@ -338,4 +480,4 @@ function ComposeModal({ open, onClose, currentUser, onNavigate, onCreated, defau
   );
 }
 
-Object.assign(window, { PostCard, ComposeModal, ActionBtn });
+Object.assign(window, { PostCard, ComposeModal, ActionBtn, ImageLightbox });

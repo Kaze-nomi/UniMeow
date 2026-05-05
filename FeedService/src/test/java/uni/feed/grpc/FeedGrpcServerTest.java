@@ -38,7 +38,7 @@ class FeedGrpcServerTest {
 
 		FeedPageResult pageResult = new FeedPageResult(List.of("post1", "post2", "post3"), 1700000000000L, true);
 
-		when(feedReadService.getFollowingFeed("user-123", null, 20, null, null, null)).thenReturn(pageResult);
+		when(feedReadService.getFeed("FOLLOWING", "user-123", 0L, 20, 0L, 0L, 0L, 0L)).thenReturn(pageResult);
 
 		feedGrpcServer.getFeed(request, responseObserver);
 
@@ -49,7 +49,7 @@ class FeedGrpcServerTest {
 		assertThat(response.getPostIdsList()).containsExactlyInAnyOrder("post1", "post2", "post3");
 		assertThat(response.getHasMore()).isTrue();
 		assertThat(response.getNextCursor()).isEqualTo(1700000000000L);
-		verify(feedReadService).getFollowingFeed("user-123", null, 20, null, null, null);
+		verify(feedReadService).getFeed("FOLLOWING", "user-123", 0L, 20, 0L, 0L, 0L, 0L);
 		verify(responseObserver).onCompleted();
 	}
 
@@ -59,30 +59,19 @@ class FeedGrpcServerTest {
 				.build();
 
 		FeedPageResult pageResult = new FeedPageResult(List.of("post1"), 99L, true);
-		when(feedReadService.getTrendingFeed(100L, 20, null, null, null)).thenReturn(pageResult);
+		when(feedReadService.getFeed("TRENDING", "", 100L, 20, 0L, 0L, 0L, 0L)).thenReturn(pageResult);
 
 		feedGrpcServer.getFeed(request, responseObserver);
 
-		verify(feedReadService).getTrendingFeed(100L, 20, null, null, null);
-		verify(responseObserver).onCompleted();
-	}
-
-	@Test
-	void getFeed_global_routes_to_global_service() {
-		GetFeedRequest request = GetFeedRequest.newBuilder().setFeedType(FeedType.GLOBAL).setSize(10).build();
-
-		FeedPageResult pageResult = new FeedPageResult(List.of("p1"), null, false);
-		when(feedReadService.getGlobalFeed(null, 10, null, null, null)).thenReturn(pageResult);
-
-		feedGrpcServer.getFeed(request, responseObserver);
-
-		verify(feedReadService).getGlobalFeed(null, 10, null, null, null);
+		verify(feedReadService).getFeed("TRENDING", "", 100L, 20, 0L, 0L, 0L, 0L);
 		verify(responseObserver).onCompleted();
 	}
 
 	@Test
 	void getFeed_following_without_user_id_returns_unauthenticated() {
 		GetFeedRequest request = GetFeedRequest.newBuilder().setFeedType(FeedType.FOLLOWING).setSize(20).build();
+		when(feedReadService.getFeed("FOLLOWING", "", 0L, 20, 0L, 0L, 0L, 0L))
+				.thenThrow(new SecurityException("userId required for FOLLOWING feed"));
 
 		feedGrpcServer.getFeed(request, responseObserver);
 
@@ -91,7 +80,7 @@ class FeedGrpcServerTest {
 
 		Status status = Status.fromThrowable(errorCaptor.getValue());
 		assertThat(status.getCode()).isEqualTo(Status.Code.UNAUTHENTICATED);
-		verifyNoInteractions(feedReadService);
+		verify(feedReadService).getFeed("FOLLOWING", "", 0L, 20, 0L, 0L, 0L, 0L);
 	}
 
 	@Test
@@ -100,19 +89,19 @@ class FeedGrpcServerTest {
 				.build();
 
 		FeedPageResult pageResult = new FeedPageResult(List.of(), null, false);
-		when(feedReadService.getTrendingFeed(null, null, null, null, null)).thenReturn(pageResult);
+		when(feedReadService.getFeed("TRENDING", "", 0L, 0, 0L, 0L, 0L, 0L)).thenReturn(pageResult);
 
 		feedGrpcServer.getFeed(request, responseObserver);
 
-		verify(feedReadService).getTrendingFeed(null, null, null, null, null);
+		verify(feedReadService).getFeed("TRENDING", "", 0L, 0, 0L, 0L, 0L, 0L);
 	}
 
 	@Test
 	void getFeed_omits_next_cursor_when_result_has_no_cursor() {
-		GetFeedRequest request = GetFeedRequest.newBuilder().setFeedType(FeedType.GLOBAL).setSize(20).build();
+		GetFeedRequest request = GetFeedRequest.newBuilder().setFeedType(FeedType.TRENDING).setSize(20).build();
 
 		FeedPageResult pageResult = new FeedPageResult(List.of(), null, false);
-		when(feedReadService.getGlobalFeed(null, 20, null, null, null)).thenReturn(pageResult);
+		when(feedReadService.getFeed("TRENDING", "", 0L, 20, 0L, 0L, 0L, 0L)).thenReturn(pageResult);
 
 		feedGrpcServer.getFeed(request, responseObserver);
 
@@ -126,9 +115,9 @@ class FeedGrpcServerTest {
 
 	@Test
 	void getFeed_handles_service_exception() {
-		GetFeedRequest request = GetFeedRequest.newBuilder().setFeedType(FeedType.GLOBAL).setSize(20).build();
+		GetFeedRequest request = GetFeedRequest.newBuilder().setFeedType(FeedType.TRENDING).setSize(20).build();
 
-		when(feedReadService.getGlobalFeed(null, 20, null, null, null))
+		when(feedReadService.getFeed("TRENDING", "", 0L, 20, 0L, 0L, 0L, 0L))
 				.thenThrow(new RuntimeException("Redis connection failed"));
 
 		feedGrpcServer.getFeed(request, responseObserver);
@@ -141,15 +130,15 @@ class FeedGrpcServerTest {
 
 	@Test
 	void getFeed_passes_university_and_program_scope() {
-		GetFeedRequest request = GetFeedRequest.newBuilder().setFeedType(FeedType.GLOBAL).setUniversityId(7L)
+		GetFeedRequest request = GetFeedRequest.newBuilder().setFeedType(FeedType.TRENDING).setUniversityId(7L)
 				.setFacultyId(3L).setProgramId(9L).setSize(10).build();
 
-		when(feedReadService.getGlobalFeed(null, 10, 7L, 3L, 9L))
+		when(feedReadService.getFeed("TRENDING", "", 0L, 10, 7L, 3L, 9L, 0L))
 				.thenReturn(new FeedPageResult(List.of("p1"), null, false));
 
 		feedGrpcServer.getFeed(request, responseObserver);
 
-		verify(feedReadService).getGlobalFeed(null, 10, 7L, 3L, 9L);
+		verify(feedReadService).getFeed("TRENDING", "", 0L, 10, 7L, 3L, 9L, 0L);
 		verify(responseObserver).onCompleted();
 	}
 }

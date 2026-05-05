@@ -85,8 +85,8 @@ class UserGrpcServerTest {
 	@Test
 	void update_user_returns_already_exists_when_username_taken() {
 		when(userService.update(any(), anyBoolean(), anyString(), anyBoolean(), anyString(), anyBoolean(), anyString(),
-				anyBoolean(), anyString(), anyBoolean(), anyString(), anyBoolean(), anyString(), anyBoolean(), any(),
-				anyBoolean(), any(), anyBoolean(), any(), anyBoolean(), any(), anyBoolean(), anyString(), anyBoolean(),
+				anyBoolean(), anyString(), anyBoolean(), anyString(), anyBoolean(), any(), anyBoolean(), any(),
+				anyBoolean(), any(), anyBoolean(), any(), anyBoolean(), anyString(), anyBoolean(),
 				nullable(String.class), anyBoolean(), nullable(Long.class)))
 				.thenThrow(new UsernameAlreadyTakenException("taken"));
 
@@ -104,8 +104,8 @@ class UserGrpcServerTest {
 	@Test
 	void update_user_returns_invalid_argument_on_blank_username() {
 		when(userService.update(any(), anyBoolean(), anyString(), anyBoolean(), anyString(), anyBoolean(), anyString(),
-				anyBoolean(), anyString(), anyBoolean(), anyString(), anyBoolean(), anyString(), anyBoolean(), any(),
-				anyBoolean(), any(), anyBoolean(), any(), anyBoolean(), any(), anyBoolean(), anyString(), anyBoolean(),
+				anyBoolean(), anyString(), anyBoolean(), anyString(), anyBoolean(), any(), anyBoolean(), any(),
+				anyBoolean(), any(), anyBoolean(), any(), anyBoolean(), anyString(), anyBoolean(),
 				nullable(String.class), anyBoolean(), nullable(Long.class)))
 				.thenThrow(new IllegalArgumentException("Username cannot be empty"));
 
@@ -178,8 +178,8 @@ class UserGrpcServerTest {
 	@Test
 	void to_proto_replaces_null_optional_fields_with_empty_strings() {
 		User user = User.builder().id(USER_ID).emailGoogle("u@gmail.com").name("Ivan").username(null).surname(null)
-				.patronymic(null).emailUniversity(null).avatarUrl(null).status(null).isStudentVerified(false)
-				.isEmployeeVerified(false).createdAt(LocalDateTime.now()).build();
+				.emailUniversity(null).avatarUrl(null).status(null).isStudentVerified(false).isEmployeeVerified(false)
+				.createdAt(LocalDateTime.now()).build();
 
 		when(userService.getById(USER_ID)).thenReturn(user);
 
@@ -192,7 +192,6 @@ class UserGrpcServerTest {
 		UserResponse proto = captor.getValue();
 		assertThat(proto.getUsername()).isEmpty();
 		assertThat(proto.getSurname()).isEmpty();
-		assertThat(proto.getPatronymic()).isEmpty();
 		assertThat(proto.getEmailUniversity()).isEmpty();
 		assertThat(proto.getAvatarUrl()).isEmpty();
 		assertThat(proto.getStatus()).isEmpty();

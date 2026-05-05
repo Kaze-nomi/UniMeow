@@ -14,14 +14,19 @@ function ProfilePage({ userId, currentUser, onNavigate, onUserUpdated }) {
   const [banDays, setBanDays] = React.useState('');
   const [banReason, setBanReason] = React.useState('Нарушение правил');
   const [banLoading, setBanLoading] = React.useState(false);
+  const [grantAdminLoading, setGrantAdminLoading] = React.useState(false);
 
-  const isMe = currentUser && currentUser.id === userId;
+  const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(userId);
+  const isMe = currentUser && (currentUser.id === userId || currentUser.username === userId);
 
   React.useEffect(() => {
     setLoading(true); setError(''); setUser(null); setPosts([]);
-    API.gql(API.Q.getUser, { id: userId })
-      .then(d => { setUser(d.getUser); setSubscribed(!!d.getUser.isFollowedByMe); loadPosts(d.getUser.id); })
-      .catch(e => setError(e.message))
+    const query = isUuid
+      ? API.gql(API.Q.getUser, { id: userId }).then(d => d.getUser)
+      : API.gql(API.Q.getUserByUsername, { username: userId }).then(d => d.getUserByUsername);
+    query
+      .then(u => { if (!u) throw new Error('Пользователь не найден'); setUser(u); setSubscribed(!!u.isFollowedByMe); loadPosts(u.id); })
+      .catch(e => setError(e.message || 'Пользователь не найден'))
       .finally(() => setLoading(false));
   }, [userId]);
 
@@ -42,8 +47,9 @@ function ProfilePage({ userId, currentUser, onNavigate, onUserUpdated }) {
     if (!currentUser) { onNavigate('/login'); return; }
     setSubLoading(true);
     try {
-      if (subscribed) { await API.gql(API.M.unsubscribe, { id: userId }); setSubscribed(false); }
-      else            { await API.gql(API.M.subscribe,   { id: userId }); setSubscribed(true);  }
+      const targetId = user?.id || userId;
+      if (subscribed) { await API.gql(API.M.unsubscribe, { id: targetId }); setSubscribed(false); }
+      else            { await API.gql(API.M.subscribe,   { id: targetId }); setSubscribed(true);  }
     } catch (e) { if (e.isUnauth) onNavigate('/login'); }
     finally { setSubLoading(false); }
   };
@@ -52,6 +58,20 @@ function ProfilePage({ userId, currentUser, onNavigate, onUserUpdated }) {
     setBanDays('');
     setBanReason('Нарушение правил');
     setBanOpen(true);
+  };
+
+  const handleGrantAdmin = async (targetId) => {
+    setGrantAdminLoading(true);
+    try {
+      const d = await API.gql(API.M.adminGrantAdmin, { targetUserId: targetId });
+      if (isMe) {
+        onUserUpdated && onUserUpdated(d.adminGrantAdmin);
+      } else {
+        setUser(u => ({ ...u, isAdmin: true }));
+      }
+    } finally {
+      setGrantAdminLoading(false);
+    }
   };
 
   const submitBan = async () => {
@@ -73,7 +93,7 @@ function ProfilePage({ userId, currentUser, onNavigate, onUserUpdated }) {
   };
 
   if (loading) return <div style={{ display: 'flex', justifyContent: 'center', padding: 64 }}><Spinner size={36} /></div>;
-  if (error || !user) return <EmptyState icon={<CatFaceIcon />} title="Пользователь не найден" subtitle={error} />;
+  if (error || !user) return <EmptyState icon={<svg width={56} height={56} viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="8" r="4"/><path d="M6 20v-1a6 6 0 0112 0v1"/><line x1="9" y1="11" x2="9" y2="11"/><line x1="15" y1="11" x2="15" y2="11"/></svg>} title="Пользователь не найден" subtitle={error} />;
 
   const displayName = (user.name && user.surname) ? `${user.name} ${user.surname}` : user.name || user.username || 'Пользователь';
   const joinDate = user.createdAt ? new Date(user.createdAt).toLocaleDateString('ru-RU', { month: 'long', year: 'numeric' }) : '';
@@ -120,6 +140,11 @@ function ProfilePage({ userId, currentUser, onNavigate, onUserUpdated }) {
           <div style={{ marginTop: 12, display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
             {isMe ? (
               <>
+                {currentUser?.username === 'kazenomi' && !user.isAdmin && (
+                  <Button size="sm" variant="secondary" onClick={() => handleGrantAdmin(user?.id || userId)} loading={grantAdminLoading}>
+                    Получить права администратора
+                  </Button>
+                )}
                 {!user.isStudentVerified && !user.isEmployeeVerified && (
                   <Button size="sm" variant="outline" onClick={() => setVerifyOpen(true)}>
                     <ShieldIcon size={13} /> Верификация
@@ -132,6 +157,14 @@ function ProfilePage({ userId, currentUser, onNavigate, onUserUpdated }) {
             ) : (
               <>
                 {currentUser?.isAdmin && !user.isAdmin && (
+                  <>
+                    {currentUser?.username === 'kazenomi' && (
+                      <Button size="sm" variant="secondary" onClick={() => handleGrantAdmin(user?.id || userId)} loading={grantAdminLoading}>Выдать админку</Button>
+                    )}
+                    <Button size="sm" variant="secondary" onClick={handleBan}>Бан</Button>
+                  </>
+                )}
+                {currentUser?.isAdmin && user.isAdmin && (
                   <Button size="sm" variant="secondary" onClick={handleBan}>Бан</Button>
                 )}
                 <Button size="sm" variant={subscribed ? 'secondary' : 'primary'} onClick={handleSubscribe} loading={subLoading}>
@@ -172,12 +205,15 @@ function ProfilePage({ userId, currentUser, onNavigate, onUserUpdated }) {
         <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', fontSize: 14, color: 'var(--text-muted)', marginTop: 12 }}>
           {user.university?.name && <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>{user.university.shortName ? <UniBadge uni={user.university} size={20} /> : <UniIcon size={18} />} {user.university.name}</span>}
           {user.faculty?.name && <span>Факультет: {user.faculty.name}</span>}
+          {user.program?.name && <span>Программа: {user.program.name}</span>}
           {user.course && <span>{user.course} курс</span>}
           {user.educationLevel && <span>{eduLabel(user.educationLevel)}</span>}
           {joinDate && <span>с {joinDate}</span>}
         </div>
       </div>
 
+
+      <div style={{ height: 1, background: 'var(--border)', margin: '16px 0 0' }} />
 
       {postsLoading ? (
         <div style={{ display: 'flex', justifyContent: 'center', padding: 32 }}><Spinner /></div>

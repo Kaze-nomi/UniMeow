@@ -24,10 +24,14 @@ service PostService {
 }
 
 message CreatePostRequest {
-    string          author_id  = 1;
-    string          content    = 2;
-    repeated string media_urls = 3;
-    optional int64 topic_id = 4;
+    string          author_id       = 1;
+    string          content         = 2;
+    repeated string media_urls      = 3;
+    optional int64  university_id   = 4;
+    optional int64  faculty_id      = 5;
+    optional int64  program_id      = 6;
+    optional int64  topic_id        = 7;
+    optional int64  parent_topic_id = 8;
 }
 
 message GetPostByIdRequest {

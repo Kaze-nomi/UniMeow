@@ -19,6 +19,6 @@ CREATE TABLE university_proposals (
     icon_url        VARCHAR(500),
     status          VARCHAR(32)   NOT NULL DEFAULT 'NEW',
     created_at      TIMESTAMP     NOT NULL DEFAULT NOW(),
-    reviewed_by     UUID          REFERENCES users(id),
+    reviewed_by     UUID          REFERENCES users(id) ON DELETE SET NULL,
     reviewed_at     TIMESTAMP
 );

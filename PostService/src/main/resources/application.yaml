@@ -38,10 +38,21 @@ spring:
         request.timeout.ms: 30000
         linger.ms: 5
         compression.type: zstd
+    consumer:
+      group-id: ${SPRING_KAFKA_CONSUMER_GROUP_ID:post-service-group}
+      auto-offset-reset: earliest
+      enable-auto-commit: false
+      isolation-level: read_committed
+      max-poll-records: 100
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+    listener:
+      ack-mode: manual_immediate
 
 app:
   kafka:
     topics:
+      user-events: user-events
       post-events: post-events
       post-events-dlq: post-events.dlq
   outbox:
@@ -50,8 +61,17 @@ app:
 grpc:
   server:
     port: 9091
-    permit-keep-alive-without-calls: true
-    permit-keep-alive-time: 20s
+    permit-keep-alive-without-calls: false
+    permit-keep-alive-time: 30s
+  client:
+    user-service:
+      address: 'discovery:///user-service'
+      negotiation-type: plaintext
+      default-load-balancing-policy: round_robin
+      keep-alive-time: 60s
+      keep-alive-timeout: 10s
+      keep-alive-without-calls: false
+      enable-keep-alive: true
 
 eureka:
   client:

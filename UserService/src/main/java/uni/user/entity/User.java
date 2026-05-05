@@ -39,7 +39,6 @@ public class User {
 	private String name;
 
 	private String surname;
-	private String patronymic;
 
 	@Column(unique = true)
 	private String emailUniversity;

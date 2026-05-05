@@ -11,6 +11,7 @@ import uni.post.entity.CommentLike;
 import uni.post.entity.Post;
 import uni.post.exception.CommentNotFoundException;
 import uni.post.exception.PostNotFoundException;
+import uni.post.outbox.OutboxService;
 import uni.post.record.CommentPageResult;
 import uni.post.record.CommentResult;
 import uni.post.repository.CommentLikeRepository;
@@ -18,7 +19,9 @@ import uni.post.repository.CommentRepository;
 import uni.post.repository.PostRepository;
 
 import java.time.LocalDateTime;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 @Slf4j
@@ -32,6 +35,8 @@ public class CommentService {
 	private final CommentRepository commentRepository;
 	private final CommentLikeRepository commentLikeRepository;
 	private final PostRepository postRepository;
+	private final OutboxService outboxService;
+	private final MentionResolver mentionResolver;
 
 	@Transactional
 	public CommentResult addComment(UUID postId, UUID authorId, String content, UUID parentCommentId) {
@@ -42,12 +47,16 @@ public class CommentService {
 		Post post = postRepository.findById(postId)
 				.orElseThrow(() -> new PostNotFoundException("Post not found: " + postId));
 
+		String parentAuthorId = null;
 		if (parentCommentId != null) {
 			Comment parent = findOrThrow(parentCommentId);
 			if (!parent.getPostId().equals(postId)) {
 				throw new IllegalArgumentException("Parent comment belongs to another post");
 			}
+			parentAuthorId = parent.getAuthorId().toString();
 		}
+
+		List<String> mentionedUserIds = mentionResolver.resolveUserIds(content);
 
 		LocalDateTime now = LocalDateTime.now();
 
@@ -57,6 +66,22 @@ public class CommentService {
 
 		post.setCommentsCount(post.getCommentsCount() + 1);
 		postRepository.save(post);
+
+		Map<String, Object> payload = new LinkedHashMap<>();
+		payload.put("commentId", comment.getId().toString());
+		payload.put("postId", postId.toString());
+		payload.put("authorId", authorId.toString());
+		payload.put("postAuthorId", post.getAuthorId().toString());
+		if (parentCommentId != null) {
+			payload.put("parentCommentId", parentCommentId.toString());
+		}
+		if (parentAuthorId != null) {
+			payload.put("parentAuthorId", parentAuthorId);
+		}
+		if (!mentionedUserIds.isEmpty()) {
+			payload.put("mentionedUserIds", mentionedUserIds);
+		}
+		outboxService.enqueuePostEvent("COMMENT_CREATED", authorId.toString(), comment.getId().toString(), payload);
 
 		log.info("Comment {} added to post {} by author {}", comment.getId(), postId, authorId);
 		return new CommentResult(comment, false);
@@ -133,6 +158,13 @@ public class CommentService {
 
 		comment.setLikesCount(comment.getLikesCount() + 1);
 		commentRepository.save(comment);
+
+		Map<String, Object> payload = new LinkedHashMap<>();
+		payload.put("commentId", commentId.toString());
+		payload.put("postId", comment.getPostId().toString());
+		payload.put("commentAuthorId", comment.getAuthorId().toString());
+		payload.put("actorId", userId.toString());
+		outboxService.enqueuePostEvent("COMMENT_LIKED", userId.toString(), commentId.toString(), payload);
 	}
 
 	@Transactional

@@ -37,7 +37,6 @@ CREATE TABLE users (
     username             VARCHAR(50)   UNIQUE,
     name                 VARCHAR(255)  NOT NULL,
     surname              VARCHAR(255),
-    patronymic           VARCHAR(255),
     email_university     VARCHAR(255)  UNIQUE,
     avatar_url           TEXT,
     cover_url            VARCHAR(2048),

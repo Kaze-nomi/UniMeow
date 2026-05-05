@@ -1,46 +1,101 @@
 
 (function () {
-  const BASE = 'http://localhost:8080';
+  const BASE = (typeof __API_BASE__ !== 'undefined' && __API_BASE__) || 'http://localhost:8080';
   const GQL = BASE + '/graphql';
 
   let _refreshing = null;
 
   async function tryRefresh() {
     if (_refreshing) return _refreshing;
-    _refreshing = fetch(BASE + '/api/auth/refresh', {
-      method: 'POST', credentials: 'include'
-    }).then(r => r.ok).catch(() => false).finally(() => { _refreshing = null; });
+    _refreshing = Promise.race([
+      fetch(BASE + '/api/auth/refresh', { method: 'POST', credentials: 'include' }).then(r => r.ok).catch(() => false),
+      new Promise(resolve => setTimeout(() => resolve(false), 5000)),
+    ]).finally(() => { _refreshing = null; });
     return _refreshing;
   }
 
-  async function gql(query, variables = {}, _retry = true) {
+  const NON_IDEMPOTENT_OPS = [
+    'createPost', 'addComment',
+    'createImprovementSuggestion',
+    'createUniversityProposal', 'createFacultyProposal', 'createProgramProposal',
+    'createProgram',
+    'verifyEmailCode', 'sendVerificationCode',
+  ];
+  function isNonIdempotent(query) {
+    return NON_IDEMPOTENT_OPS.some(op => query.includes(op + '('));
+  }
+  function isTransientGqlError(err) {
+    if (!err?.gqlErrors) return false;
+    return err.gqlErrors.some(e => {
+      const code = e.extensions?.code;
+      const grpc = e.extensions?.grpcStatus;
+      if (code === 'UPSTREAM_ERROR' || code === 'SERVICE_UNAVAILABLE' || code === 'GATEWAY_TIMEOUT') return true;
+      if (grpc === 'INTERNAL' || grpc === 'UNAVAILABLE' || grpc === 'UNKNOWN') return true;
+      if (typeof e.message === 'string' && /end-of-stream|stream closed|connection closed|rst_stream/i.test(e.message)) return true;
+      return false;
+    });
+  }
+
+  async function gql(query, variables = {}, _authRetry = true, _transportRetries = 1) {
     if (window.MOCK?.enabled) {
       const mocked = await window.MOCK.gql(query, variables);
       if (mocked !== undefined) return mocked;
     }
 
-    const resp = await fetch(GQL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      credentials: 'include',
-      body: JSON.stringify({ query, variables })
-    });
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 30000);
+    let resp;
+    let networkErr = null;
+    try {
+      resp = await fetch(GQL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ query, variables }),
+        signal: controller.signal,
+      });
+    } catch (e) {
+      networkErr = e;
+    } finally {
+      clearTimeout(timeout);
+    }
+
+    if (networkErr) {
+      const aborted = networkErr.name === 'AbortError';
+      if (_transportRetries > 0 && (aborted || !isNonIdempotent(query))) {
+        return gql(query, variables, _authRetry, _transportRetries - 1);
+      }
+      throw networkErr;
+    }
+
+    if (resp.status === 401) {
+      if (_authRetry) {
+        const ok = await tryRefresh();
+        if (ok) return gql(query, variables, false, _transportRetries);
+      }
+      window.__authFailed && window.__authFailed();
+      const err = new Error('UNAUTHORIZED'); err.isUnauth = true; throw err;
+    }
 
     const data = await resp.json();
 
     if (data.errors) {
       const isUnauth = data.errors.some(e =>
         e.extensions?.classification === 'UNAUTHORIZED' ||
+        e.extensions?.code === 'UNAUTHORIZED' ||
         /unauth/i.test(e.message)
       );
-      if (isUnauth && _retry) {
+      if (isUnauth && _authRetry) {
         const ok = await tryRefresh();
-        if (ok) return gql(query, variables, false);
+        if (ok) return gql(query, variables, false, _transportRetries);
         window.__authFailed && window.__authFailed();
         const err = new Error('UNAUTHORIZED'); err.isUnauth = true; throw err;
       }
       const err = new Error(data.errors.map(e => e.message).join(', '));
       err.gqlErrors = data.errors;
+      if (_transportRetries > 0 && !isNonIdempotent(query) && isTransientGqlError(err)) {
+        return gql(query, variables, _authRetry, _transportRetries - 1);
+      }
       throw err;
     }
 
@@ -64,16 +119,16 @@
     me: `query { me { id username name surname avatarUrl coverUrl bio status emailGoogle emailUniversity university { id name shortName subdomain iconUrl } faculty { id name shortName } program { id facultyId name shortName } course educationLevel graduationYear isStudentVerified isEmployeeVerified isAdmin isBanned bannedUntil banReason createdAt } }`,
     getUser: `query GetUser($id:ID!) { getUser(id:$id) { id username name surname avatarUrl coverUrl bio status isStudentVerified isEmployeeVerified isAdmin isBanned bannedUntil banReason isFollowedByMe university { id name shortName subdomain iconUrl } faculty { id name shortName } program { id facultyId name shortName } course educationLevel graduationYear createdAt } }`,
     getUserByUsername: `query($username:String!) { getUserByUsername(username:$username) { id username name surname avatarUrl coverUrl bio status isStudentVerified isEmployeeVerified isAdmin isBanned bannedUntil banReason isFollowedByMe university { id name shortName subdomain iconUrl } faculty { id name shortName } program { id facultyId name shortName } course educationLevel graduationYear createdAt } }`,
-    globalFeed: `query($cursor:String,$size:Int,$universityId:ID,$facultyId:ID,$programId:ID) { globalFeed(cursor:$cursor,size:$size,universityId:$universityId,facultyId:$facultyId,programId:$programId) { posts { id authorId author { id username name surname avatarUrl coverUrl bio status isStudentVerified isEmployeeVerified university { id name shortName } faculty { id name shortName } program { id facultyId name shortName } } content mediaUrls likesCount commentsCount likedByMe createdAt universityId facultyId programId } nextCursor hasMore } }`,
-    trendingFeed: `query($cursor:String,$size:Int,$universityId:ID,$facultyId:ID,$programId:ID) { trendingFeed(cursor:$cursor,size:$size,universityId:$universityId,facultyId:$facultyId,programId:$programId) { posts { id authorId author { id username name surname avatarUrl coverUrl bio status isStudentVerified isEmployeeVerified university { id name shortName } faculty { id name shortName } program { id facultyId name shortName } } content mediaUrls likesCount commentsCount likedByMe createdAt universityId facultyId programId } nextCursor hasMore } }`,
-    followingFeed: `query($cursor:String,$size:Int,$universityId:ID,$facultyId:ID,$programId:ID) { followingFeed(cursor:$cursor,size:$size,universityId:$universityId,facultyId:$facultyId,programId:$programId) { posts { id authorId author { id username name surname avatarUrl coverUrl bio status isStudentVerified isEmployeeVerified university { id name shortName } faculty { id name shortName } program { id facultyId name shortName } } content mediaUrls likesCount commentsCount likedByMe createdAt universityId facultyId programId } nextCursor hasMore } }`,
-    getPost: `query($id:ID!) { getPost(id:$id) { id authorId author { id username name surname avatarUrl coverUrl bio status isStudentVerified isEmployeeVerified university { id name shortName } faculty { id name shortName } program { id facultyId name shortName } } content mediaUrls likesCount commentsCount likedByMe createdAt updatedAt universityId facultyId programId } }`,
-    getUserPosts: `query($userId:ID!,$page:Int,$size:Int) { getUserPosts(userId:$userId,page:$page,size:$size) { posts { id authorId author { id username name surname avatarUrl coverUrl bio status isStudentVerified isEmployeeVerified university { id name shortName } faculty { id name shortName } program { id facultyId name shortName } } content mediaUrls likesCount commentsCount likedByMe createdAt } total } }`,
+    trendingFeed: `query($cursor:String,$size:Int,$universityId:ID,$facultyId:ID,$programId:ID,$topicId:ID) { trendingFeed(cursor:$cursor,size:$size,universityId:$universityId,facultyId:$facultyId,programId:$programId,topicId:$topicId) { posts { id authorId author { id username name surname avatarUrl coverUrl bio status isStudentVerified isEmployeeVerified university { id name shortName subdomain iconUrl } faculty { id name shortName } program { id facultyId name shortName } } content mediaUrls likesCount commentsCount likedByMe createdAt universityId facultyId programId } nextCursor hasMore } }`,
+    followingFeed: `query($cursor:String,$size:Int,$universityId:ID,$facultyId:ID,$programId:ID,$topicId:ID) { followingFeed(cursor:$cursor,size:$size,universityId:$universityId,facultyId:$facultyId,programId:$programId,topicId:$topicId) { posts { id authorId author { id username name surname avatarUrl coverUrl bio status isStudentVerified isEmployeeVerified university { id name shortName subdomain iconUrl } faculty { id name shortName } program { id facultyId name shortName } } content mediaUrls likesCount commentsCount likedByMe createdAt universityId facultyId programId } nextCursor hasMore } }`,
+    getPost: `query($id:ID!) { getPost(id:$id) { id authorId author { id username name surname avatarUrl coverUrl bio status isStudentVerified isEmployeeVerified university { id name shortName subdomain iconUrl } faculty { id name shortName } program { id facultyId name shortName } } content mediaUrls likesCount commentsCount likedByMe createdAt updatedAt universityId facultyId programId } }`,
+    getUserPosts: `query($userId:ID!,$page:Int,$size:Int) { getUserPosts(userId:$userId,page:$page,size:$size) { posts { id authorId author { id username name surname avatarUrl coverUrl bio status isStudentVerified isEmployeeVerified university { id name shortName subdomain iconUrl } faculty { id name shortName } program { id facultyId name shortName } } content mediaUrls likesCount commentsCount likedByMe createdAt } total } }`,
     getComments: `query($postId:ID!,$page:Int,$size:Int) { getComments(postId:$postId,page:$page,size:$size) { comments { id postId authorId content likesCount likedByMe createdAt updatedAt parentCommentId } total } }`,
     listUniversities: `query { listUniversities { id name shortName subdomain iconUrl } }`,
     listFaculties:    `query($universityId:ID!) { listFaculties(universityId:$universityId) { id name shortName } }`,
     listPrograms:     `query($facultyId:ID!) { listPrograms(facultyId:$facultyId) { id facultyId name shortName } }`,
-    listTopics:       `query($universityId:ID!) { listTopics(universityId:$universityId) { id slug name isSystem facultyId subtopics { id slug name } } }`,
+    getNotifications: `query($page:Int,$size:Int) { getNotifications(page:$page,size:$size) { notifications { id userId actorId actor { id username name surname avatarUrl } type entityId entityType parentEntityId isRead createdAt } total } }`,
+    getUnreadNotificationCount: `query { getUnreadNotificationCount }`,
     adminImprovementSuggestions: `query { adminImprovementSuggestions { id authorId text status createdAt } }`,
     adminUniversityProposals: `query { adminUniversityProposals { id authorId name shortName subdomain studentDomain employeeDomain city description status createdAt reviewedBy reviewedAt iconUrl } }`,
     adminFacultyProposals: `query { adminFacultyProposals { id authorId universityId universityName universityShortName name shortName status createdAt reviewedBy reviewedAt } }`,
@@ -81,11 +136,13 @@
   };
 
   const M = {
-    updateProfile: `mutation($input:UpdateProfileInput!) { updateProfile(input:$input) { id username name surname avatarUrl coverUrl bio status emailGoogle emailUniversity isStudentVerified isEmployeeVerified university { id name shortName subdomain iconUrl } faculty { id name shortName } program { id facultyId name shortName } course educationLevel graduationYear } }`,
+    updateProfile: `mutation($input:UpdateProfileInput!) { updateProfile(input:$input) { id username name surname avatarUrl coverUrl bio status emailGoogle emailUniversity isStudentVerified isEmployeeVerified isAdmin isBanned bannedUntil banReason university { id name shortName subdomain iconUrl } faculty { id name shortName } program { id facultyId name shortName } course educationLevel graduationYear } }`,
     sendVerificationCode: `mutation($email:String!) { sendVerificationCode(universityEmail:$email) { success message } }`,
     verifyEmailCode: `mutation($code:String!) { verifyEmailCode(code:$code) { success error } }`,
     subscribe: `mutation($id:ID!) { subscribe(targetUserId:$id) { success } }`,
     unsubscribe: `mutation($id:ID!) { unsubscribe(targetUserId:$id) { success } }`,
+    adminGrantAdmin: `mutation($targetUserId:ID!) { adminGrantAdmin(targetUserId:$targetUserId) { id username name surname avatarUrl coverUrl bio status emailGoogle emailUniversity university { id name shortName subdomain iconUrl } faculty { id name shortName } program { id facultyId name shortName } course educationLevel graduationYear isStudentVerified isEmployeeVerified isAdmin isBanned bannedUntil banReason createdAt } }`,
+    deleteAccount: `mutation { deleteAccount { success } }`,
     createPost: `mutation($input:CreatePostInput!) { createPost(input:$input) { id content authorId mediaUrls createdAt } }`,
     editPost: `mutation($postId:ID!,$input:EditPostInput!) { editPost(postId:$postId,input:$input) { id content mediaUrls updatedAt } }`,
     deletePost: `mutation($postId:ID!) { deletePost(postId:$postId) { success } }`,
@@ -108,7 +165,7 @@
     adminReviewUniversityProposal: `mutation($proposalId:ID!,$status:String!) { adminReviewUniversityProposal(proposalId:$proposalId,status:$status) { success } }`,
     adminReviewFacultyProposal: `mutation($proposalId:ID!,$status:String!) { adminReviewFacultyProposal(proposalId:$proposalId,status:$status) { success } }`,
     adminReviewProgramProposal: `mutation($proposalId:ID!,$status:String!) { adminReviewProgramProposal(proposalId:$proposalId,status:$status) { success } }`,
-    adminCreateFaculty: `mutation($input:CreateFacultyInput!) { adminCreateFaculty(input:$input) { success } }`,
+    markAllNotificationsRead: `mutation { markAllNotificationsRead }`,
   };
 
   const MAX_UPLOAD_SIZE = 10 * 1024 * 1024;
@@ -158,12 +215,27 @@
     }
     const form = new FormData();
     form.append('file', prepared);
-    const resp = await fetch(BASE + '/api/upload?bucket=' + encodeURIComponent(bucket), {
-      method: 'POST',
-      credentials: 'include',
-      body: form,
-    });
-    const data = await resp.json();
+    const doUpload = async () => {
+      const resp = await fetch(BASE + '/api/upload?bucket=' + encodeURIComponent(bucket), {
+        method: 'POST',
+        credentials: 'include',
+        body: form,
+      });
+      const text = await resp.text();
+      let data = {};
+      if (text) {
+        try { data = JSON.parse(text); } catch { data = { error: text }; }
+      }
+      return { resp, data };
+    };
+
+    let { resp, data } = await doUpload();
+    if (resp.status === 401) {
+      const ok = await tryRefresh();
+      if (ok) {
+        ({ resp, data } = await doUpload());
+      }
+    }
     if (!resp.ok) throw new Error(data.error || 'Upload failed');
     return data.url;
   }
@@ -175,15 +247,21 @@
   }
 
   function universitySlug(uni) {
+    if (uni?.subdomain) return uni.subdomain.toString().trim().toLowerCase();
     const key = (uni?.shortName || uni?.name || uni?.id || '').toString().trim().toLowerCase();
     const known = { 'ниу вшэ': 'hse', 'вшэ': 'hse', 'hse': 'hse', 'мгу': 'msu', 'msu': 'msu', 'итмо': 'itmo', 'itmo': 'itmo' };
     if (known[key]) return known[key];
     return key.replace(/ниу\s*/g, '').replace(/[^a-z0-9а-яё]+/g, '-').replace(/^-+|-+$/g, '') || String(uni?.id || 'feed');
   }
 
+  function profileUrl(user) {
+    if (user?.username) return '/profile/' + user.username;
+    return '/profile/' + (user?.id || '');
+  }
+
   window.API = {
     gql, Q, M, getCachedUser, invalidateUser, uploadFile, prepareUploadFile, resolveAssetUrl,
-    universitySlug,
+    universitySlug, profileUrl,
     logout: () => fetch(BASE + '/api/auth/logout', { method: 'POST', credentials: 'include' }),
     loginWithGoogle: () => { window.location.href = BASE + '/oauth2/authorization/google'; },
     baseUrl: BASE,

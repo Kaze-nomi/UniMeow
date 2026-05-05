@@ -95,7 +95,7 @@ function AdminPage({ currentUser, onNavigate, view }) {
                 ? <FacultyProposalRow key={'f-' + item.id} item={item} onReview={reviewFaculty} />
                 : item.kind === 'program'
                 ? <ProgramProposalRow key={'p-' + item.id} item={item} onReview={reviewProgram} />
-                : <UniversityProposalRow key={'u-' + item.id} item={item} onReview={review} />)
+                : <UniversityProposalRow key={'u-' + item.id} item={item} onReview={review} onNavigate={onNavigate} />)
             : <SuggestionRow key={item.id} item={item} onDelete={deleteSuggestion} />
           )}
         </div>
@@ -104,8 +104,17 @@ function AdminPage({ currentUser, onNavigate, view }) {
   );
 }
 
+function useAuthorName(authorId) {
+  const [name, setName] = React.useState('@' + authorId);
+  React.useEffect(() => {
+    API.getCachedUser(authorId).then(u => { if (u) setName('@' + (u.username || authorId)); });
+  }, [authorId]);
+  return name;
+}
+
 function FacultyProposalRow({ item, onReview }) {
   const done = item.status !== 'NEW';
+  const authorName = useAuthorName(item.authorId);
   return (
     <article className="um-feed-row" style={{ padding: 16, borderBottom: '1px solid var(--border)', background: 'var(--bg)' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'flex-start' }}>
@@ -116,10 +125,10 @@ function FacultyProposalRow({ item, onReview }) {
         </div>
         <Badge color={item.status === 'APPROVED' ? 'green' : item.status === 'REJECTED' ? 'red' : 'accent'}>{item.status}</Badge>
       </div>
-      <div style={{ marginTop: 10, color: 'var(--text-muted)', fontSize: 12 }}>Автор: {item.authorId} · {new Date(item.createdAt).toLocaleString()}</div>
+      <div style={{ marginTop: 10, color: 'var(--text-muted)', fontSize: 12 }}>Автор: {authorName} · {new Date(normalizeIsoDate(item.createdAt)).toLocaleString('ru-RU', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit' })}</div>
       {!done && (
         <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
-          <Button size="sm" onClick={() => onReview(item.id, 'APPROVED')}>Одобрить и создать факультет</Button>
+          <Button size="sm" onClick={() => onReview(item.id, 'APPROVED')}>Одобрить и добавить факультет</Button>
           <Button size="sm" variant="secondary" onClick={() => onReview(item.id, 'REJECTED')}>Отклонить</Button>
         </div>
       )}
@@ -129,6 +138,7 @@ function FacultyProposalRow({ item, onReview }) {
 
 function ProgramProposalRow({ item, onReview }) {
   const done = item.status !== 'NEW';
+  const authorName = useAuthorName(item.authorId);
   return (
     <article className="um-feed-row" style={{ padding: 16, borderBottom: '1px solid var(--border)', background: 'var(--bg)' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'flex-start' }}>
@@ -140,10 +150,10 @@ function ProgramProposalRow({ item, onReview }) {
         </div>
         <Badge color={item.status === 'APPROVED' ? 'green' : item.status === 'REJECTED' ? 'red' : 'accent'}>{item.status}</Badge>
       </div>
-      <div style={{ marginTop: 10, color: 'var(--text-muted)', fontSize: 12 }}>Автор: {item.authorId} · {new Date(item.createdAt).toLocaleString()}</div>
+      <div style={{ marginTop: 10, color: 'var(--text-muted)', fontSize: 12 }}>Автор: {authorName} · {new Date(normalizeIsoDate(item.createdAt)).toLocaleString('ru-RU', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit' })}</div>
       {!done && (
         <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
-          <Button size="sm" onClick={() => onReview(item.id, 'APPROVED')}>Одобрить и создать программу</Button>
+          <Button size="sm" onClick={() => onReview(item.id, 'APPROVED')}>Одобрить и добавить программу</Button>
           <Button size="sm" variant="secondary" onClick={() => onReview(item.id, 'REJECTED')}>Отклонить</Button>
         </div>
       )}
@@ -154,6 +164,7 @@ function ProgramProposalRow({ item, onReview }) {
 function SuggestionRow({ item, onDelete }) {
   const [deleting, setDeleting] = React.useState(false);
   const [confirmOpen, setConfirmOpen] = React.useState(false);
+  const authorName = useAuthorName(item.authorId);
   const handleDelete = async () => {
     setDeleting(true);
     try {
@@ -173,7 +184,7 @@ function SuggestionRow({ item, onDelete }) {
           </button>
         </div>
         <p style={{ margin: 0, whiteSpace: 'pre-wrap', lineHeight: 1.55 }}>{item.text}</p>
-        <div style={{ marginTop: 10, color: 'var(--text-muted)', fontSize: 12 }}>Автор: {item.authorId} · {new Date(item.createdAt).toLocaleString()}</div>
+        <div style={{ marginTop: 10, color: 'var(--text-muted)', fontSize: 12 }}>Автор: {authorName} · {new Date(normalizeIsoDate(item.createdAt)).toLocaleString('ru-RU', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit' })}</div>
       </article>
       <Modal open={confirmOpen} onClose={() => !deleting && setConfirmOpen(false)} title="Удалить предложение">
         <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
@@ -190,28 +201,31 @@ function SuggestionRow({ item, onDelete }) {
   );
 }
 
-function UniversityProposalRow({ item, onReview }) {
+function UniversityProposalRow({ item, onReview, onNavigate }) {
   const done = item.status !== 'NEW';
   const iconUrl = API.resolveAssetUrl(item.iconUrl);
+  const authorName = useAuthorName(item.authorId);
   return (
     <article className="um-feed-row" style={{ padding: 16, borderBottom: '1px solid var(--border)', background: 'var(--bg)' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'flex-start' }}>
         <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start' }}>
-          {iconUrl && <img src={iconUrl} alt="" style={{ width: 40, height: 40, borderRadius: 10, objectFit: 'cover', background: '#fff', border: '1px solid var(--border)' }} />}
+          {iconUrl && <img src={iconUrl} alt="" style={{ width: 40, height: 40, borderRadius: 10, objectFit: 'cover', display: 'block' }} />}
           <div>
             <div style={{ fontWeight: 800, fontSize: 16 }}>{item.name}</div>
             <div style={{ color: 'var(--text-muted)', fontSize: 13 }}>short: {item.shortName}</div>
-            <div style={{ color: 'var(--text-muted)', fontSize: 13 }}>subdomain: {item.subdomain || '—'}</div>
+            <div style={{ color: 'var(--text-muted)', fontSize: 13 }}>subdomain: {item.subdomain
+              ? <span onClick={() => onNavigate('/' + item.subdomain + '/')} style={{ color: 'var(--accent)', cursor: 'pointer', textDecoration: 'underline' }}>{item.subdomain}</span>
+              : '—'}</div>
             <div style={{ color: 'var(--text-muted)', fontSize: 13 }}>student: {item.studentDomain}</div>
             <div style={{ color: 'var(--text-muted)', fontSize: 13 }}>employee: {item.employeeDomain || '—'}</div>
           </div>
         </div>
         <Badge color={item.status === 'APPROVED' ? 'green' : item.status === 'REJECTED' ? 'red' : 'accent'}>{item.status}</Badge>
       </div>
-      <div style={{ marginTop: 10, color: 'var(--text-muted)', fontSize: 12 }}>Автор: {item.authorId} · {new Date(item.createdAt).toLocaleString()}</div>
+      <div style={{ marginTop: 10, color: 'var(--text-muted)', fontSize: 12 }}>Автор: {authorName} · {new Date(normalizeIsoDate(item.createdAt)).toLocaleString('ru-RU', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit' })}</div>
       {!done && (
         <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
-          <Button size="sm" onClick={() => onReview(item.id, 'APPROVED')}>Одобрить</Button>
+          <Button size="sm" onClick={() => onReview(item.id, 'APPROVED')}>Одобрить и добавить университет</Button>
           <Button size="sm" variant="secondary" onClick={() => onReview(item.id, 'REJECTED')}>Отклонить</Button>
         </div>
       )}

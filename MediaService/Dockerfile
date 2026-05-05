@@ -10,6 +10,7 @@ COPY PostService/build.gradle.kts  PostService/
 COPY APIGateway/build.gradle.kts   APIGateway/
 COPY FeedService/build.gradle.kts  FeedService/
 COPY Eureka/build.gradle.kts       Eureka/
+COPY NotificationService/build.gradle.kts NotificationService/
 
 RUN gradle :MediaService:dependencies --no-daemon --quiet 2>/dev/null || true
 

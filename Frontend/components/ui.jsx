@@ -163,14 +163,25 @@ function EmptyState({ icon, title, subtitle }) {
   );
 }
 
+function normalizeIsoDate(isoStr) {
+  if (!isoStr || typeof isoStr !== 'string') return isoStr;
+  if (/[zZ]|[+-]\d{2}:\d{2}$/.test(isoStr)) return isoStr;
+  if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?$/.test(isoStr)) {
+    return isoStr + 'Z';
+  }
+  return isoStr;
+}
+
 function useTimeAgo(isoStr) {
   if (!isoStr) return '';
-  const diff = (Date.now() - new Date(isoStr)) / 1000;
+  const date = new Date(normalizeIsoDate(isoStr));
+  if (Number.isNaN(date.getTime())) return '';
+  const diff = (Date.now() - date.getTime()) / 1000;
   if (diff < 60) return 'только что';
   if (diff < 3600) return Math.floor(diff / 60) + ' мин';
   if (diff < 86400) return Math.floor(diff / 3600) + ' ч';
   if (diff < 604800) return Math.floor(diff / 86400) + ' дн';
-  return new Date(isoStr).toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' });
+  return date.toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' });
 }
 
 function PostSkeleton() {
@@ -191,24 +202,34 @@ function PostSkeleton() {
   );
 }
 
-function ProfileHoverCard({ user, pos, onNavigate, onClose }) {
+function ProfileHoverCard({ user, pos, onNavigate, onClose, onMouseEnter, onMouseLeave, closing }) {
   if (!user) return null;
+  const [visible, setVisible] = React.useState(false);
+
+  React.useEffect(() => {
+    const frame = window.requestAnimationFrame(() => setVisible(true));
+    return () => window.cancelAnimationFrame(frame);
+  }, []);
+
   const displayName = (user.name && user.surname) ? `${user.name} ${user.surname}` : user.name || user.username;
   const card = (
     <div
-      onMouseEnter={() => {}}
-      onMouseLeave={onClose}
+      onMouseEnter={onMouseEnter}
+      onMouseLeave={onMouseLeave}
       style={{
         position: 'fixed', top: pos.top, left: pos.left, width: 280,
         background: 'var(--bg)', borderRadius: 16,
         border: '1px solid var(--border)', boxShadow: '0 8px 32px rgba(0,0,0,0.22)',
-        padding: 16, zIndex: 1200, animation: 'fadein 0.15s ease',
+        padding: 16, zIndex: 1200,
+        opacity: visible && !closing ? 1 : 0,
+        transform: visible && !closing ? 'translateY(0)' : 'translateY(-4px)',
+        transition: 'opacity 0.15s ease, transform 0.15s ease',
       }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 10 }}>
-        <div style={{ cursor: 'pointer' }} onClick={() => { onClose(); onNavigate('/profile/' + user.id); }}>
+        <div style={{ cursor: 'pointer' }} onClick={() => { onClose(); onNavigate(API.profileUrl(user)); }}>
           <Avatar user={user} size={52} />
         </div>
-        <Button size="sm" onClick={() => { onClose(); onNavigate('/profile/' + user.id); }}>Открыть</Button>
+        <Button size="sm" onClick={() => { onClose(); onNavigate(API.profileUrl(user)); }}>Открыть</Button>
       </div>
       <div style={{ fontWeight: 800, fontSize: 15, lineHeight: 1.2 }}>{displayName}</div>
       {user.username && <div style={{ color: 'var(--text-muted)', fontSize: 13 }}>@{user.username}</div>}
@@ -281,4 +302,5 @@ Object.assign(window, {
   PostSkeleton,
   ProfileHoverCard,
   ImageUploadField,
+  normalizeIsoDate,
 });

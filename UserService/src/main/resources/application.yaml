@@ -24,13 +24,18 @@ spring:
     locations: classpath:db/migration
 
   mail:
-    host: smtp.yandex.ru
-    port: 587
+    host: mail.hosting.reg.ru
+    port: 465
     username: ${MAIL_USERNAME}
     password: ${MAIL_PASSWORD}
     properties:
       mail.smtp.auth: true
-      mail.smtp.starttls.enable: true
+      mail.smtp.ssl.enable: true
+      mail.smtp.ssl.trust: mail.hosting.reg.ru
+      mail.smtp.starttls.enable: false
+      mail.smtp.connectiontimeout: 5000
+      mail.smtp.timeout: 5000
+      mail.smtp.writetimeout: 5000
 
   kafka:
     bootstrap-servers: ${SPRING_KAFKA_BOOTSTRAP_SERVERS:kafka:9092}
@@ -49,11 +54,8 @@ spring:
         compression.type: zstd
 
 app:
-  admin:
-    token: ${ADMIN_TOKEN:}
+  frontend-url: ${APP_FRONTEND_URL:https://unimeow.ru}
   media:
-    host: ${MEDIA_GRPC_HOST:localhost}
-    port: ${MEDIA_GRPC_PORT:9093}
     deadline-seconds: ${MEDIA_GRPC_DEADLINE_SECONDS:10}
   kafka:
     topics:
@@ -65,8 +67,8 @@ app:
 grpc:
   server:
     port: 9090
-    permit-keep-alive-without-calls: true
-    permit-keep-alive-time: 20s
+    permit-keep-alive-without-calls: false
+    permit-keep-alive-time: 30s
 
 eureka:
   client:
@@ -77,6 +79,9 @@ eureka:
     lease-expiration-duration-in-seconds: 15
 
 management:
+  health:
+    mail:
+      enabled: ${MANAGEMENT_HEALTH_MAIL_ENABLED:false}
   endpoints:
     web:
       exposure:

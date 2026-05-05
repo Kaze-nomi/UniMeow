@@ -11,17 +11,16 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.test.util.ReflectionTestUtils;
 import reactor.test.StepVerifier;
 import uni.grpc.user.*;
-import uni.grpc.user.ListFacultiesRequest;
-import uni.grpc.user.ListTopicsRequest;
 import uni.grpc.user.FacultyListResponse;
-import uni.grpc.user.TopicListResponse;
+import uni.grpc.user.ListFacultiesRequest;
 import uni.grpc.user.UniversityListResponse;
 
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.*;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
 class UserGrpcClientTest {
@@ -209,12 +208,12 @@ class UserGrpcClientTest {
 	@Test
 	void list_universities_returns_list() {
 		UniversityListResponse response = UniversityListResponse.newBuilder().addUniversities(uni.grpc.user.University
-				.newBuilder().setId(1L).setName("МГУ").setShortName("МГУ").setIconUrl("").build()).build();
+				.newBuilder().setId(1L).setName("РњР“РЈ").setShortName("РњР“РЈ").setIconUrl("").build()).build();
 		when(stub.listUniversities(any())).thenReturn(response);
 
 		StepVerifier.create(client.listUniversities()).assertNext(r -> {
 			assertThat(r.getUniversitiesList()).hasSize(1);
-			assertThat(r.getUniversities(0).getName()).isEqualTo("МГУ");
+			assertThat(r.getUniversities(0).getName()).isEqualTo("РњР“РЈ");
 		}).verifyComplete();
 	}
 
@@ -228,7 +227,8 @@ class UserGrpcClientTest {
 	@Test
 	void list_faculties_sends_correct_university_id() {
 		FacultyListResponse response = FacultyListResponse.newBuilder()
-				.addFaculties(uni.grpc.user.Faculty.newBuilder().setId(10L).setName("ВМК").setShortName("ВМК").build())
+				.addFaculties(
+						uni.grpc.user.Faculty.newBuilder().setId(10L).setName("Р’РњРљ").setShortName("Р’РњРљ").build())
 				.build();
 		when(stub.listFaculties(any())).thenReturn(response);
 
@@ -249,28 +249,6 @@ class UserGrpcClientTest {
 				.expectErrorSatisfies(e -> assertThat(((StatusRuntimeException) e).getStatus().getCode())
 						.isEqualTo(Status.NOT_FOUND.getCode()))
 				.verify();
-	}
-
-	@Test
-	void list_topics_sends_correct_university_id() {
-		TopicListResponse response = TopicListResponse.newBuilder().addTopics(uni.grpc.user.Topic.newBuilder()
-				.setId(100L).setSlug("general").setName("Общее").setIsSystem(true).build()).build();
-		when(stub.listTopics(any())).thenReturn(response);
-
-		ArgumentCaptor<ListTopicsRequest> captor = ArgumentCaptor.forClass(ListTopicsRequest.class);
-
-		StepVerifier.create(client.listTopics(1L)).assertNext(r -> assertThat(r.getTopicsList()).hasSize(1))
-				.verifyComplete();
-
-		verify(stub).listTopics(captor.capture());
-		assertThat(captor.getValue().getUniversityId()).isEqualTo(1L);
-	}
-
-	@Test
-	void list_topics_propagates_grpc_error() {
-		when(stub.listTopics(any())).thenThrow(Status.INTERNAL.asRuntimeException());
-
-		StepVerifier.create(client.listTopics(1L)).expectError(StatusRuntimeException.class).verify();
 	}
 
 	private UserResponse buildUserResponse() {

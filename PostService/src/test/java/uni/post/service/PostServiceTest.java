@@ -8,11 +8,13 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
+import uni.post.entity.Comment;
 import uni.post.entity.PostLike;
 import uni.post.entity.Post;
 import uni.post.exception.PostNotFoundException;
-import uni.post.grpc.UserGrpcClient;
 import uni.post.outbox.OutboxService;
+import uni.post.repository.CommentLikeRepository;
+import uni.post.repository.CommentRepository;
 import uni.post.repository.PostLikeRepository;
 import uni.post.repository.PostRepository;
 import uni.post.record.PostPageResult;
@@ -22,12 +24,12 @@ import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
@@ -36,11 +38,15 @@ class PostServiceTest {
 	@Mock
 	PostRepository postRepository;
 	@Mock
+	CommentRepository commentRepository;
+	@Mock
 	PostLikeRepository likeRepository;
+	@Mock
+	CommentLikeRepository commentLikeRepository;
 	@Mock
 	OutboxService outboxService;
 	@Mock
-	UserGrpcClient userGrpcClient;
+	MentionResolver mentionResolver;
 
 	@InjectMocks
 	PostService postService;
@@ -56,19 +62,12 @@ class PostServiceTest {
 				.commentsCount(0).createdAt(now).updatedAt(now).build();
 	}
 
-	private void mockResolvedTarget(Long universityId, Long facultyId, Long programId, Long topicId,
-			Long parentTopicId) {
-		when(userGrpcClient.resolvePostTarget(eq(AUTHOR_ID.toString()), isNull())).thenReturn(
-				new UserGrpcClient.PostTarget(true, universityId, facultyId, programId, topicId, parentTopicId, null));
-	}
-
 	@Test
 	void create_post_saves_and_returns_result_with_liked_by_me_false() {
 		Post post = buildPost();
 		when(postRepository.save(any())).thenReturn(post);
-		mockResolvedTarget(1L, 10L, 100L, 10L, 10L);
 
-		PostResult result = postService.createPost(AUTHOR_ID, "Hello UniMeow", List.of(), null);
+		PostResult result = postService.createPost(AUTHOR_ID, "Hello UniMeow", List.of(), 1L, 10L, 100L, 10L, 10L);
 
 		assertThat(result.post()).isEqualTo(post);
 		assertThat(result.likedByMe()).isFalse();
@@ -79,9 +78,8 @@ class PostServiceTest {
 	@Test
 	void create_post_trims_content() {
 		when(postRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
-		mockResolvedTarget(1L, 10L, 100L, 10L, 10L);
 
-		postService.createPost(AUTHOR_ID, "  trimmed  ", List.of(), null);
+		postService.createPost(AUTHOR_ID, "  trimmed  ", List.of(), 1L, 10L, 100L, 10L, 10L);
 
 		ArgumentCaptor<Post> captor = ArgumentCaptor.forClass(Post.class);
 		verify(postRepository).save(captor.capture());
@@ -91,9 +89,8 @@ class PostServiceTest {
 	@Test
 	void create_post_sets_created_at_equal_to_updated_at() {
 		when(postRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
-		mockResolvedTarget(1L, 10L, 100L, 10L, 10L);
 
-		postService.createPost(AUTHOR_ID, "content", List.of(), null);
+		postService.createPost(AUTHOR_ID, "content", List.of(), 1L, 10L, 100L, 10L, 10L);
 
 		ArgumentCaptor<Post> captor = ArgumentCaptor.forClass(Post.class);
 		verify(postRepository).save(captor.capture());
@@ -103,9 +100,8 @@ class PostServiceTest {
 	@Test
 	void create_post_replaces_null_media_urls_with_empty_list() {
 		when(postRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
-		mockResolvedTarget(1L, 10L, 100L, 10L, 10L);
 
-		postService.createPost(AUTHOR_ID, "content", null, null);
+		postService.createPost(AUTHOR_ID, "content", null, 1L, 10L, 100L, 10L, 10L);
 
 		ArgumentCaptor<Post> captor = ArgumentCaptor.forClass(Post.class);
 		verify(postRepository).save(captor.capture());
@@ -114,18 +110,17 @@ class PostServiceTest {
 
 	@Test
 	void create_post_throws_when_content_is_blank() {
-		assertThatThrownBy(() -> postService.createPost(AUTHOR_ID, "  ", List.of(), null))
+		assertThatThrownBy(() -> postService.createPost(AUTHOR_ID, "  ", List.of(), null, null, null, null, null))
 				.isInstanceOf(IllegalArgumentException.class).hasMessageContaining("content cannot be empty");
 
 		verifyNoInteractions(postRepository);
 	}
 
 	@Test
-	void create_post_uses_resolved_scope_when_topic_not_provided() {
+	void create_post_stores_provided_scope() {
 		when(postRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
-		mockResolvedTarget(1L, 10L, 100L, 10L, 10L);
 
-		PostResult result = postService.createPost(AUTHOR_ID, "content", List.of(), null);
+		PostResult result = postService.createPost(AUTHOR_ID, "content", List.of(), 1L, 10L, 100L, 10L, 10L);
 
 		assertThat(result.post().getUniversityId()).isEqualTo(1L);
 		assertThat(result.post().getFacultyId()).isEqualTo(10L);
@@ -135,22 +130,8 @@ class PostServiceTest {
 	}
 
 	@Test
-	void create_post_ignores_client_topic_and_uses_resolved_target() {
-		when(postRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
-		mockResolvedTarget(1L, 7L, 42L, 42L, 7L);
-
-		PostResult result = postService.createPost(AUTHOR_ID, "content", List.of(), 42L);
-
-		verify(userGrpcClient).resolvePostTarget(AUTHOR_ID.toString(), null);
-		assertThat(result.post().getFacultyId()).isEqualTo(7L);
-		assertThat(result.post().getProgramId()).isEqualTo(42L);
-		assertThat(result.post().getTopicId()).isEqualTo(42L);
-		assertThat(result.post().getParentTopicId()).isEqualTo(7L);
-	}
-
-	@Test
 	void create_post_throws_when_content_is_null() {
-		assertThatThrownBy(() -> postService.createPost(AUTHOR_ID, null, List.of(), null))
+		assertThatThrownBy(() -> postService.createPost(AUTHOR_ID, null, List.of(), null, null, null, null, null))
 				.isInstanceOf(IllegalArgumentException.class);
 
 		verifyNoInteractions(postRepository);
@@ -369,6 +350,25 @@ class PostServiceTest {
 	}
 
 	@Test
+	void delete_all_content_by_author_deletes_posts_and_comments() {
+		UUID otherPostId = UUID.fromString("550e8400-e29b-41d4-a716-446655440099");
+		Comment comment = Comment.builder().id(UUID.randomUUID()).postId(otherPostId).authorId(AUTHOR_ID)
+				.content("comment").likesCount(0).createdAt(LocalDateTime.now()).updatedAt(LocalDateTime.now()).build();
+		Post authoredPost = buildPost();
+
+		when(commentRepository.findByAuthorId(AUTHOR_ID)).thenReturn(List.of(comment));
+		when(postRepository.findByAuthorId(AUTHOR_ID)).thenReturn(List.of(authoredPost));
+
+		postService.deleteAllContentByAuthor(AUTHOR_ID);
+
+		verify(commentLikeRepository).deleteByUserId(AUTHOR_ID);
+		verify(commentLikeRepository).deleteByCommentIdIn(eq(Set.of(comment.getId())));
+		verify(commentRepository).deleteAllByIds(eq(Set.of(comment.getId())));
+		verify(postRepository, never()).save(any());
+		verify(postRepository).deleteAllByAuthorId(AUTHOR_ID);
+	}
+
+	@Test
 	void like_post_saves_like_and_increments_counter() {
 		Post post = buildPost();
 		when(postRepository.findById(POST_ID)).thenReturn(Optional.of(post));
@@ -397,7 +397,6 @@ class PostServiceTest {
 	}
 
 	@Test
-	@SuppressWarnings("unchecked")
 	void like_post_event_payload_contains_feed_scope_fields() {
 		Post post = buildPost();
 		when(postRepository.findById(POST_ID)).thenReturn(Optional.of(post));
@@ -462,7 +461,6 @@ class PostServiceTest {
 	}
 
 	@Test
-	@SuppressWarnings("unchecked")
 	void unlike_post_event_payload_contains_feed_scope_fields() {
 		Post post = buildPost();
 		post.setLikesCount(3);
@@ -479,7 +477,6 @@ class PostServiceTest {
 	}
 
 	@Test
-	@SuppressWarnings("unchecked")
 	void delete_post_event_payload_contains_feed_scope_fields() {
 		Post post = buildPost();
 		when(postRepository.findById(POST_ID)).thenReturn(Optional.of(post));

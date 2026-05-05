@@ -9,7 +9,6 @@ import org.springframework.stereotype.Controller;
 import reactor.core.publisher.Mono;
 import uni.gateway.dto.admin.AdminActionResult;
 import uni.gateway.dto.admin.BanUserInput;
-import uni.gateway.dto.admin.CreateFacultyInput;
 import uni.gateway.dto.admin.FacultyProposalDto;
 import uni.gateway.dto.admin.FacultyProposalInput;
 import uni.gateway.dto.admin.ImprovementSuggestionDto;
@@ -18,6 +17,7 @@ import uni.gateway.dto.admin.ProgramProposalInput;
 import uni.gateway.dto.admin.UniversityProposalDto;
 import uni.gateway.dto.admin.UniversityProposalInput;
 import uni.gateway.dto.post.DeleteResult;
+import uni.gateway.dto.user.UserDto;
 import uni.gateway.grpc.PostGrpcClient;
 import uni.gateway.grpc.UserGrpcClient;
 
@@ -31,6 +31,7 @@ public class AdminController {
 
 	private final UserGrpcClient userGrpcClient;
 	private final PostGrpcClient postGrpcClient;
+	private final UserMapper userMapper;
 
 	@QueryMapping
 	public Mono<List<ImprovementSuggestionDto>> adminImprovementSuggestions(
@@ -125,18 +126,18 @@ public class AdminController {
 	}
 
 	@MutationMapping
-	public Mono<AdminActionResult> adminGrantAdmin(@Argument(name = "targetUserId") String targetUserId,
-			@ContextValue(name = "userId", required = false) String userId) {
-		return requireAdmin(userId).flatMap(granterId -> userGrpcClient.grantAdmin(granterId, targetUserId))
-				.map(AdminActionResult::new);
-	}
-
-	@MutationMapping
 	public Mono<AdminActionResult> adminBanUser(@Argument(name = "input") BanUserInput input,
 			@ContextValue(name = "userId", required = false) String userId) {
 		return requireAdmin(userId).flatMap(
 				adminId -> userGrpcClient.banUser(adminId, input.targetUserId(), input.bannedUntil(), input.reason()))
 				.map(AdminActionResult::new);
+	}
+
+	@MutationMapping
+	public Mono<UserDto> adminGrantAdmin(@Argument(name = "targetUserId") String targetUserId,
+			@ContextValue(name = "userId", required = false) String userId) {
+		return requireKazenomi(userId).flatMap(adminId -> userGrpcClient.grantAdmin(adminId, targetUserId)
+				.then(userGrpcClient.getUserById(targetUserId))).map(userMapper::toDto);
 	}
 
 	@MutationMapping
@@ -178,13 +179,6 @@ public class AdminController {
 				.map(AdminActionResult::new);
 	}
 
-	@MutationMapping
-	public Mono<AdminActionResult> adminCreateFaculty(@Argument(name = "input") CreateFacultyInput input,
-			@ContextValue(name = "userId", required = false) String userId) {
-		return requireAdmin(userId).flatMap(adminId -> userGrpcClient.createFaculty(adminId,
-				Long.parseLong(input.universityId()), input.name(), input.shortName())).map(AdminActionResult::new);
-	}
-
 	private Mono<String> requireActiveUser(String userId) {
 		if (userId == null) {
 			return Mono.error(new CredentialException("Authentication required"));
@@ -201,6 +195,15 @@ public class AdminController {
 		return requireActiveUser(userId).flatMap(id -> userGrpcClient.getUserById(id).flatMap(user -> {
 			if (!user.getIsAdmin()) {
 				return Mono.error(new AccessDeniedException("Admin privileges required"));
+			}
+			return Mono.just(id);
+		}));
+	}
+
+	private Mono<String> requireKazenomi(String userId) {
+		return requireActiveUser(userId).flatMap(id -> userGrpcClient.getUserById(id).flatMap(user -> {
+			if (!"kazenomi".equalsIgnoreCase(user.getUsername())) {
+				return Mono.error(new AccessDeniedException("Only kazenomi can grant admin privileges"));
 			}
 			return Mono.just(id);
 		}));

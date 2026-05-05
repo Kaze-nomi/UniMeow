@@ -80,7 +80,7 @@ public class PostController {
 			@Argument(name = "facultyId") Long facultyId, @Argument(name = "programId") Long programId,
 			@Argument(name = "topicId") Long topicId,
 			@ContextValue(name = "userId", required = false) String currentUserId) {
-		if (currentUserId == null) {
+		if (currentUserId == null && (universityId == null || universityId <= 0)) {
 			return Mono.error(new CredentialException("Authentication required for following feed"));
 		}
 		return fetchFeed(FeedType.FOLLOWING, currentUserId, cursor, size, universityId, facultyId, programId, topicId);
@@ -95,14 +95,6 @@ public class PostController {
 		return fetchFeed(FeedType.TRENDING, currentUserId, cursor, size, universityId, facultyId, programId, topicId);
 	}
 
-	@QueryMapping
-	public Mono<FeedPageDto> globalFeed(@Argument(name = "cursor") String cursor, @Argument(name = "size") Integer size,
-			@Argument(name = "universityId") Long universityId, @Argument(name = "facultyId") Long facultyId,
-			@Argument(name = "programId") Long programId, @Argument(name = "topicId") Long topicId,
-			@ContextValue(name = "userId", required = false) String currentUserId) {
-		return fetchFeed(FeedType.GLOBAL, currentUserId, cursor, size, universityId, facultyId, programId, topicId);
-	}
-
 	private Mono<FeedPageDto> fetchFeed(FeedType type, String userId, String cursor, Integer size, Long universityId,
 			Long facultyId, Long programId, Long topicId) {
 		int s = size != null ? size : 20;
@@ -111,7 +103,7 @@ public class PostController {
 		Mono<GetFeedResponse> feedMono = universityId != null && universityId > 0
 				? feedGrpcClient.getUniversityFeed(type, userId, cursorLong, s, universityId, facultyId,
 						resolvedProgramId)
-				: feedGrpcClient.getFeed(type, userId, cursorLong, s);
+				: feedGrpcClient.getFeed(type, userId, cursorLong, s, topicId);
 		return feedMono.flatMap(feed -> hydrateFeed(feed, userId));
 	}
 
@@ -121,9 +113,13 @@ public class PostController {
 		if (userId == null) {
 			return Mono.error(new CredentialException("Authentication required"));
 		}
-		return requireActiveUser(userId)
-				.flatMap(id -> postGrpcClient.createPost(id, input.content(), input.mediaUrls(), null))
-				.map(this::toDto);
+		return requireActiveUserResponse(userId).flatMap(user -> {
+			Long universityId = user.hasUniversity() ? user.getUniversity().getId() : null;
+			Long facultyId = user.hasFaculty() ? user.getFaculty().getId() : null;
+			Long programId = user.hasProgram() ? user.getProgram().getId() : null;
+			return postGrpcClient.createPost(userId, input.content(), input.mediaUrls(), universityId, facultyId,
+					programId, null, null);
+		}).map(this::toDto);
 	}
 
 	@MutationMapping
@@ -232,15 +228,19 @@ public class PostController {
 	}
 
 	private Mono<String> requireActiveUser(String userId) {
+		return requireActiveUserResponse(userId).thenReturn(userId);
+	}
+
+	private Mono<UserResponse> requireActiveUserResponse(String userId) {
 		Mono<UserResponse> userMono = userGrpcClient.getUserById(userId);
 		if (userMono == null) {
-			return Mono.just(userId);
+			return Mono.empty();
 		}
 		return userMono.flatMap(user -> {
 			if (user.getIsBanned()) {
 				return Mono.error(new AccessDeniedException("User is banned"));
 			}
-			return Mono.just(userId);
+			return Mono.just(user);
 		});
 	}
 
@@ -271,7 +271,6 @@ public class PostController {
 	private UserDto toUserDto(UserResponse r) {
 		return UserDto.builder().id(r.getId()).emailGoogle(r.getEmailGoogle()).username(r.getUsername())
 				.name(r.getName()).surname(r.getSurname().isEmpty() ? null : r.getSurname())
-				.patronymic(r.getPatronymic().isEmpty() ? null : r.getPatronymic())
 				.emailUniversity(r.getEmailUniversity().isEmpty() ? null : r.getEmailUniversity())
 				.avatarUrl(r.getAvatarUrl().isEmpty() ? null : r.getAvatarUrl())
 				.coverUrl(r.hasCoverUrl() ? r.getCoverUrl() : null).status(

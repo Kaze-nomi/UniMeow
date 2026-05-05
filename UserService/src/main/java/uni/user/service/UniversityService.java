@@ -7,7 +7,6 @@ import uni.user.entity.University;
 import uni.user.entity.UniversityFaculty;
 import uni.user.entity.UniversityProgram;
 import uni.user.entity.UniversityTopic;
-import uni.user.grpc.MediaGrpcClient;
 import uni.user.repository.UniversityFacultyRepository;
 import uni.user.repository.UniversityProgramRepository;
 import uni.user.repository.UniversityRepository;
@@ -16,23 +15,15 @@ import uni.user.repository.UserRepository;
 
 import java.util.Comparator;
 import java.util.List;
-import java.util.Locale;
-import java.util.Map;
 import java.util.UUID;
 
 @Service
 @RequiredArgsConstructor
 public class UniversityService {
 
-	private static final String UNIVERSITY_ICONS_BUCKET = "university-icons";
-
-	private static final Map<String, String> CONTENT_TYPE_TO_EXT = Map.of("image/svg+xml", "svg", "image/png", "png",
-			"image/jpeg", "jpg", "image/webp", "webp");
-
 	private final UniversityRepository universityRepository;
 	private final UniversityFacultyRepository facultyRepository;
 	private final UniversityProgramRepository programRepository;
-	private final MediaGrpcClient mediaGrpcClient;
 	private final UniversityTopicRepository topicRepository;
 	private final UserRepository userRepository;
 
@@ -68,62 +59,7 @@ public class UniversityService {
 				.sorted(Comparator.comparing(UniversityProgram::getName, String.CASE_INSENSITIVE_ORDER)).toList();
 	}
 
-	@Transactional(readOnly = true)
-	public List<UniversityTopic> listTopics(Long universityId) {
-		if (universityId == null || universityId <= 0) {
-			throw new IllegalArgumentException("universityId must be positive");
-		}
-
-		if (!universityRepository.existsById(universityId)) {
-			throw new IllegalArgumentException("University not found: " + universityId);
-		}
-
-		return topicRepository.findByUniversityId(universityId).stream()
-				.sorted(Comparator.comparing((UniversityTopic t) -> t.getParent() != null)
-						.thenComparing(UniversityTopic::getName, String.CASE_INSENSITIVE_ORDER)
-						.thenComparing(UniversityTopic::getId))
-				.toList();
-	}
-
 	@Transactional
-	public String uploadUniversityIcon(long universityId, byte[] data, String contentType) {
-		if (data == null || data.length == 0) {
-			throw new IllegalArgumentException("File data is empty");
-		}
-		if (contentType == null || contentType.isBlank()) {
-			throw new IllegalArgumentException("contentType is required");
-		}
-
-		String normalizedType = contentType.toLowerCase(Locale.ROOT).trim();
-		String extension = CONTENT_TYPE_TO_EXT.get(normalizedType);
-		if (extension == null) {
-			throw new IllegalArgumentException("Unsupported content type: " + contentType);
-		}
-
-		University university = universityRepository.findById(universityId)
-				.orElseThrow(() -> new IllegalArgumentException("University not found: " + universityId));
-
-		String baseName = sanitizeBaseName(university.getShortName(), university.getId());
-		String filename = baseName + "." + extension;
-
-		String url = mediaGrpcClient.uploadFile(UNIVERSITY_ICONS_BUCKET, filename, normalizedType, data);
-
-		university.setIconUrl(url);
-		universityRepository.save(university);
-
-		return url;
-	}
-
-	private static String sanitizeBaseName(String shortName, Long universityId) {
-		String raw = shortName == null ? "" : shortName.toLowerCase(Locale.ROOT);
-		String sanitized = raw.replaceAll("[^a-z0-9_-]", "-").replaceAll("-+", "-").replaceAll("(^-|-$)", "");
-
-		if (sanitized.isBlank()) {
-			return "university-" + universityId;
-		}
-		return sanitized;
-	}
-
 	public ValidateResult validateTopicForUniversity(Long universityId, Long topicId) {
 		UniversityTopic topic = topicRepository.findById(topicId)
 				.orElseThrow(() -> new IllegalArgumentException("Topic not found: " + topicId));

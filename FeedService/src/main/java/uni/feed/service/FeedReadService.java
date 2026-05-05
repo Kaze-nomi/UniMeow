@@ -16,6 +16,7 @@ import java.util.Map;
 @RequiredArgsConstructor
 public class FeedReadService {
 
+	private static final long NO_UNIVERSITY_TOPIC_ID = -1L;
 	private static final Duration FOLLOWING_INTERSECTION_TTL = Duration.ofSeconds(60);
 
 	private final FeedRedisRepository feedRedisRepository;
@@ -25,6 +26,45 @@ public class FeedReadService {
 
 	@Value("${app.feed.max-page-size:100}")
 	private int maxPageSize;
+
+	public FeedPageResult getFeed(String feedType, String userId, long cursor, int size, long universityId,
+			long facultyId, long programId, long topicId) {
+		Long normalizedCursor = cursor > 0 ? cursor : null;
+		Integer normalizedSize = size > 0 ? size : null;
+		Long normalizedUniversityId = universityId > 0 ? universityId : null;
+		Long normalizedFacultyId = facultyId > 0 ? facultyId : null;
+		Long normalizedProgramId = programId > 0 ? programId : null;
+		boolean outsideScope = topicId == NO_UNIVERSITY_TOPIC_ID;
+		Long normalizedTopicId = topicId > 0 ? topicId : null;
+
+		if (normalizedProgramId == null) {
+			normalizedProgramId = normalizedTopicId;
+		}
+
+		return switch (feedType) {
+			case "FOLLOWING" -> {
+				if (outsideScope) {
+					if (userId == null || userId.isBlank()) {
+						throw new SecurityException("userId required for outside following feed");
+					}
+					yield getOutsideFollowingFeed(userId, normalizedCursor, normalizedSize);
+				}
+				if (normalizedUniversityId != null) {
+					yield getFollowingFeed(userId, normalizedCursor, normalizedSize, normalizedUniversityId,
+							normalizedFacultyId, normalizedProgramId);
+				}
+				if (userId == null || userId.isBlank()) {
+					throw new SecurityException("userId required for FOLLOWING feed");
+				}
+				yield getFollowingFeed(userId, normalizedCursor, normalizedSize, null, null, null);
+			}
+			case "TRENDING" -> outsideScope
+					? getOutsideTrendingFeed(normalizedCursor, normalizedSize)
+					: getTrendingFeed(normalizedCursor, normalizedSize, normalizedUniversityId, normalizedFacultyId,
+							normalizedProgramId);
+			default -> throw new IllegalArgumentException("Unsupported feed type: " + feedType);
+		};
+	}
 
 	public FeedPageResult getFollowingFeed(String userId, Long cursor, Integer size) {
 		return getFollowingFeed(userId, cursor, size, null, null);
@@ -42,18 +82,27 @@ public class FeedReadService {
 		boolean hasProgramScope = programId != null && programId > 0;
 		boolean hasFacultyScope = facultyId != null && facultyId > 0;
 
+		boolean hasUserId = userId != null && !userId.isBlank();
 		Map<String, Double> posts;
 		if (!hasUniversityScope) {
 			posts = feedRedisRepository.findFeedPostsWithScoresByCursor(userId, maxScore, s + 1);
 		} else if (hasProgramScope) {
-			posts = feedRedisRepository.findFollowingInUniversityTopicWithScoresByCursor(userId, universityId,
-					programId, maxScore, s + 1, FOLLOWING_INTERSECTION_TTL);
+			posts = hasUserId
+					? feedRedisRepository.findFollowingInUniversityProgramWithScoresByCursor(userId, universityId,
+							programId, maxScore, s + 1, FOLLOWING_INTERSECTION_TTL)
+					: feedRedisRepository.findUniversityProgramPostsWithScoresByCursor(universityId, programId,
+							maxScore, s + 1);
 		} else if (hasFacultyScope) {
-			posts = feedRedisRepository.findFollowingInUniversityTopicWithScoresByCursor(userId, universityId,
-					facultyId, maxScore, s + 1, FOLLOWING_INTERSECTION_TTL);
+			posts = hasUserId
+					? feedRedisRepository.findFollowingInUniversityFacultyWithScoresByCursor(userId, universityId,
+							facultyId, maxScore, s + 1, FOLLOWING_INTERSECTION_TTL)
+					: feedRedisRepository.findUniversityFacultyPostsWithScoresByCursor(universityId, facultyId,
+							maxScore, s + 1);
 		} else {
-			posts = feedRedisRepository.findFollowingInUniversityWithScoresByCursor(userId, universityId, maxScore,
-					s + 1, FOLLOWING_INTERSECTION_TTL);
+			posts = hasUserId
+					? feedRedisRepository.findFollowingInUniversityWithScoresByCursor(userId, universityId, maxScore,
+							s + 1, FOLLOWING_INTERSECTION_TTL)
+					: feedRedisRepository.findUniversityFeedPostsWithScoresByCursor(universityId, maxScore, s + 1);
 		}
 
 		return buildPageResult(posts, s);
@@ -79,10 +128,10 @@ public class FeedReadService {
 		if (!hasUniversityScope) {
 			posts = feedRedisRepository.findPopularPostsWithScoresByCursor(maxScore, s + 1);
 		} else if (hasProgramScope) {
-			posts = feedRedisRepository.findUniversityTopicPopularPostsWithScoresByCursor(universityId, programId,
+			posts = feedRedisRepository.findUniversityProgramPopularPostsWithScoresByCursor(universityId, programId,
 					maxScore, s + 1);
 		} else if (hasFacultyScope) {
-			posts = feedRedisRepository.findUniversityTopicPopularPostsWithScoresByCursor(universityId, facultyId,
+			posts = feedRedisRepository.findUniversityFacultyPopularPostsWithScoresByCursor(universityId, facultyId,
 					maxScore, s + 1);
 		} else {
 			posts = feedRedisRepository.findUniversityPopularPostsWithScoresByCursor(universityId, maxScore, s + 1);
@@ -91,34 +140,18 @@ public class FeedReadService {
 		return buildPageResult(posts, s);
 	}
 
-	public FeedPageResult getGlobalFeed(Long cursor, Integer size) {
-		return getGlobalFeed(cursor, size, null, null);
-	}
-
-	public FeedPageResult getGlobalFeed(Long cursor, Integer size, Long universityId, Long topicId) {
-		return getGlobalFeed(cursor, size, universityId, null, topicId);
-	}
-
-	public FeedPageResult getGlobalFeed(Long cursor, Integer size, Long universityId, Long facultyId, Long programId) {
+	private FeedPageResult getOutsideFollowingFeed(String userId, Long cursor, Integer size) {
 		int s = resolveSize(size);
 		long maxScore = cursor != null ? cursor : Instant.now().toEpochMilli() + 1;
-		boolean hasUniversityScope = universityId != null && universityId > 0;
-		boolean hasProgramScope = programId != null && programId > 0;
-		boolean hasFacultyScope = facultyId != null && facultyId > 0;
+		Map<String, Double> posts = feedRedisRepository.findFollowingInOutsideWithScoresByCursor(userId, maxScore,
+				s + 1, FOLLOWING_INTERSECTION_TTL);
+		return buildPageResult(posts, s);
+	}
 
-		Map<String, Double> posts;
-		if (!hasUniversityScope) {
-			posts = feedRedisRepository.findFeedPostsWithScoresByCursor(null, maxScore, s + 1);
-		} else if (hasProgramScope) {
-			posts = feedRedisRepository.findUniversityTopicPostsWithScoresByCursor(universityId, programId, maxScore,
-					s + 1);
-		} else if (hasFacultyScope) {
-			posts = feedRedisRepository.findUniversityTopicPostsWithScoresByCursor(universityId, facultyId, maxScore,
-					s + 1);
-		} else {
-			posts = feedRedisRepository.findUniversityFeedPostsWithScoresByCursor(universityId, maxScore, s + 1);
-		}
-
+	private FeedPageResult getOutsideTrendingFeed(Long cursor, Integer size) {
+		int s = resolveSize(size);
+		long maxScore = cursor != null ? cursor - 1 : Long.MAX_VALUE;
+		Map<String, Double> posts = feedRedisRepository.findOutsidePopularPostsWithScoresByCursor(maxScore, s + 1);
 		return buildPageResult(posts, s);
 	}
 

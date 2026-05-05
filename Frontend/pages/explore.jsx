@@ -44,12 +44,19 @@ function ExplorePage({ currentUser, onNavigate }) {
         </div>
       </div>
 
-      {error && <EmptyState icon={<CatFaceIcon />} title={error} subtitle="Попробуйте другой никнейм" />}
+      {error && <EmptyState icon={
+        <svg width="64" height="64" viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <circle cx="28" cy="28" r="18" stroke="var(--text-muted)" strokeWidth="3" strokeLinecap="round"/>
+          <path d="M41 41L54 54" stroke="var(--text-muted)" strokeWidth="3" strokeLinecap="round"/>
+          <path d="M22 24h12M22 31h8" stroke="var(--text-muted)" strokeWidth="2.5" strokeLinecap="round"/>
+          <path d="M20 22c1-2 3-3 5-3" stroke="var(--accent)" strokeWidth="2" strokeLinecap="round" opacity="0.6"/>
+        </svg>
+      } title="Пользователь не найден" subtitle="Попробуйте другой никнейм" />}
 
       {result && (
         <div
           className="um-feed-row"
-          onClick={() => onNavigate('/profile/' + result.id)}
+          onClick={() => onNavigate(API.profileUrl(result))}
           style={{ background: 'var(--bg)', borderBottom: '1px solid var(--border)', padding: 16, cursor: 'pointer' }}
         >
           <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>

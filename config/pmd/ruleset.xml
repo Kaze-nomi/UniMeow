@@ -31,6 +31,7 @@
         <exclude name="CouplingBetweenObjects"/>
         <exclude name="CyclomaticComplexity"/>
         <exclude name="ExcessiveParameterList"/>
+        <exclude name="NcssCount"/>
         <exclude name="LawOfDemeter"/>
         <exclude name="LoosePackageCoupling"/>
         <exclude name="GodClass"/>

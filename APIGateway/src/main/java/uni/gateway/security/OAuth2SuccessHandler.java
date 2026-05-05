@@ -1,6 +1,7 @@
 package uni.gateway.security;
 
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.server.reactive.ServerHttpResponse;
 import org.springframework.security.core.Authentication;
@@ -22,6 +23,9 @@ public class OAuth2SuccessHandler implements ServerAuthenticationSuccessHandler 
 	private final UserGrpcClient userGrpcClient;
 	private final JwtUtil jwtUtil;
 	private final CookieUtil cookieUtil;
+
+	@Value("${app.security.oauth2-success-redirect:http://localhost:5173/}")
+	private String oauth2SuccessRedirect;
 
 	@Override
 	public Mono<Void> onAuthenticationSuccess(WebFilterExchange exchange, Authentication authentication) {
@@ -48,7 +52,7 @@ public class OAuth2SuccessHandler implements ServerAuthenticationSuccessHandler 
 			response.addCookie(cookieUtil.createRefreshTokenCookie(tokens[1]));
 
 			response.setStatusCode(HttpStatus.FOUND);
-			response.getHeaders().setLocation(URI.create("http://localhost:3000/"));
+			response.getHeaders().setLocation(URI.create(oauth2SuccessRedirect));
 			return response.setComplete();
 		});
 	}

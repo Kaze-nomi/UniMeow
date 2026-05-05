@@ -21,13 +21,6 @@ public class FeedRedisRepository {
 		this.redis = redis;
 	}
 
-	public List<String> findFeedPostIdsByCursor(String userId, long maxScore, int size) {
-		String key = userId != null && !userId.isBlank() ? userFeedKey(userId) : globalFeedKey();
-		Set<String> ids = redis.opsForZSet().reverseRangeByScore(key, Double.NEGATIVE_INFINITY, (double) (maxScore - 1),
-				0, size);
-		return ids == null ? List.of() : List.copyOf(ids);
-	}
-
 	public List<String> findPopularPostIdsByCursor(long minLikesScore, int size) {
 		Set<String> ids = redis.opsForZSet().reverseRangeByScore(popularFeedKey(), Double.NEGATIVE_INFINITY,
 				(double) minLikesScore, 0, size);
@@ -35,9 +28,8 @@ public class FeedRedisRepository {
 	}
 
 	public Map<String, Double> findFeedPostsWithScoresByCursor(String userId, long maxScore, int size) {
-		String key = userId != null && !userId.isBlank() ? userFeedKey(userId) : globalFeedKey();
-		Set<ZSetOperations.TypedTuple<String>> tuples = redis.opsForZSet().reverseRangeByScoreWithScores(key,
-				Double.NEGATIVE_INFINITY, (double) (maxScore - 1), 0, size);
+		Set<ZSetOperations.TypedTuple<String>> tuples = redis.opsForZSet().reverseRangeByScoreWithScores(
+				userFeedKey(userId), Double.NEGATIVE_INFINITY, (double) (maxScore - 1), 0, size);
 		return tuplesToMap(tuples);
 	}
 
@@ -47,10 +39,16 @@ public class FeedRedisRepository {
 		return tuplesToMap(tuples);
 	}
 
-	public long countFeed(String userId) {
-		String key = userId != null && !userId.isBlank() ? userFeedKey(userId) : globalFeedKey();
-		Long count = redis.opsForZSet().zCard(key);
-		return count == null ? 0L : count;
+	public Map<String, Double> findOutsideFeedPostsWithScoresByCursor(long maxScore, int size) {
+		Set<ZSetOperations.TypedTuple<String>> tuples = redis.opsForZSet().reverseRangeByScoreWithScores(
+				outsideFeedKey(), Double.NEGATIVE_INFINITY, (double) (maxScore - 1), 0, size);
+		return tuplesToMap(tuples);
+	}
+
+	public Map<String, Double> findOutsidePopularPostsWithScoresByCursor(long maxLikesScore, int size) {
+		Set<ZSetOperations.TypedTuple<String>> tuples = redis.opsForZSet().reverseRangeByScoreWithScores(
+				outsidePopularFeedKey(), Double.NEGATIVE_INFINITY, (double) maxLikesScore, 0, size);
+		return tuplesToMap(tuples);
 	}
 
 	public long countPopular() {
@@ -62,16 +60,20 @@ public class FeedRedisRepository {
 		redis.opsForZSet().add(authorFeedKey(authorId), postId, score);
 	}
 
-	public void addPostToGlobalFeed(String postId, double score) {
-		redis.opsForZSet().add(globalFeedKey(), postId, score);
-	}
-
 	public void addPostToUserFeed(String userId, String postId, double score) {
 		redis.opsForZSet().add(userFeedKey(userId), postId, score);
 	}
 
 	public void addPostToPopularFeed(String postId, double likesCount) {
 		redis.opsForZSet().add(popularFeedKey(), postId, likesCount);
+	}
+
+	public void addPostToOutsideFeed(String postId, double score) {
+		redis.opsForZSet().add(outsideFeedKey(), postId, score);
+	}
+
+	public void addPostToOutsidePopularFeed(String postId, double likesCount) {
+		redis.opsForZSet().add(outsidePopularFeedKey(), postId, likesCount);
 	}
 
 	public void addPostToUniversityFeed(long universityId, String postId, double score) {
@@ -103,16 +105,20 @@ public class FeedRedisRepository {
 		redis.opsForZSet().incrementScore(popularFeedKey(), postId, delta);
 	}
 
-	public void removePostFromGlobalFeed(String postId) {
-		redis.opsForZSet().remove(globalFeedKey(), postId);
-	}
-
 	public void removePostFromAuthorFeed(String authorId, String postId) {
 		redis.opsForZSet().remove(authorFeedKey(authorId), postId);
 	}
 
 	public void removePostFromPopularFeed(String postId) {
 		redis.opsForZSet().remove(popularFeedKey(), postId);
+	}
+
+	public void removePostFromOutsideFeed(String postId) {
+		redis.opsForZSet().remove(outsideFeedKey(), postId);
+	}
+
+	public void removePostFromOutsidePopularFeed(String postId) {
+		redis.opsForZSet().remove(outsidePopularFeedKey(), postId);
 	}
 
 	public void removePostFromUniversityFeed(long universityId, String postId) {
@@ -143,12 +149,16 @@ public class FeedRedisRepository {
 		trim(authorFeedKey(authorId), maxSize);
 	}
 
-	public void trimGlobalFeed(long maxSize) {
-		trim(globalFeedKey(), maxSize);
-	}
-
 	public void trimPopularFeed(long maxSize) {
 		trim(popularFeedKey(), maxSize);
+	}
+
+	public void trimOutsideFeed(long maxSize) {
+		trim(outsideFeedKey(), maxSize);
+	}
+
+	public void trimOutsidePopularFeed(long maxSize) {
+		trim(outsidePopularFeedKey(), maxSize);
 	}
 
 	public void trimUniversityFeed(long universityId, long maxSize) {
@@ -188,19 +198,35 @@ public class FeedRedisRepository {
 		return tuplesToMap(tuples);
 	}
 
-	public Map<String, Double> findUniversityTopicPostsWithScoresByCursor(long universityId, long topicId,
+	public Map<String, Double> findUniversityFacultyPostsWithScoresByCursor(long universityId, long facultyId,
 			long maxScore, int size) {
 		Set<ZSetOperations.TypedTuple<String>> tuples = redis.opsForZSet().reverseRangeByScoreWithScores(
-				resolveTopicScopedFeedKey(universityId, topicId), Double.NEGATIVE_INFINITY, (double) (maxScore - 1), 0,
+				universityTopicFeedKey(universityId, facultyId), Double.NEGATIVE_INFINITY, (double) (maxScore - 1), 0,
 				size);
 		return tuplesToMap(tuples);
 	}
 
-	public Map<String, Double> findUniversityTopicPopularPostsWithScoresByCursor(long universityId, long topicId,
+	public Map<String, Double> findUniversityFacultyPopularPostsWithScoresByCursor(long universityId, long facultyId,
 			long maxScore, int size) {
 		Set<ZSetOperations.TypedTuple<String>> tuples = redis.opsForZSet().reverseRangeByScoreWithScores(
-				resolveTopicScopedPopularFeedKey(universityId, topicId), Double.NEGATIVE_INFINITY, (double) maxScore, 0,
+				universityTopicPopularFeedKey(universityId, facultyId), Double.NEGATIVE_INFINITY, (double) maxScore, 0,
 				size);
+		return tuplesToMap(tuples);
+	}
+
+	public Map<String, Double> findUniversityProgramPostsWithScoresByCursor(long universityId, long programId,
+			long maxScore, int size) {
+		Set<ZSetOperations.TypedTuple<String>> tuples = redis.opsForZSet().reverseRangeByScoreWithScores(
+				universitySubtopicFeedKey(universityId, programId), Double.NEGATIVE_INFINITY, (double) (maxScore - 1),
+				0, size);
+		return tuplesToMap(tuples);
+	}
+
+	public Map<String, Double> findUniversityProgramPopularPostsWithScoresByCursor(long universityId, long programId,
+			long maxScore, int size) {
+		Set<ZSetOperations.TypedTuple<String>> tuples = redis.opsForZSet().reverseRangeByScoreWithScores(
+				universitySubtopicPopularFeedKey(universityId, programId), Double.NEGATIVE_INFINITY, (double) maxScore,
+				0, size);
 		return tuplesToMap(tuples);
 	}
 
@@ -215,11 +241,32 @@ public class FeedRedisRepository {
 		return tuplesToMap(tuples);
 	}
 
-	public Map<String, Double> findFollowingInUniversityTopicWithScoresByCursor(String userId, long universityId,
-			long topicId, long maxScore, int size, Duration ttl) {
-		String scopeKey = resolveTopicScopedFeedKey(universityId, topicId);
-		String tmpKey = "feed:tmp:following:" + userId + ":uni:" + universityId + ":topic:" + topicId;
+	public Map<String, Double> findFollowingInUniversityFacultyWithScoresByCursor(String userId, long universityId,
+			long facultyId, long maxScore, int size, Duration ttl) {
+		String scopeKey = universityTopicFeedKey(universityId, facultyId);
+		String tmpKey = "feed:tmp:following:" + userId + ":uni:" + universityId + ":faculty:" + facultyId;
 		redis.opsForZSet().intersectAndStore(userFeedKey(userId), List.of(scopeKey), tmpKey, Aggregate.MAX);
+		redis.expire(tmpKey, ttl);
+		Set<ZSetOperations.TypedTuple<String>> tuples = redis.opsForZSet().reverseRangeByScoreWithScores(tmpKey,
+				Double.NEGATIVE_INFINITY, (double) (maxScore - 1), 0, size);
+		return tuplesToMap(tuples);
+	}
+
+	public Map<String, Double> findFollowingInUniversityProgramWithScoresByCursor(String userId, long universityId,
+			long programId, long maxScore, int size, Duration ttl) {
+		String scopeKey = universitySubtopicFeedKey(universityId, programId);
+		String tmpKey = "feed:tmp:following:" + userId + ":uni:" + universityId + ":program:" + programId;
+		redis.opsForZSet().intersectAndStore(userFeedKey(userId), List.of(scopeKey), tmpKey, Aggregate.MAX);
+		redis.expire(tmpKey, ttl);
+		Set<ZSetOperations.TypedTuple<String>> tuples = redis.opsForZSet().reverseRangeByScoreWithScores(tmpKey,
+				Double.NEGATIVE_INFINITY, (double) (maxScore - 1), 0, size);
+		return tuplesToMap(tuples);
+	}
+
+	public Map<String, Double> findFollowingInOutsideWithScoresByCursor(String userId, long maxScore, int size,
+			Duration ttl) {
+		String tmpKey = "feed:tmp:following:" + userId + ":outside";
+		redis.opsForZSet().intersectAndStore(userFeedKey(userId), List.of(outsideFeedKey()), tmpKey, Aggregate.MAX);
 		redis.expire(tmpKey, ttl);
 		Set<ZSetOperations.TypedTuple<String>> tuples = redis.opsForZSet().reverseRangeByScoreWithScores(tmpKey,
 				Double.NEGATIVE_INFINITY, (double) (maxScore - 1), 0, size);
@@ -233,10 +280,22 @@ public class FeedRedisRepository {
 
 	public void addFollowingRelation(String subscriberId, String targetUserId) {
 		redis.opsForSet().add(followersKey(targetUserId), subscriberId);
+		redis.opsForSet().add(followingKey(subscriberId), targetUserId);
 	}
 
 	public void removeFollowingRelation(String subscriberId, String targetUserId) {
 		redis.opsForSet().remove(followersKey(targetUserId), subscriberId);
+		redis.opsForSet().remove(followingKey(subscriberId), targetUserId);
+	}
+
+	public void removeUserFromAllFeeds(String userId) {
+		Set<String> following = redis.opsForSet().members(followingKey(userId));
+		if (following != null) {
+			for (String targetUserId : following) {
+				redis.opsForSet().remove(followersKey(targetUserId), userId);
+			}
+		}
+		redis.delete(List.of(followingKey(userId), followersKey(userId), userFeedKey(userId), authorFeedKey(userId)));
 	}
 
 	public Map<String, Double> findLatestAuthorPostsWithScores(String authorId, long from, long to) {
@@ -278,29 +337,23 @@ public class FeedRedisRepository {
 		return result;
 	}
 
-	private String resolveTopicScopedFeedKey(long universityId, long topicId) {
-		String subtopicKey = universitySubtopicFeedKey(universityId, topicId);
-		Boolean hasSubtopic = redis.hasKey(subtopicKey);
-		return Boolean.TRUE.equals(hasSubtopic) ? subtopicKey : universityTopicFeedKey(universityId, topicId);
-	}
-
-	private String resolveTopicScopedPopularFeedKey(long universityId, long topicId) {
-		String subtopicKey = universitySubtopicPopularFeedKey(universityId, topicId);
-		Boolean hasSubtopic = redis.hasKey(subtopicKey);
-		return Boolean.TRUE.equals(hasSubtopic) ? subtopicKey : universityTopicPopularFeedKey(universityId, topicId);
-	}
-
 	private static String userFeedKey(String userId) {
 		return "feed:user:" + userId;
 	}
-	private static String globalFeedKey() {
-		return "feed:global";
+	private static String followingKey(String userId) {
+		return "feed:following:" + userId;
 	}
 	private static String authorFeedKey(String authorId) {
 		return "feed:author:" + authorId;
 	}
 	private static String popularFeedKey() {
 		return "feed:popular";
+	}
+	private static String outsideFeedKey() {
+		return "feed:outside";
+	}
+	private static String outsidePopularFeedKey() {
+		return "feed:outside:popular";
 	}
 	private static String universityFeedKey(long universityId) {
 		return "feed:uni:" + universityId;

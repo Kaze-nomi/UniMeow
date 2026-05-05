@@ -9,6 +9,7 @@ service UserService {
     rpc GetUserById      (GetUserByIdRequest)       returns (UserResponse);
     rpc GetUserByUsername(GetUserByUsernameRequest) returns (UserResponse);
     rpc UpdateUser       (UpdateUserRequest)        returns (UserResponse);
+    rpc DeleteAccount    (DeleteAccountRequest)     returns (ModerationResponse);
 
     rpc CreateSession      (CreateSessionRequest)      returns (CreateSessionResponse);
     rpc RefreshSession     (RefreshSessionRequest)     returns (RefreshSessionResponse);
@@ -21,15 +22,12 @@ service UserService {
     rpc Unsubscribe (UnsubscribeRequest) returns (UnsubscribeResponse);
     rpc IsSubscribed(IsSubscribedRequest) returns (IsSubscribedResponse);
 
-    rpc UploadUniversityIcon (UploadUniversityIconRequest) returns (UploadUniversityIconResponse);
-
     rpc ValidateTopicForUniversity (ValidateTopicRequest) returns (ValidateTopicResponse);
     rpc GetGeneralTopicForUniversity (GetGeneralTopicRequest) returns (GetGeneralTopicResponse);
     rpc ResolvePostTarget (ResolvePostTargetRequest) returns (ResolvePostTargetResponse);
     rpc ListUniversities (ListUniversitiesRequest) returns (UniversityListResponse);
     rpc ListFaculties (ListFacultiesRequest) returns (FacultyListResponse);
     rpc ListPrograms (ListProgramsRequest) returns (ProgramListResponse);
-    rpc ListTopics (ListTopicsRequest) returns (TopicListResponse);
 
     rpc BanUser     (BanUserRequest)     returns (ModerationResponse);
     rpc GrantAdmin  (GrantAdminRequest)  returns (ModerationResponse);
@@ -45,7 +43,6 @@ service UserService {
     rpc CreateProgramProposal (CreateProgramProposalRequest) returns (ModerationResponse);
     rpc ListProgramProposals (ListProgramProposalsRequest) returns (ProgramProposalListResponse);
     rpc ReviewProgramProposal (ReviewProgramProposalRequest) returns (ModerationResponse);
-    rpc CreateFaculty (CreateFacultyRequest) returns (ModerationResponse);
     rpc CreateProgramForUser (CreateProgramForUserRequest) returns (CreateProgramResponse);
 }
 
@@ -64,16 +61,19 @@ message UpdateUserRequest {
     optional string username   = 2;
     optional string name       = 3;
     optional string surname    = 4;
-    optional string patronymic = 5;
-    optional string status     = 6;
-    optional string avatar_url = 7;
-    optional int64  faculty_id = 8;
-    optional int32  course = 9;
-    optional EducationLevel education_level = 10;
-    optional int32  graduation_year = 11;
-    optional string bio = 12;
-    optional string cover_url = 13;
-    optional int64  program_id = 14;
+    optional string status     = 5;
+    optional string avatar_url = 6;
+    optional int64  faculty_id = 7;
+    optional int32  course = 8;
+    optional EducationLevel education_level = 9;
+    optional int32  graduation_year = 10;
+    optional string bio = 11;
+    optional string cover_url = 12;
+    optional int64  program_id = 13;
+}
+
+message DeleteAccountRequest {
+    string user_id = 1;
 }
 
 message University {
@@ -97,15 +97,6 @@ message Program {
     string short_name = 4;
 }
 
-message Topic {
-    int64  id         = 1;
-    string slug       = 2;
-    string name       = 3;
-    bool   is_system  = 4;
-    optional int64 parent_id = 5;
-    optional int64 faculty_id = 6;
-}
-
 enum EducationLevel {
     BACHELOR = 0;
     MASTER = 1;
@@ -119,13 +110,12 @@ message UserResponse {
     string username             = 3;
     string name                 = 4;
     string surname              = 5;
-    string patronymic           = 6;
-    string email_university     = 7;
-    string avatar_url           = 8;
-    string status               = 9;
-    bool   is_student_verified  = 10;
-    bool   is_employee_verified = 11;
-    string created_at           = 12;
+    string email_university     = 6;
+    string avatar_url           = 7;
+    string status               = 8;
+    bool   is_student_verified  = 9;
+    bool   is_employee_verified = 10;
+    string created_at           = 11;
     optional University university = 20;
     optional Faculty    faculty    = 21;
     optional Program    program    = 22;
@@ -189,18 +179,6 @@ message IsSubscribedRequest {
 }
 message IsSubscribedResponse { bool subscribed = 1; }
 
-message UploadUniversityIconRequest {
-    int64  university_id = 1;
-    bytes  data = 2;
-    string content_type = 3;
-    string admin_token = 4;
-}
-
-message UploadUniversityIconResponse {
-    bool   success = 1;
-    string icon_url = 2;
-}
-
 message ValidateTopicRequest {
     int64 university_id = 1;
     int64 topic_id = 2;
@@ -254,14 +232,6 @@ message ListProgramsRequest {
 
 message ProgramListResponse {
     repeated Program programs = 1;
-}
-
-message ListTopicsRequest {
-    int64 university_id = 1;
-}
-
-message TopicListResponse {
-    repeated Topic topics = 1;
 }
 
 message BanUserRequest {
@@ -420,13 +390,6 @@ message ReviewProgramProposalRequest {
     int64 proposal_id = 1;
     string reviewer_id = 2;
     string status = 3;
-}
-
-message CreateFacultyRequest {
-    string admin_id = 1;
-    int64 university_id = 2;
-    string name = 3;
-    string short_name = 4;
 }
 
 message CreateProgramForUserRequest {

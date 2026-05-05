@@ -11,14 +11,11 @@ import org.springframework.test.web.reactive.server.WebTestClient;
 import reactor.core.publisher.Mono;
 import uni.gateway.grpc.UserGrpcClient;
 import uni.gateway.security.JwtUtil;
-import uni.grpc.user.UserResponse;
-
 import uni.grpc.user.Faculty;
 import uni.grpc.user.FacultyListResponse;
-import uni.grpc.user.Topic;
-import uni.grpc.user.TopicListResponse;
 import uni.grpc.user.University;
 import uni.grpc.user.UniversityListResponse;
+import uni.grpc.user.UserResponse;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
@@ -53,9 +50,8 @@ class UserControllerTest {
 
 	private UserResponse defaultUserResponse() {
 		return UserResponse.newBuilder().setId(USER_ID).setEmailGoogle("ivan@gmail.com").setUsername(USERNAME)
-				.setName("Иван").setSurname("Петров").setPatronymic("").setEmailUniversity("").setAvatarUrl("")
-				.setStatus("").setIsStudentVerified(false).setIsEmployeeVerified(false)
-				.setCreatedAt("2024-01-01T00:00:00").build();
+				.setName("РРІР°РЅ").setSurname("РџРµС‚СЂРѕРІ").setEmailUniversity("").setAvatarUrl("").setStatus("")
+				.setIsStudentVerified(false).setIsEmployeeVerified(false).setCreatedAt("2024-01-01T00:00:00").build();
 	}
 
 	private WebTestClient.RequestBodySpec graphqlPost() {
@@ -129,6 +125,7 @@ class UserControllerTest {
 	void update_profile_returns_updated_username() {
 		UserResponse updated = defaultUserResponse().toBuilder().setUsername("new_username").build();
 
+		when(userGrpcClient.getUserById(USER_ID)).thenReturn(Mono.just(defaultUserResponse()));
 		when(userGrpcClient.updateUser(any())).thenReturn(Mono.just(updated));
 
 		graphqlPost().bodyValue(
@@ -140,17 +137,17 @@ class UserControllerTest {
 	@Test
 	void list_universities_returns_list() {
 		UniversityListResponse resp = UniversityListResponse.newBuilder()
-				.addUniversities(University.newBuilder().setId(1L).setName("МГУ им. Ломоносова").setShortName("МГУ")
+				.addUniversities(University.newBuilder().setId(1L).setName("РњР“РЈ РёРј. Р›РѕРјРѕРЅРѕСЃРѕРІР°")
+						.setShortName("РњР“РЈ").setIconUrl("").build())
+				.addUniversities(University.newBuilder().setId(2L).setName("РЎРџР±Р“РЈ").setShortName("РЎРџР±Р“РЈ")
 						.setIconUrl("").build())
-				.addUniversities(
-						University.newBuilder().setId(2L).setName("СПбГУ").setShortName("СПбГУ").setIconUrl("").build())
 				.build();
 		when(userGrpcClient.listUniversities()).thenReturn(reactor.core.publisher.Mono.just(resp));
 
 		graphqlPost().bodyValue("{\"query\": \"{ listUniversities { id name shortName } }\"}").exchange().expectStatus()
 				.isOk().expectBody().jsonPath("$.data.listUniversities").isArray()
-				.jsonPath("$.data.listUniversities[0].name").isEqualTo("МГУ им. Ломоносова")
-				.jsonPath("$.data.listUniversities[1].shortName").isEqualTo("СПбГУ");
+				.jsonPath("$.data.listUniversities[0].name").isEqualTo("РњР“РЈ РёРј. Р›РѕРјРѕРЅРѕСЃРѕРІР°")
+				.jsonPath("$.data.listUniversities[1].shortName").isEqualTo("РЎРџР±Р“РЈ");
 	}
 
 	@Test
@@ -165,14 +162,15 @@ class UserControllerTest {
 
 	@Test
 	void list_faculties_returns_faculties_for_university() {
-		FacultyListResponse resp = FacultyListResponse.newBuilder()
-				.addFaculties(Faculty.newBuilder().setId(10L).setName("Факультет ВМК").setShortName("ВМК").build())
+		FacultyListResponse resp = FacultyListResponse.newBuilder().addFaculties(
+				Faculty.newBuilder().setId(10L).setName("Р¤Р°РєСѓР»СЊС‚РµС‚ Р’РњРљ").setShortName("Р’РњРљ").build())
 				.build();
 		when(userGrpcClient.listFaculties(anyLong())).thenReturn(reactor.core.publisher.Mono.just(resp));
 
 		graphqlPost().bodyValue("{\"query\": \"{ listFaculties(universityId: \\\"1\\\") { id name shortName } }\"}")
 				.exchange().expectStatus().isOk().expectBody().jsonPath("$.data.listFaculties[0].name")
-				.isEqualTo("Факультет ВМК").jsonPath("$.data.listFaculties[0].shortName").isEqualTo("ВМК");
+				.isEqualTo("Р¤Р°РєСѓР»СЊС‚РµС‚ Р’РњРљ").jsonPath("$.data.listFaculties[0].shortName")
+				.isEqualTo("Р’РњРљ");
 	}
 
 	@Test
@@ -182,30 +180,8 @@ class UserControllerTest {
 	}
 
 	@Test
-	void list_topics_returns_topic_tree_with_subtopics() {
-		TopicListResponse resp = TopicListResponse.newBuilder()
-				.addTopics(Topic.newBuilder().setId(1L).setSlug("general").setName("Общее").setIsSystem(true).build())
-				.addTopics(Topic.newBuilder().setId(2L).setSlug("vmk").setName("ВМК").setIsSystem(false).build())
-				.addTopics(Topic.newBuilder().setId(3L).setSlug("algos").setName("Алгоритмы").setIsSystem(false)
-						.setParentId(2L).build())
-				.build();
-		when(userGrpcClient.listTopics(anyLong())).thenReturn(reactor.core.publisher.Mono.just(resp));
-
-		graphqlPost().bodyValue(
-				"{\"query\": \"{ listTopics(universityId: \\\"1\\\") { id name isSystem subtopics { id name } } }\"}")
-				.exchange().expectStatus().isOk().expectBody().jsonPath("$.data.listTopics").isArray()
-				.jsonPath("$.data.listTopics.length()").isEqualTo(2).jsonPath("$.data.listTopics[1].name")
-				.isEqualTo("ВМК").jsonPath("$.data.listTopics[1].subtopics[0].name").isEqualTo("Алгоритмы");
-	}
-
-	@Test
-	void list_topics_returns_graphql_error_for_invalid_id() {
-		graphqlPost().bodyValue("{\"query\": \"{ listTopics(universityId: \\\"xyz\\\") { id } }\"}").exchange()
-				.expectStatus().isOk().expectBody().jsonPath("$.errors").isArray();
-	}
-
-	@Test
 	void update_profile_returns_graphql_error_when_username_taken() {
+		when(userGrpcClient.getUserById(USER_ID)).thenReturn(Mono.just(defaultUserResponse()));
 		when(userGrpcClient.updateUser(any()))
 				.thenReturn(Mono.error(io.grpc.Status.ALREADY_EXISTS.asRuntimeException()));
 

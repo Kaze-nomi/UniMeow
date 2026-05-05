@@ -20,6 +20,7 @@ import uni.grpc.user.UserResponse;
 
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.when;
 
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
@@ -50,8 +51,8 @@ class PostControllerTest {
 	@BeforeEach
 	void setUp() {
 		client = WebTestClient.bindToServer().baseUrl("http://localhost:" + port).build();
-		when(userGrpcClient.getUserById(anyString()))
-				.thenReturn(Mono.just(UserResponse.newBuilder().setId(USER_ID).setIsBanned(false).build()));
+		when(userGrpcClient.getUserById(anyString())).thenReturn(Mono
+				.just(UserResponse.newBuilder().setId(USER_ID).setUsername("test_user").setIsBanned(false).build()));
 	}
 
 	private String validToken() {
@@ -190,21 +191,28 @@ class PostControllerTest {
 	}
 
 	@Test
-	void global_feed_without_scope_calls_default_feed_client() {
-		GetFeedResponse feed = GetFeedResponse.newBuilder().addPostIds(POST_ID).setHasMore(false).build();
-		PostListResponse posts = PostListResponse.newBuilder().addPosts(buildPostResponse()).setTotal(1).build();
-		when(feedGrpcClient.getFeed(FeedType.GLOBAL, USER_ID, null, 20)).thenReturn(Mono.just(feed));
-		when(postGrpcClient.getPostsByIds(eq(java.util.List.of(POST_ID)), eq(USER_ID))).thenReturn(Mono.just(posts));
+	void trending_feed_with_no_university_topic_calls_outside_feed_scope() {
+		GetFeedResponse feed = GetFeedResponse.newBuilder().setHasMore(false).build();
+		when(feedGrpcClient.getFeed(eq(FeedType.TRENDING), eq(USER_ID), isNull(), eq(20), eq(-1L)))
+				.thenReturn(Mono.just(feed));
 
-		graphqlPost().bodyValue("{\"query\":\"{ globalFeed { posts { id } } }\"}").exchange().expectStatus().isOk()
-				.expectBody().jsonPath("$.data.globalFeed.posts[0].id").isEqualTo(POST_ID);
+		graphqlPost().bodyValue("{\"query\":\"{ trendingFeed(topicId: \\\"-1\\\") { posts { id } hasMore } }\"}")
+				.exchange().expectStatus().isOk().expectBody().jsonPath("$.data.trendingFeed.posts").isArray()
+				.jsonPath("$.data.trendingFeed.hasMore").isEqualTo(false);
 
-		verify(feedGrpcClient).getFeed(FeedType.GLOBAL, USER_ID, null, 20);
+		verify(feedGrpcClient).getFeed(eq(FeedType.TRENDING), eq(USER_ID), isNull(), eq(20), eq(-1L));
 	}
 
 	@Test
 	void create_post_returns_created_post() {
-		when(postGrpcClient.createPost(eq(USER_ID), eq("Hello!"), any(), isNull()))
+		UserResponse fullProfile = UserResponse.newBuilder().setId(USER_ID).setUsername("test_user").setIsBanned(false)
+				.setUniversity(uni.grpc.user.University.newBuilder().setId(1L).setName("Uni").setShortName("UNI"))
+				.setFaculty(uni.grpc.user.Faculty.newBuilder().setId(2L).setName("Faculty").setShortName("FAC"))
+				.setProgram(uni.grpc.user.Program.newBuilder().setId(3L).setFacultyId(2L).setName("Program")
+						.setShortName("PRG"))
+				.build();
+		when(userGrpcClient.getUserById(USER_ID)).thenReturn(Mono.just(fullProfile));
+		when(postGrpcClient.createPost(eq(USER_ID), eq("Hello!"), any(), eq(1L), eq(2L), eq(3L), isNull(), isNull()))
 				.thenReturn(Mono.just(buildPostResponse()));
 
 		graphqlPost().bodyValue(
@@ -223,8 +231,21 @@ class PostControllerTest {
 	}
 
 	@Test
+	void create_post_is_blocked_before_completed_registration_by_graphql_guard() {
+		when(userGrpcClient.getUserById(USER_ID))
+				.thenReturn(Mono.just(UserResponse.newBuilder().setId(USER_ID).setIsBanned(false).build()));
+
+		graphqlPost().bodyValue("{\"query\": \"mutation { createPost(input: { content: \\\"x\\\" }) { id } }\"}")
+				.exchange().expectStatus().isOk().expectBody().jsonPath("$.errors").isArray()
+				.jsonPath("$.errors[0].message").value(v -> org.hamcrest.MatcherAssert.assertThat((String) v,
+						org.hamcrest.Matchers.containsString("Завершите регистрацию")));
+
+		verify(postGrpcClient, never()).createPost(any(), any(), any(), any(), any(), any(), any(), any());
+	}
+
+	@Test
 	void create_post_returns_graphql_error_on_blank_content() {
-		when(postGrpcClient.createPost(any(), any(), any(), any(Long.class))).thenReturn(Mono.error(
+		when(postGrpcClient.createPost(any(), any(), any(), any(), any(), any(), any(), any())).thenReturn(Mono.error(
 				io.grpc.Status.INVALID_ARGUMENT.withDescription("content cannot be empty").asRuntimeException()));
 
 		graphqlPost().bodyValue("{\"query\": \"mutation { createPost(input: { content: \\\"\\\" }) { id } }\"}")

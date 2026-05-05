@@ -4,6 +4,15 @@
 
 function SettingsPage({ currentUser, onNavigate }) {
   const [theme, setTheme] = React.useState(document.documentElement.dataset.theme || 'light');
+  const [deleteLoading, setDeleteLoading] = React.useState(false);
+  const [deleteError, setDeleteError] = React.useState('');
+  const [isMobile, setIsMobile] = React.useState(window.innerWidth < 420);
+  React.useEffect(() => {
+    const h = () => setIsMobile(window.innerWidth < 420);
+    window.addEventListener('resize', h);
+    return () => window.removeEventListener('resize', h);
+  }, []);
+  const openModal = (type) => window.dispatchEvent(new CustomEvent('open-modal', { detail: type }));
   const apply = (t) => {
     setTheme(t);
     document.documentElement.dataset.theme = t;
@@ -43,6 +52,21 @@ function SettingsPage({ currentUser, onNavigate }) {
     );
   };
 
+  const deleteAccount = async () => {
+    if (!window.confirm('Удалить аккаунт навсегда? Это действие нельзя отменить.')) return;
+    setDeleteLoading(true);
+    setDeleteError('');
+    try {
+      await API.gql(API.M.deleteAccount);
+      await API.logout();
+      onNavigate('/login');
+    } catch (e) {
+      setDeleteError(e.message);
+    } finally {
+      setDeleteLoading(false);
+    }
+  };
+
   return (
     <div>
       <div style={{ position: 'sticky', top: 0, zIndex: 10, background: 'var(--header-bg)', backdropFilter: 'saturate(180%) blur(12px)', WebkitBackdropFilter: 'saturate(180%) blur(12px)', borderBottom: '1px solid var(--border)', padding: '12px 16px' }} data-um-header>
@@ -59,6 +83,64 @@ function SettingsPage({ currentUser, onNavigate }) {
           <ThemeOption value="dark"  label="Тёмная"     preview={{ bg: '#15202b', surface: '#1e2732', border: '#38444d', text: '#f7f9f9', muted: '#8b98a5' }} />
         </div>
       </div>
+
+      {isMobile && (
+        <div style={{ padding: 16, marginTop: 8 }}>
+          <h3 style={{ margin: '0 0 4px', fontSize: 17, fontWeight: 700 }}>Сообщество</h3>
+          <p style={{ margin: '0 0 14px', color: 'var(--text-muted)', fontSize: 14, lineHeight: 1.5 }}>
+            Помогите проекту стать лучше: отправьте обратную связь или добавьте свой ВУЗ, факультет или программу.
+          </p>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 0, border: '1px solid var(--border)', borderRadius: 14, overflow: 'hidden', background: 'var(--surface-2)' }}>
+            {[
+              { type: 'suggest', label: 'Обратная связь' },
+              { type: 'add-uni', label: 'Добавить свой ВУЗ' },
+              { type: 'add-faculty', label: 'Добавить свой факультет' },
+              { type: 'add-program', label: 'Добавить свою программу' },
+            ].map((item, i, arr) => (
+              <button key={item.type} onClick={() => openModal(item.type)} style={{
+                display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                width: '100%', padding: '14px 16px',
+                border: 'none',
+                borderBottom: i < arr.length - 1 ? '1px solid var(--border)' : 'none',
+                background: 'transparent', cursor: 'pointer',
+                textAlign: 'left', fontFamily: 'inherit', fontSize: 15,
+                color: 'var(--text)',
+              }}>
+                <span style={{ fontWeight: 500 }}>{item.label}</span>
+                <span style={{ color: 'var(--text-muted)', fontSize: 18, lineHeight: 1 }}>›</span>
+              </button>
+            ))}
+          </div>
+          <button onClick={() => onNavigate('/about')} style={{
+            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+            width: '100%', padding: '14px 16px', marginTop: 12,
+            border: '1px solid var(--border)', borderRadius: 14,
+            background: 'var(--surface-2)', cursor: 'pointer',
+            textAlign: 'left', fontFamily: 'inherit', fontSize: 15,
+            color: 'var(--text)',
+          }}>
+            <span style={{ fontWeight: 500 }}>О проекте</span>
+            <span style={{ color: 'var(--text-muted)', fontSize: 18, lineHeight: 1 }}>›</span>
+          </button>
+        </div>
+      )}
+
+      {currentUser && (
+        <div style={{ padding: 16, marginTop: 8 }}>
+          <h3 style={{ margin: '0 0 4px', fontSize: 17, fontWeight: 700 }}>Аккаунт</h3>
+          <p style={{ margin: '0 0 14px', color: 'var(--text-muted)', fontSize: 14, lineHeight: 1.5 }}>
+            Удаление аккаунта необратимо. Посты, комментарии, подписки, сессии и данные профиля будут удалены.
+          </p>
+          {deleteError && (
+            <div style={{ marginBottom: 12, padding: '10px 14px', background: 'var(--like-subtle)', color: 'var(--like)', borderRadius: 10, fontSize: 13 }}>
+              {deleteError}
+            </div>
+          )}
+          <Button variant="secondary" onClick={deleteAccount} loading={deleteLoading} style={{ color: 'var(--danger)', borderColor: 'rgba(244, 63, 94, 0.35)' }}>
+            Удалить аккаунт
+          </Button>
+        </div>
+      )}
     </div>
   );
 }
@@ -77,7 +159,6 @@ function EditProfileModal({ open, onClose, currentUser, onUserUpdated }) {
       username: currentUser.username || '',
       name: currentUser.name || '',
       surname: currentUser.surname || '',
-      patronymic: currentUser.patronymic || '',
       bio: currentUser.bio || '',
       status: currentUser.status || '',
       avatarUrl: currentUser.avatarUrl || '',
@@ -116,12 +197,15 @@ function EditProfileModal({ open, onClose, currentUser, onUserUpdated }) {
     setLoading(true); setError('');
     try {
       const input = {};
-      ['username','name','surname','patronymic','bio','status','avatarUrl','coverUrl','educationLevel'].forEach(k => {
-        if (form[k] !== '' && form[k] !== undefined) input[k] = form[k];
+      ['username','name','surname','bio','status','avatarUrl','coverUrl'].forEach(k => {
+        if (form[k] !== undefined) input[k] = form[k];
       });
-      if (form.facultyId) input.facultyId = form.facultyId;
-      if (form.programId) input.programId = form.programId;
-      if (form.course) input.course = parseInt(form.course);
+      if (form.educationLevel !== undefined && form.educationLevel !== '') {
+        input.educationLevel = form.educationLevel;
+      }
+      if (form.facultyId !== undefined) input.facultyId = form.facultyId;
+      if (form.programId !== undefined) input.programId = form.programId;
+      if (form.course !== undefined && form.course !== '') input.course = parseInt(form.course);
       const d = await API.gql(API.M.updateProfile, { input });
       onUserUpdated && onUserUpdated(d.updateProfile);
       onClose();
@@ -146,7 +230,6 @@ function EditProfileModal({ open, onClose, currentUser, onUserUpdated }) {
             <Input label="Имя" value={form.name || ''} onChange={set('name')} />
             <Input label="Фамилия" value={form.surname || ''} onChange={set('surname')} />
           </div>
-          <Input label="Отчество" value={form.patronymic || ''} onChange={set('patronymic')} />
           <Input label="О себе" value={form.bio || ''} onChange={set('bio')} multiline rows={3} />
           <Input label="Статус" value={form.status || ''} onChange={set('status')} />
           <ImageUploadField label="Аватар" value={form.avatarUrl || ''} onChange={v => setForm(f => ({ ...f, avatarUrl: v }))} preview="circle" bucket="user-avatars" />
@@ -233,13 +316,17 @@ function VerifyModal({ open, onClose, currentUser, onUserUpdated }) {
   React.useEffect(() => {
     if (stage !== 'profile') return;
     const uniId = currentUser?.university?.id;
-    if (!uniId) return;
+    if (!uniId) {
+      setFaculties([]);
+      setFacultyId('');
+      return;
+    }
     setLoadingFaculties(true);
     API.gql(API.Q.listFaculties, { universityId: uniId })
       .then(d => { setFaculties(d.listFaculties || []); setFacultyId(currentUser?.faculty?.id || ''); })
       .catch(() => setFaculties([]))
       .finally(() => setLoadingFaculties(false));
-  }, [stage]);
+  }, [stage, currentUser?.university?.id, currentUser?.faculty?.id]);
 
 
   React.useEffect(() => {
@@ -259,7 +346,7 @@ function VerifyModal({ open, onClose, currentUser, onUserUpdated }) {
       const d = await API.gql(API.M.sendVerificationCode, { email });
       if (d.sendVerificationCode.success) { setCodeSent(true); setMsg('Код отправлен на ' + email); }
       else setErr(d.sendVerificationCode.message || 'Ошибка');
-    } catch (e) { setErr(e.message); } finally { setBusy(false); }
+    } catch (e) { setErr(formatVerificationError(e)); } finally { setBusy(false); }
   };
 
   const verify = async () => {
@@ -268,11 +355,16 @@ function VerifyModal({ open, onClose, currentUser, onUserUpdated }) {
       const d = await API.gql(API.M.verifyEmailCode, { code });
       if (d.verifyEmailCode.success) {
         const ud = await API.gql(API.Q.me);
-        onUserUpdated && onUserUpdated(ud.me);
+        const verifiedUser = ud.me;
+        onUserUpdated && onUserUpdated(verifiedUser);
+        if (!verifiedUser?.university?.id) {
+          setErr('Не удалось определить ВУЗ по подтверждённому домену.');
+          return;
+        }
         setMsg('');
         setStage('profile');
       } else setErr(d.verifyEmailCode.error || 'Неверный код');
-    } catch (e) { setErr(e.message); } finally { setBusy(false); }
+    } catch (e) { setErr(formatVerificationError(e)); } finally { setBusy(false); }
   };
 
   const addProgram = async () => {
@@ -330,7 +422,7 @@ function VerifyModal({ open, onClose, currentUser, onUserUpdated }) {
                 <Button onClick={verify} loading={busy && codeSent} disabled={!code}>Подтвердить</Button>
               </>
             )}
-            {msg && <div style={{ padding: '10px 14px', background: 'oklch(0.95 0.08 150 / 0.3)', borderRadius: 10, color: 'oklch(0.55 0.18 150)', fontSize: 13 }}>{msg}</div>}
+            {msg && <div style={{ padding: '10px 14px', background: 'var(--accent-subtle)', border: '1px solid var(--border)', borderRadius: 10, color: 'var(--text)', fontSize: 13 }}>{msg}</div>}
             {err && <div style={{ padding: '10px 14px', background: 'var(--like-subtle)', color: 'var(--like)', borderRadius: 10, fontSize: 13 }}>{err}</div>}
           </div>
         )}
@@ -340,6 +432,11 @@ function VerifyModal({ open, onClose, currentUser, onUserUpdated }) {
             <p style={{ margin: 0, fontSize: 14, lineHeight: 1.6, color: 'var(--text-muted)' }}>
               Укажите факультет и образовательную программу, чтобы ваши записи попадали в нужную ленту.
             </p>
+            {currentUser?.university && (
+              <div style={{ padding: '10px 14px', background: 'var(--accent-subtle)', border: '1px solid var(--border)', borderRadius: 10, color: 'var(--text)', fontSize: 13 }}>
+                ВУЗ определён автоматически: {currentUser.university.name}
+              </div>
+            )}
             {loadingFaculties ? (
               <div style={{ display: 'flex', justifyContent: 'center', padding: 16 }}><Spinner size={24} /></div>
             ) : (
@@ -381,6 +478,17 @@ function VerifyModal({ open, onClose, currentUser, onUserUpdated }) {
       </div>
     </div>
   );
+}
+
+function formatVerificationError(e) {
+  const message = e?.message || '';
+  if (/unknown.?domain|not a registered university domain|domain .*registered/i.test(message)) {
+    return 'Домен почты не зарегистрирован как университетский. Проверьте адрес или отправьте заявку на добавление ВУЗа.';
+  }
+  if (/already linked|already used/i.test(message)) {
+    return 'Этот университетский email уже привязан к другому аккаунту.';
+  }
+  return message || 'Не удалось выполнить запрос';
 }
 
 Object.assign(window, { EditProfileModal, VerifyModal, SelectField });

@@ -4,6 +4,7 @@ import lombok.RequiredArgsConstructor;
 
 import java.util.List;
 
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
@@ -21,6 +22,9 @@ public class SecurityConfig {
 
 	private final OAuth2SuccessHandler successHandler;
 
+	@Value("${app.security.allowed-origins:http://localhost:*,null}")
+	private List<String> allowedOrigins;
+
 	@Bean
 	public SecurityWebFilterChain securityFilterChain(ServerHttpSecurity http) {
 		return http.csrf(ServerHttpSecurity.CsrfSpec::disable)
@@ -29,11 +33,10 @@ public class SecurityConfig {
 				.oauth2Login(oauth2 -> oauth2.authenticationSuccessHandler(successHandler)).build();
 	}
 
-	// TODO: Разобраться перед продом
 	@Bean
 	public CorsConfigurationSource corsConfigurationSource() {
 		CorsConfiguration config = new CorsConfiguration();
-		config.setAllowedOriginPatterns(List.of("http://localhost:*", "null"));
+		config.setAllowedOriginPatterns(allowedOrigins);
 		config.setAllowedMethods(List.of("GET", "POST", "PUT", "DELETE", "OPTIONS"));
 		config.setAllowedHeaders(List.of("*"));
 		config.setAllowCredentials(true);

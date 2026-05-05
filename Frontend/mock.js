@@ -167,14 +167,6 @@
     return { posts: result.map(withAuthor), nextCursor: null, hasMore: false };
   }
 
-  function listTopics(universityId) {
-    const parentTopics = topics.filter(t => t.universityId === universityId && !t.parentTopicId);
-    return parentTopics.map(parent => ({
-      ...parent,
-      subtopics: topics.filter(t => t.parentTopicId === parent.id),
-    }));
-  }
-
   function requireUser() {
     const user = byId(users, currentUserId);
     if (!user) {
@@ -192,8 +184,6 @@
     if (query.includes('listUniversities')) return { listUniversities: universities };
     if (query.includes('listFaculties')) return { listFaculties: faculties.filter(f => f.universityId === variables.universityId) };
     if (query.includes('listPrograms')) return { listPrograms: programs.filter(p => p.facultyId === variables.facultyId) };
-    if (query.includes('listTopics')) return { listTopics: listTopics(variables.universityId) };
-    if (query.includes('globalFeed')) return { globalFeed: pagePosts(posts, variables) };
     if (query.includes('trendingFeed')) return { trendingFeed: pagePosts([...posts].sort((a, b) => b.likesCount - a.likesCount), variables) };
     if (query.includes('followingFeed')) {
       requireUser();
@@ -212,6 +202,29 @@
     if (query.includes('adminUniversityProposals')) return { adminUniversityProposals: universityProposals };
     if (query.includes('adminFacultyProposals')) return { adminFacultyProposals: facultyProposals };
     if (query.includes('adminProgramProposals')) return { adminProgramProposals: programProposals };
+
+    if (query.includes('adminGrantAdmin')) {
+      const actor = requireUser();
+      if (actor.username !== 'kazenomi') throw new Error('Only kazenomi can grant admin privileges');
+      const target = users.find(u => u.id === variables.targetUserId);
+      if (!target) throw new Error('User not found');
+      target.isAdmin = true;
+      return { adminGrantAdmin: publicUser(target) };
+    }
+
+    if (query.includes('deleteAccount')) {
+      const user = requireUser();
+      users = users.filter(u => u.id !== user.id);
+      posts = posts.filter(p => p.authorId !== user.id);
+      comments = comments.filter(c => c.authorId !== user.id);
+      suggestions = suggestions.filter(s => s.authorId !== user.id);
+      universityProposals = universityProposals.filter(p => p.authorId !== user.id);
+      facultyProposals = facultyProposals.filter(p => p.authorId !== user.id);
+      programProposals = programProposals.filter(p => p.authorId !== user.id);
+      currentUserId = '';
+      localStorage.removeItem('um-mock-user');
+      return { deleteAccount: { success: true } };
+    }
 
     if (query.includes('updateProfile')) {
       const user = requireUser();
@@ -352,14 +365,6 @@
       }
       return { adminReviewProgramProposal: { success: true } };
     }
-    if (query.includes('adminCreateFaculty')) {
-      requireUser();
-      const faculty = { id: `fac-${Date.now()}`, ...variables.input };
-      faculties.push(faculty);
-      const parent = { id: `topic-${faculty.id}`, universityId: faculty.universityId, facultyId: faculty.id, slug: `faculty-${faculty.id}`, name: faculty.shortName, isSystem: true };
-      topics.push(parent, ...topicNames.map(([slug, name]) => ({ id: `topic-${faculty.id}-${slug}`, universityId: faculty.universityId, facultyId: faculty.id, parentTopicId: parent.id, slug, name, isSystem: true })));
-      return { adminCreateFaculty: { success: true } };
-    }
     if (query.includes('sendVerificationCode')) return { sendVerificationCode: { success: true, message: 'Демо-код: 000000' } };
     if (query.includes('verifyEmailCode')) {
       const user = requireUser();
@@ -389,5 +394,5 @@
     window.dispatchEvent(new CustomEvent('mock-login', { detail: null }));
   }
 
-  window.MOCK = { enabled: true, users: users.map(publicUser), universities, gql, login, logout };
+  window.MOCK = { enabled: false, users: users.map(publicUser), universities, gql, login, logout };
 })();
