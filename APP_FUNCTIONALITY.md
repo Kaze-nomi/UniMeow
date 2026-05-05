@@ -73,7 +73,7 @@ UniMeow — университетская социальная сеть с по
 - `app.security.secure-cookie` (`APP_SECURITY_SECURE_COOKIE`, default `false`) — выставляет `Secure` флаг на cookies `ACCESS_TOKEN` и `REFRESH_TOKEN`. В production-развёртывании с HTTPS значение должно быть `true`, чтобы cookies передавались только по защищённому соединению.
 - `app.security.allowed-origins` (`APP_SECURITY_ALLOWED_ORIGINS`, default `http://localhost:*,null`) — список разрешённых CORS origin'ов через запятую. В production указывается реальный домен фронтенда, например `https://unimeow.ru,https://*.unimeow.ru`.
 - `app.security.oauth2-success-redirect` (`APP_SECURITY_OAUTH2_SUCCESS_REDIRECT`, default `http://localhost:5173/`) — URL, на который gateway редиректит браузер после успешной авторизации Google OAuth2. В production указывается публичный URL фронтенда, например `https://unimeow.ru/`.
-- `VITE_API_BASE` (build-time, default `http://localhost:8080`) — базовый URL API Gateway, в который встраивается frontend на этапе сборки Vite. Используется в `Frontend/api.js` для всех HTTP-вызовов (`/graphql`, `/api/upload`, `/api/auth/*`, `/oauth2/authorization/google`). В production указывается публичный URL gateway, например `https://api.unimeow.ru` или `https://unimeow.ru` если gateway за тем же доменом.
+- `VITE_API_BASE` (build-time, default `http://localhost:8081`) — базовый URL API Gateway, в который встраивается frontend на этапе сборки Vite. Используется в `Frontend/api.js` для всех HTTP-вызовов (`/graphql`, `/api/upload`, `/api/auth/*`, `/oauth2/authorization/google`). В production указывается публичный URL gateway, например `https://api.unimeow.ru` или `https://unimeow.ru` если gateway за тем же доменом.
 
 ### Матрица доступа
 
@@ -700,7 +700,7 @@ markAllNotificationsRead: Boolean!
 
 | Сервис | HTTP | gRPC |
 |---|---|---|
-| API Gateway | 8080 | — |
+| API Gateway | 8081 | — |
 | Frontend | 5173 | — |
 | Eureka | 8761 | — |
 | UserService | 9004 | 9090 |
@@ -878,9 +878,5 @@ Cursor — это `score = createdAtMs + likesCount * trendingLikeBoostMs`. Пр
 ### Optimistic UI при создании поста
 
 Frontend в `InlineCompose`/`ComposeModal` показывает пост «оптимистично» сразу после нажатия «Опубликовать», ещё до ответа сервера. При отказе сети или транспортной ошибке оптимистичный пост убирается через коллбек `removeTmpId`. Однако если backend выполнил операцию, а ответ потерялся (см. транспортные ошибки выше), пост будет создан, но фронт может удалить оптимистичный экземпляр и показать ошибку — реальный пост появится после следующего обновления ленты.
-
-### Production-конфигурация
-
-В dev-режиме по умолчанию: `APP_SECURITY_SECURE_COOKIE=false`, `APP_SECURITY_ALLOWED_ORIGINS=http://localhost:*,null`, `APP_SECURITY_OAUTH2_SUCCESS_REDIRECT=http://localhost:5173/`, `VITE_API_BASE=http://localhost:8080`. На проде эти значения **обязаны** быть заменены: cookies выставляются `Secure` только под HTTPS, CORS должен указывать реальный домен, OAuth redirect — публичный URL фронтенда. Также в Google Cloud Console должен быть зарегистрирован authorized redirect URI вида `https://<домен>/login/oauth2/code/google`.
 
 ---

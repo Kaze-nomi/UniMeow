@@ -3,7 +3,7 @@ import { defineConfig, loadEnv } from 'vite';
 
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), '');
-  const apiBase = env.VITE_API_BASE || 'http://localhost:8080';
+  const apiBase = env.VITE_API_BASE || 'http://localhost:8081';
   return {
     plugins: [react()],
     define: {

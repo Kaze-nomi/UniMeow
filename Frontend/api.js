@@ -1,6 +1,6 @@
 
 (function () {
-  const BASE = (typeof __API_BASE__ !== 'undefined' && __API_BASE__) || 'http://localhost:8080';
+  const BASE = (typeof __API_BASE__ !== 'undefined' && __API_BASE__) || 'http://localhost:8081';
   const GQL = BASE + '/graphql';
 
   let _refreshing = null;

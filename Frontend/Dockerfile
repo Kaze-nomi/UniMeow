@@ -1,7 +1,7 @@
 FROM node:20-alpine AS build
 WORKDIR /app
 
-ARG VITE_API_BASE=http://localhost:8080
+ARG VITE_API_BASE=http://localhost:8081
 ENV VITE_API_BASE=$VITE_API_BASE
 
 COPY Frontend/package.json Frontend/yarn.lock ./

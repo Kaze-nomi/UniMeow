@@ -350,7 +350,7 @@ services:
       APP_SECURITY_OAUTH2_SUCCESS_REDIRECT:   ${APP_SECURITY_OAUTH2_SUCCESS_REDIRECT:-http://localhost:5173/}
       EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://eureka-server:8761/eureka/
     ports:
-      - "127.0.0.1:8080:8080"
+      - "127.0.0.1:8081:8080"
     networks:
       - uni-network
     healthcheck:
@@ -365,7 +365,7 @@ services:
       context: .
       dockerfile: Frontend/Dockerfile
       args:
-        VITE_API_BASE: ${VITE_API_BASE:-http://localhost:8080}
+        VITE_API_BASE: ${VITE_API_BASE:-http://localhost:8081}
     container_name: uni-frontend
     restart: unless-stopped
     depends_on:
