@@ -242,6 +242,11 @@
 
   function resolveAssetUrl(url) {
     if (!url) return url;
+    const publicMinioBase = (typeof __MINIO_PUBLIC_URL__ !== 'undefined' && __MINIO_PUBLIC_URL__) || 'http://localhost:9000';
+    const normalizedPublicMinioBase = publicMinioBase.endsWith('/') ? publicMinioBase.slice(0, -1) : publicMinioBase;
+    if (/^https?:\/\/(localhost|127\.0\.0\.1):9000\//i.test(url)) {
+      return normalizedPublicMinioBase + url.replace(/^https?:\/\/(localhost|127\.0\.0\.1):9000/i, '');
+    }
     if (/^(https?:)?\/\//i.test(url) || /^(data|blob):/i.test(url)) return url;
     return url;
   }

@@ -366,6 +366,7 @@ services:
       dockerfile: Frontend/Dockerfile
       args:
         VITE_API_BASE: ${VITE_API_BASE:-http://localhost:8081}
+        MINIO_PUBLIC_URL: ${MINIO_PUBLIC_URL:-http://localhost:9000}
     container_name: uni-frontend
     restart: unless-stopped
     depends_on:

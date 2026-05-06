@@ -180,7 +180,7 @@ function PostCard({ post, onNavigate, currentUser, onLike }) {
 
         {post.mediaUrls?.length > 0 && (
           (() => {
-            const urls = post.mediaUrls.slice(0, 4);
+            const urls = post.mediaUrls.slice(0, 4).map(url => API.resolveAssetUrl(url));
             const count = urls.length;
             const odd = count % 2 === 1 && count > 1;
             const columns = count === 1 ? '1fr' : 'repeat(2, 1fr)';
@@ -247,7 +247,7 @@ function PostCard({ post, onNavigate, currentUser, onLike }) {
       <ProfileHoverCard user={author} pos={hoverPos} onNavigate={onNavigate} onClose={() => setHoverCardOpen(false)} onMouseEnter={onHoverCardEnter} onMouseLeave={onHoverCardLeave} closing={hoverCardClosing} />
     )}
     {lightboxIdx !== null && post.mediaUrls?.length > 0 && (
-      <ImageLightbox urls={post.mediaUrls} startIndex={lightboxIdx} onClose={() => setLightboxIdx(null)} />
+      <ImageLightbox urls={post.mediaUrls.map(url => API.resolveAssetUrl(url))} startIndex={lightboxIdx} onClose={() => setLightboxIdx(null)} />
     )}
     </>
   );

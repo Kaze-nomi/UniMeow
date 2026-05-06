@@ -139,7 +139,7 @@ function PostPage({ postId, currentUser, onNavigate }) {
 
         {post.mediaUrls?.length > 0 && (
           (() => {
-            const urls = post.mediaUrls;
+            const urls = post.mediaUrls.map(url => API.resolveAssetUrl(url));
             const count = urls.length;
             const odd = count % 2 === 1 && count > 1;
             const columns = count === 1 ? '1fr' : 'repeat(2,1fr)';
@@ -257,7 +257,7 @@ function PostPage({ postId, currentUser, onNavigate }) {
         document.body
       )}
       {lightboxIdx !== null && post.mediaUrls?.length > 0 && (
-        (window.ImageLightbox ? React.createElement(window.ImageLightbox, { urls: post.mediaUrls, startIndex: lightboxIdx, onClose: () => setLightboxIdx(null) }) : null)
+        (window.ImageLightbox ? React.createElement(window.ImageLightbox, { urls: post.mediaUrls.map(url => API.resolveAssetUrl(url)), startIndex: lightboxIdx, onClose: () => setLightboxIdx(null) }) : null)
       )}
     </div>
   );

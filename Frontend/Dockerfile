@@ -3,6 +3,8 @@ WORKDIR /app
 
 ARG VITE_API_BASE=http://localhost:8081
 ENV VITE_API_BASE=$VITE_API_BASE
+ARG MINIO_PUBLIC_URL=http://localhost:9000
+ENV MINIO_PUBLIC_URL=$MINIO_PUBLIC_URL
 
 COPY Frontend/package.json Frontend/yarn.lock ./
 RUN yarn install
