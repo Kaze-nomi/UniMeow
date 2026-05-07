@@ -17,6 +17,7 @@ import uni.post.outbox.OutboxService;
 import uni.post.record.CommentResult;
 import uni.post.repository.CommentLikeRepository;
 import uni.post.repository.CommentRepository;
+import uni.post.repository.IdempotencyKeyRepository;
 import uni.post.repository.PostRepository;
 
 import java.time.LocalDateTime;
@@ -40,6 +41,9 @@ class CommentServiceTest {
 
 	@Mock
 	PostRepository postRepository;
+
+	@Mock
+	IdempotencyKeyRepository idempotencyKeyRepository;
 
 	@Mock
 	OutboxService outboxService;
@@ -72,7 +76,7 @@ class CommentServiceTest {
 		when(postRepository.findById(POST_ID)).thenReturn(Optional.of(buildPost()));
 		when(commentRepository.save(any())).thenReturn(comment);
 
-		CommentResult result = commentService.addComment(POST_ID, AUTHOR_ID, "Nice post!", null);
+		CommentResult result = commentService.addComment(POST_ID, AUTHOR_ID, "Nice post!", null, null);
 
 		assertThat(result).isEqualTo(new CommentResult(comment, false));
 		verify(commentRepository).save(any());
@@ -84,7 +88,7 @@ class CommentServiceTest {
 		when(postRepository.findById(POST_ID)).thenReturn(Optional.of(post));
 		when(commentRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
 
-		commentService.addComment(POST_ID, AUTHOR_ID, "text", null);
+		commentService.addComment(POST_ID, AUTHOR_ID, "text", null, null);
 
 		assertThat(post.getCommentsCount()).isEqualTo(1);
 		verify(postRepository).save(post);
@@ -95,7 +99,7 @@ class CommentServiceTest {
 		when(postRepository.findById(POST_ID)).thenReturn(Optional.of(buildPost()));
 		when(commentRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
 
-		commentService.addComment(POST_ID, AUTHOR_ID, "text", null);
+		commentService.addComment(POST_ID, AUTHOR_ID, "text", null, null);
 
 		ArgumentCaptor<Comment> captor = ArgumentCaptor.forClass(Comment.class);
 		verify(commentRepository).save(captor.capture());
@@ -107,7 +111,7 @@ class CommentServiceTest {
 		when(postRepository.findById(POST_ID)).thenReturn(Optional.of(buildPost()));
 		when(commentRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
 
-		commentService.addComment(POST_ID, AUTHOR_ID, "  trimmed  ", null);
+		commentService.addComment(POST_ID, AUTHOR_ID, "  trimmed  ", null, null);
 
 		ArgumentCaptor<Comment> captor = ArgumentCaptor.forClass(Comment.class);
 		verify(commentRepository).save(captor.capture());
@@ -116,7 +120,7 @@ class CommentServiceTest {
 
 	@Test
 	void add_comment_throws_when_content_is_blank() {
-		assertThatThrownBy(() -> commentService.addComment(POST_ID, AUTHOR_ID, "  ", null))
+		assertThatThrownBy(() -> commentService.addComment(POST_ID, AUTHOR_ID, "  ", null, null))
 				.isInstanceOf(IllegalArgumentException.class).hasMessageContaining("content cannot be empty");
 
 		verifyNoInteractions(postRepository, commentRepository);
@@ -126,7 +130,7 @@ class CommentServiceTest {
 	void add_comment_throws_post_not_found_when_post_missing() {
 		when(postRepository.findById(POST_ID)).thenReturn(Optional.empty());
 
-		assertThatThrownBy(() -> commentService.addComment(POST_ID, AUTHOR_ID, "text", null))
+		assertThatThrownBy(() -> commentService.addComment(POST_ID, AUTHOR_ID, "text", null, null))
 				.isInstanceOf(PostNotFoundException.class).hasMessageContaining(POST_ID.toString());
 	}
 
@@ -137,7 +141,7 @@ class CommentServiceTest {
 		when(commentRepository.findById(COMMENT_ID)).thenReturn(Optional.of(parent));
 		when(commentRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
 
-		commentService.addComment(POST_ID, AUTHOR_ID, "reply", COMMENT_ID);
+		commentService.addComment(POST_ID, AUTHOR_ID, "reply", COMMENT_ID, null);
 
 		ArgumentCaptor<Comment> captor = ArgumentCaptor.forClass(Comment.class);
 		verify(commentRepository).save(captor.capture());
@@ -152,7 +156,7 @@ class CommentServiceTest {
 		when(postRepository.findById(POST_ID)).thenReturn(Optional.of(buildPost()));
 		when(commentRepository.findById(COMMENT_ID)).thenReturn(Optional.of(parent));
 
-		assertThatThrownBy(() -> commentService.addComment(POST_ID, AUTHOR_ID, "reply", COMMENT_ID))
+		assertThatThrownBy(() -> commentService.addComment(POST_ID, AUTHOR_ID, "reply", COMMENT_ID, null))
 				.isInstanceOf(IllegalArgumentException.class).hasMessageContaining("another post");
 	}
 

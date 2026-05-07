@@ -8,12 +8,14 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import uni.post.entity.Comment;
 import uni.post.entity.CommentLike;
+import uni.post.entity.IdempotencyKey;
 import uni.post.entity.PostLike;
 import uni.post.entity.Post;
 import uni.post.exception.PostNotFoundException;
 import uni.post.outbox.OutboxService;
 import uni.post.repository.CommentLikeRepository;
 import uni.post.repository.CommentRepository;
+import uni.post.repository.IdempotencyKeyRepository;
 import uni.post.repository.PostLikeRepository;
 import uni.post.repository.PostRepository;
 import uni.post.record.PostPageResult;
@@ -39,14 +41,24 @@ public class PostService {
 	private final CommentRepository commentRepository;
 	private final PostLikeRepository likeRepository;
 	private final CommentLikeRepository commentLikeRepository;
+	private final IdempotencyKeyRepository idempotencyKeyRepository;
 	private final OutboxService outboxService;
 	private final MentionResolver mentionResolver;
 
 	@Transactional
 	public PostResult createPost(UUID authorId, String content, List<String> mediaUrls, Long universityId,
-			Long facultyId, Long programId, Long topicId, Long parentTopicId) {
+			Long facultyId, Long programId, Long topicId, Long parentTopicId, String clientRequestId) {
 		if (content == null || content.isBlank()) {
 			throw new IllegalArgumentException("Post content cannot be empty");
+		}
+
+		if (clientRequestId != null && !clientRequestId.isBlank()) {
+			var existing = idempotencyKeyRepository.findById(clientRequestId);
+			if (existing.isPresent()) {
+				UUID existingPostId = UUID.fromString(existing.get().getEntityId());
+				return postRepository.findById(existingPostId).map(p -> new PostResult(p, false))
+						.orElseThrow(() -> new PostNotFoundException("Idempotent post not found: " + existingPostId));
+			}
 		}
 
 		LocalDateTime now = LocalDateTime.now();
@@ -55,6 +67,11 @@ public class PostService {
 				.mediaUrls(mediaUrls == null ? List.of() : mediaUrls).universityId(universityId).facultyId(facultyId)
 				.programId(programId).topicId(topicId).parentTopicId(parentTopicId).likesCount(0).commentsCount(0)
 				.createdAt(now).updatedAt(now).build());
+
+		if (clientRequestId != null && !clientRequestId.isBlank()) {
+			idempotencyKeyRepository.save(IdempotencyKey.builder().key(clientRequestId)
+					.entityId(post.getId().toString()).createdAt(now).build());
+		}
 
 		List<String> mentionedUserIds = mentionResolver.resolveUserIds(content);
 

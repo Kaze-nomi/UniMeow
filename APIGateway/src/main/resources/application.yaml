@@ -50,41 +50,41 @@ grpc:
       address: 'discovery:///user-service'
       negotiation-type: plaintext
       default-load-balancing-policy: round_robin
-      keep-alive-time: 60s
-      keep-alive-timeout: 10s
-      keep-alive-without-calls: false
+      keep-alive-time: 1s
+      keep-alive-timeout: 1s
+      keep-alive-without-calls: true
       enable-keep-alive: true
     post-service:
       address: 'discovery:///post-service'
       negotiation-type: plaintext
       default-load-balancing-policy: round_robin
-      keep-alive-time: 60s
-      keep-alive-timeout: 10s
-      keep-alive-without-calls: false
+      keep-alive-time: 1s
+      keep-alive-timeout: 1s
+      keep-alive-without-calls: true
       enable-keep-alive: true
     feed-service:
       address: 'discovery:///feed-service'
       negotiation-type: plaintext
       default-load-balancing-policy: round_robin
-      keep-alive-time: 60s
-      keep-alive-timeout: 10s
-      keep-alive-without-calls: false
+      keep-alive-time: 1s
+      keep-alive-timeout: 1s
+      keep-alive-without-calls: true
       enable-keep-alive: true
     media-service:
       address: 'discovery:///media-service'
       negotiation-type: plaintext
       default-load-balancing-policy: round_robin
-      keep-alive-time: 60s
-      keep-alive-timeout: 10s
-      keep-alive-without-calls: false
+      keep-alive-time: 1s
+      keep-alive-timeout: 1s
+      keep-alive-without-calls: true
       enable-keep-alive: true
     notification-service:
       address: 'discovery:///notification-service'
       negotiation-type: plaintext
       default-load-balancing-policy: round_robin
-      keep-alive-time: 60s
-      keep-alive-timeout: 10s
-      keep-alive-without-calls: false
+      keep-alive-time: 1s
+      keep-alive-timeout: 1s
+      keep-alive-without-calls: true
       enable-keep-alive: true
 
 jwt:

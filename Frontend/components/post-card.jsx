@@ -322,14 +322,21 @@ function ComposeModal({ open, onClose, currentUser, onNavigate, onCreated, defau
   const submit = async () => {
     if (!content.trim() && mediaFiles.length === 0) return;
     setLoading(true); setUploading(mediaFiles.length > 0); setError('');
+    const submittedContent = content.trim();
+    const submittedMediaFiles = mediaFiles;
+    const submittedTopicId = topicId;
+    setContent('');
+    setMediaFiles([]);
+    onClose();
     try {
       const tmpId = 'tmp-' + Date.now();
-      const optimisticMedia = mediaFiles.map(m => m.previewUrl);
+      const clientRequestId = API.newClientRequestId();
+      const optimisticMedia = submittedMediaFiles.map(m => m.previewUrl);
       const optimisticPost = {
         id: tmpId,
         author: currentUser,
         authorId: currentUser?.id,
-        content: content.trim(),
+        content: submittedContent,
         mediaUrls: optimisticMedia,
         likesCount: 0,
         commentsCount: 0,
@@ -339,13 +346,13 @@ function ComposeModal({ open, onClose, currentUser, onNavigate, onCreated, defau
       onCreated && onCreated(optimisticPost);
       try {
         let mediaUrls = [];
-        if (mediaFiles.length > 0) {
-          mediaUrls = await Promise.all(mediaFiles.map(m => API.uploadFile(m.file, 'post-media')));
+        if (submittedMediaFiles.length > 0) {
+          mediaUrls = await Promise.all(submittedMediaFiles.map(m => API.uploadFile(m.file, 'post-media')));
         }
         setUploading(false);
-        const input = { content: content.trim(), mediaUrls };
-        if (topicId) input.topicId = topicId;
-        const d = await API.gql(API.M.createPost, { input });
+        const input = { content: submittedContent, mediaUrls };
+        if (submittedTopicId) input.topicId = submittedTopicId;
+        const d = await API.gql(API.M.createPost, { input, clientRequestId });
         const newPost = {
           ...d.createPost,
           author: currentUser,
@@ -353,15 +360,13 @@ function ComposeModal({ open, onClose, currentUser, onNavigate, onCreated, defau
           commentsCount: 0,
           likedByMe: false,
         };
-        setContent('');
-        onClose();
         onCreated && onCreated(newPost);
       } catch (innerErr) {
         onCreated && onCreated({ removeTmpId: tmpId });
         throw innerErr;
       }
     } catch (e) {
-      if (e.isUnauth) { onNavigate('/login'); onClose(); }
+      if (e.isUnauth) { onNavigate('/login'); }
       else setError(e.message);
     } finally { setLoading(false); }
   };

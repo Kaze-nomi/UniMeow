@@ -15,6 +15,7 @@ import uni.post.exception.PostNotFoundException;
 import uni.post.outbox.OutboxService;
 import uni.post.repository.CommentLikeRepository;
 import uni.post.repository.CommentRepository;
+import uni.post.repository.IdempotencyKeyRepository;
 import uni.post.repository.PostLikeRepository;
 import uni.post.repository.PostRepository;
 import uni.post.record.PostPageResult;
@@ -44,6 +45,8 @@ class PostServiceTest {
 	@Mock
 	CommentLikeRepository commentLikeRepository;
 	@Mock
+	IdempotencyKeyRepository idempotencyKeyRepository;
+	@Mock
 	OutboxService outboxService;
 	@Mock
 	MentionResolver mentionResolver;
@@ -67,7 +70,8 @@ class PostServiceTest {
 		Post post = buildPost();
 		when(postRepository.save(any())).thenReturn(post);
 
-		PostResult result = postService.createPost(AUTHOR_ID, "Hello UniMeow", List.of(), 1L, 10L, 100L, 10L, 10L);
+		PostResult result = postService.createPost(AUTHOR_ID, "Hello UniMeow", List.of(), 1L, 10L, 100L, 10L, 10L,
+				null);
 
 		assertThat(result.post()).isEqualTo(post);
 		assertThat(result.likedByMe()).isFalse();
@@ -79,7 +83,7 @@ class PostServiceTest {
 	void create_post_trims_content() {
 		when(postRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
 
-		postService.createPost(AUTHOR_ID, "  trimmed  ", List.of(), 1L, 10L, 100L, 10L, 10L);
+		postService.createPost(AUTHOR_ID, "  trimmed  ", List.of(), 1L, 10L, 100L, 10L, 10L, null);
 
 		ArgumentCaptor<Post> captor = ArgumentCaptor.forClass(Post.class);
 		verify(postRepository).save(captor.capture());
@@ -90,7 +94,7 @@ class PostServiceTest {
 	void create_post_sets_created_at_equal_to_updated_at() {
 		when(postRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
 
-		postService.createPost(AUTHOR_ID, "content", List.of(), 1L, 10L, 100L, 10L, 10L);
+		postService.createPost(AUTHOR_ID, "content", List.of(), 1L, 10L, 100L, 10L, 10L, null);
 
 		ArgumentCaptor<Post> captor = ArgumentCaptor.forClass(Post.class);
 		verify(postRepository).save(captor.capture());
@@ -101,7 +105,7 @@ class PostServiceTest {
 	void create_post_replaces_null_media_urls_with_empty_list() {
 		when(postRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
 
-		postService.createPost(AUTHOR_ID, "content", null, 1L, 10L, 100L, 10L, 10L);
+		postService.createPost(AUTHOR_ID, "content", null, 1L, 10L, 100L, 10L, 10L, null);
 
 		ArgumentCaptor<Post> captor = ArgumentCaptor.forClass(Post.class);
 		verify(postRepository).save(captor.capture());
@@ -110,7 +114,7 @@ class PostServiceTest {
 
 	@Test
 	void create_post_throws_when_content_is_blank() {
-		assertThatThrownBy(() -> postService.createPost(AUTHOR_ID, "  ", List.of(), null, null, null, null, null))
+		assertThatThrownBy(() -> postService.createPost(AUTHOR_ID, "  ", List.of(), null, null, null, null, null, null))
 				.isInstanceOf(IllegalArgumentException.class).hasMessageContaining("content cannot be empty");
 
 		verifyNoInteractions(postRepository);
@@ -120,7 +124,7 @@ class PostServiceTest {
 	void create_post_stores_provided_scope() {
 		when(postRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
 
-		PostResult result = postService.createPost(AUTHOR_ID, "content", List.of(), 1L, 10L, 100L, 10L, 10L);
+		PostResult result = postService.createPost(AUTHOR_ID, "content", List.of(), 1L, 10L, 100L, 10L, 10L, null);
 
 		assertThat(result.post().getUniversityId()).isEqualTo(1L);
 		assertThat(result.post().getFacultyId()).isEqualTo(10L);
@@ -131,7 +135,7 @@ class PostServiceTest {
 
 	@Test
 	void create_post_throws_when_content_is_null() {
-		assertThatThrownBy(() -> postService.createPost(AUTHOR_ID, null, List.of(), null, null, null, null, null))
+		assertThatThrownBy(() -> postService.createPost(AUTHOR_ID, null, List.of(), null, null, null, null, null, null))
 				.isInstanceOf(IllegalArgumentException.class);
 
 		verifyNoInteractions(postRepository);

@@ -109,6 +109,7 @@ public class PostController {
 
 	@MutationMapping
 	public Mono<PostDto> createPost(@Argument(name = "input") CreatePostInput input,
+			@Argument(name = "clientRequestId") String clientRequestId,
 			@ContextValue(name = "userId", required = false) String userId) {
 		if (userId == null) {
 			return Mono.error(new CredentialException("Authentication required"));
@@ -118,7 +119,7 @@ public class PostController {
 			Long facultyId = user.hasFaculty() ? user.getFaculty().getId() : null;
 			Long programId = user.hasProgram() ? user.getProgram().getId() : null;
 			return postGrpcClient.createPost(userId, input.content(), input.mediaUrls(), universityId, facultyId,
-					programId, null, null);
+					programId, null, null, clientRequestId);
 		}).map(this::toDto);
 	}
 
@@ -165,11 +166,13 @@ public class PostController {
 	@MutationMapping
 	public Mono<CommentDto> addComment(@Argument(name = "postId") String postId,
 			@Argument(name = "content") String content, @Argument(name = "parentCommentId") String parentCommentId,
+			@Argument(name = "clientRequestId") String clientRequestId,
 			@ContextValue(name = "userId", required = false) String userId) {
 		if (userId == null) {
 			return Mono.error(new CredentialException("Authentication required"));
 		}
-		return requireActiveUser(userId).flatMap(id -> postGrpcClient.addComment(postId, id, content, parentCommentId))
+		return requireActiveUser(userId)
+				.flatMap(id -> postGrpcClient.addComment(postId, id, content, parentCommentId, clientRequestId))
 				.map(this::toCommentDto);
 	}
 

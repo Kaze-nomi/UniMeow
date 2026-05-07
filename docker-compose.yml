@@ -191,6 +191,7 @@ services:
       SPRING_MAIL_USERNAME: ${MAIL_USERNAME}
       SPRING_MAIL_PASSWORD: ${MAIL_PASSWORD}
       SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      APP_FRONTEND_URL: ${APP_PUBLIC_URL:-http://localhost:5173}
     ports:
       - "127.0.0.1:9004:9000"
       - "127.0.0.1:9090:9090"
@@ -218,7 +219,7 @@ services:
       MINIO_ENDPOINT: http://minio:9000
       MINIO_ACCESS_KEY: ${MINIO_ROOT_USER:-admin}
       MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD:-changeme}
-      MINIO_PUBLIC_URL: ${MINIO_PUBLIC_URL:-http://localhost:9000}
+      MINIO_PUBLIC_URL: ${APP_MINIO_PUBLIC_URL:-http://localhost:9000}
       EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://eureka-server:8761/eureka/
     ports:
       - "127.0.0.1:9003:9003"
@@ -347,7 +348,7 @@ services:
       JWT_SECRET:                             ${JWT_SECRET}
       APP_SECURITY_SECURE_COOKIE:             ${APP_SECURITY_SECURE_COOKIE:-false}
       APP_SECURITY_ALLOWED_ORIGINS:           ${APP_SECURITY_ALLOWED_ORIGINS:-http://localhost:*,null}
-      APP_SECURITY_OAUTH2_SUCCESS_REDIRECT:   ${APP_SECURITY_OAUTH2_SUCCESS_REDIRECT:-http://localhost:5173/}
+      APP_SECURITY_OAUTH2_SUCCESS_REDIRECT:   ${APP_PUBLIC_URL:-http://localhost:5173}/
       EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://eureka-server:8761/eureka/
     ports:
       - "127.0.0.1:8081:8080"
@@ -365,8 +366,8 @@ services:
       context: .
       dockerfile: Frontend/Dockerfile
       args:
-        VITE_API_BASE: ${VITE_API_BASE:-http://localhost:8081}
-        MINIO_PUBLIC_URL: ${MINIO_PUBLIC_URL:-http://localhost:9000}
+        VITE_API_BASE: ${APP_PUBLIC_URL:-http://localhost:8081}
+        MINIO_PUBLIC_URL: ${APP_MINIO_PUBLIC_URL:-http://localhost:9000}
     container_name: uni-frontend
     restart: unless-stopped
     depends_on:

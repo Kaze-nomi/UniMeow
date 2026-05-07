@@ -68,12 +68,19 @@ UniMeow — университетская социальная сеть с по
 - `POST /api/auth/logout` — отзывает refresh token, очищает `ACCESS_TOKEN` и `REFRESH_TOKEN`.
 - `POST /graphql` доступен без HTTP auth; gateway добавляет `userId` в GraphQL context при наличии валидной cookie. Авторизация resolver'ов и централизованное ограничение незавершенной регистрации выполняются на уровне GraphQL gateway.
 
-### Конфигурация безопасности (env)
+### Конфигурация окружения (env)
 
-- `app.security.secure-cookie` (`APP_SECURITY_SECURE_COOKIE`, default `false`) — выставляет `Secure` флаг на cookies `ACCESS_TOKEN` и `REFRESH_TOKEN`. В production-развёртывании с HTTPS значение должно быть `true`, чтобы cookies передавались только по защищённому соединению.
-- `app.security.allowed-origins` (`APP_SECURITY_ALLOWED_ORIGINS`, default `http://localhost:*,null`) — список разрешённых CORS origin'ов через запятую. В production указывается реальный домен фронтенда, например `https://unimeow.ru,https://*.unimeow.ru`.
-- `app.security.oauth2-success-redirect` (`APP_SECURITY_OAUTH2_SUCCESS_REDIRECT`, default `http://localhost:5173/`) — URL, на который gateway редиректит браузер после успешной авторизации Google OAuth2. В production указывается публичный URL фронтенда, например `https://unimeow.ru/`.
-- `VITE_API_BASE` (build-time, default `http://localhost:8081`) — базовый URL API Gateway, в который встраивается frontend на этапе сборки Vite. Используется в `Frontend/api.js` для всех HTTP-вызовов (`/graphql`, `/api/upload`, `/api/auth/*`, `/oauth2/authorization/google`). В production указывается публичный URL gateway, например `https://api.unimeow.ru` или `https://unimeow.ru` если gateway за тем же доменом.
+Файл `.env` в корне проекта содержит два блока — PROD и DEV. Раскомментируйте нужный, второй закомментируйте, и выполните `docker compose up -d --build`. Frontend и MinIO public-URL встраиваются на этапе сборки Vite, поэтому смена окружения требует пересборки контейнера `frontend` (флаг `--build`).
+
+Базовые env-переменные для переключения окружения:
+
+- `APP_PUBLIC_URL` — публичный URL фронтенда / gateway (предполагается единый домен, обратный прокси раздаёт frontend и API). Из этой переменной в `docker-compose.yml` производятся:
+  - `APP_FRONTEND_URL` для UserService — используется в email-ссылках (`MailService.frontendUrl`).
+  - `APP_SECURITY_OAUTH2_SUCCESS_REDIRECT` для APIGateway — куда редиректить браузер после успешной Google OAuth2 авторизации.
+  - `VITE_API_BASE` (build-arg для frontend) — базовый URL, в который встраиваются HTTP-вызовы из `Frontend/api.js` (`/graphql`, `/api/upload`, `/api/auth/*`, `/oauth2/authorization/google`).
+- `APP_MINIO_PUBLIC_URL` — публичный URL MinIO (хранилище медиа). Используется MediaService для генерации `mediaUrl` в gRPC-ответах и frontend-сборкой через `__MINIO_PUBLIC_URL__` для отображения изображений по абсолютным ссылкам.
+- `APP_SECURITY_SECURE_COOKIE` (default `false`) — выставляет `Secure` флаг на cookies `ACCESS_TOKEN` и `REFRESH_TOKEN`. В production с HTTPS должно быть `true`; иначе cookies не отправятся браузером по HTTP.
+- `APP_SECURITY_ALLOWED_ORIGINS` (default `http://localhost:*,null`) — список разрешённых CORS origin'ов через запятую.
 
 ### Матрица доступа
 
@@ -251,7 +258,7 @@ score = createdAtMs + likesCount × trendingLikeBoostMs
 - Пост B: создан только что, 0 лайков → score = now + 0h
 - Пост A выше Поста B — пока не появится пост с 28 лайками той же свежести.
 
-Score обновляется при каждом лайке/анлайке. Redis key: `feed:popular` (общая внутренняя), `feed:outside:popular` (без вуза), `feed:uni:{id}:popular`, `feed:uni:{id}:topic:{id}:popular`. Окно: последние 5000 постов (`app.feed.trending-window-size`).
+Score обновляется при каждом лайке/анлайке. Redis key: `feed:popular` (общая внутренняя), `feed:outside:popular` (без вуза), `feed:uni:{id}:popular`, `feed:uni:{id}:topic:{id}:popular`. Окно: последние 5000 постов на каждую trending-ленту (`app.feed.trending-window-size`). Хронологические university/faculty/program ленты ограничены `app.feed.uni-window-size` (5000), лента автора `feed:author:{id}` — `app.feed.author-window-size` (1000). При превышении окна `trim` удаляет элементы с наименьшим score: для хронологических лент это самые старые посты, для trending — посты с наименьшим `createdAtMs + likesCount × boost`.
 
 ---
 
@@ -262,7 +269,7 @@ Score обновляется при каждом лайке/анлайке. Redi
 **Режим «Подписки» (главная лента):** персональная лента из постов авторов, на которых подписан пользователь. Требует авторизации.
 - Score = `occurredAt` в мс. Порядок: новые выше.
 - При подписке: последние 100 постов автора backfill-ятся в ленту подписчика.
-- При отписке: последние 500 постов автора удаляются из ленты подписчика.
+- При отписке: все доступные посты автора (до `app.feed.author-window-size = 1000`) удаляются из ленты подписчика.
 - Новый пост автора добавляется всем его подписчикам.
 - Redis key: `feed:user:{userId}`. При фильтре по ВУЗу: временное пересечение `ZINTERSTORE(feed:user:{id}, feed:uni:{uniId})` с TTL 60 с.
 
@@ -474,7 +481,9 @@ query {
 ### NotificationService
 
 - Слушает топики `post-events` и `user-events`.
-- Дедупликация: таблица `processed_events` с eventId.
+- Дедупликация Kafka-событий: таблица `processed_events` с eventId.
+- Дедупликация уведомлений по содержанию: для типов `LIKE_POST`, `LIKE_COMMENT`, `FOLLOW` при создании ищется существующее уведомление с тем же `(userId, actorId, type, entityId)` за последние 30 дней. Если найдено — обновляются `createdAt` и `isRead = false` (поднимает уведомление наверх и делает непрочитанным), новой записи не создаётся. Это защищает от спам-сценариев «поставил/снял лайк/подписку много раз». Для `COMMENT_ON_POST`, `REPLY_TO_COMMENT`, `MENTION_*` и других типов с уникальным контентом дедупликация не применяется — каждое событие уникально.
+- Self-уведомления отфильтровываются на этапе создания: `actorId.equals(authorId)` для лайков, `parentAuthorId.equals(authorId)` для ответов, `mentionedUserId.equals(authorId)` для упоминаний, `subscriberId.equals(targetUserId)` для подписки. Пользователь не получает уведомлений о собственных действиях, даже если технически API позволяет лайкнуть свой пост или ответить на свой комментарий.
 - TTL: уведомления старше 90 дней удаляются по расписанию (каждую ночь в 3:00).
 - gRPC сервер: `GetNotifications`, `MarkAllRead`, `GetUnreadCount`.
 - Порты: `9006` (HTTP/health), `9095` (gRPC).
@@ -516,7 +525,7 @@ query {
 
 ## 11. Администрирование
 
-`is_admin` выставляется через `adminGrantAdmin`. Доступ к этой операции ограничен проверкой username `kazenomi` в `UserService.grantAdmin()` — только `kazenomi` может выдавать права администратора, в том числе самому себе.
+`is_admin` выставляется через `adminGrantAdmin`. Доступ к этой операции ограничен проверкой username `kazenomi` в `UserService.grantAdmin()` — только `kazenomi` может выдавать права администратора, в том числе самому себе. Пользователя с username `kazenomi` нельзя забанить (`UserService.banUser` отклоняет такую попытку с `IllegalArgumentException`).
 
 ### Действия администратора
 
@@ -592,9 +601,9 @@ query {
 - Уведомления: страница `/notifications` со списком уведомлений, бейдж непрочитанных на иконке колокольчика в боковом меню. Время отображается в таймзоне пользователя.
 - Дефолтный аватар: если у пользователя нет аватарки, frontend показывает цветной аватар с инициалами.
 - Email подтверждения: письмо содержит preview text «Ваш код для подтверждения университетского email...» и HTML-шаблон с кодом подтверждения.
-- GraphQL-таймаут запроса: 30 секунд. При сетевой ошибке, abort или транспортной ошибке апстрима (`UPSTREAM_ERROR`, `UNAVAILABLE`, `INTERNAL`/`end-of-stream`) клиент автоматически повторяет запрос один раз — кроме не-идемпотентных мутаций (`createPost`, `addComment`, `createImprovementSuggestion`, `createUniversityProposal`, `createFacultyProposal`, `createProgramProposal`, `createProgram`, `verifyEmailCode`, `sendVerificationCode`), которые не повторяются, чтобы не создать дубль или не использовать одноразовый код повторно.
-- gRPC-вызовы из API Gateway имеют дедлайн 8 секунд: подвисший backend не задерживает GraphQL-запрос дольше этого времени и возвращает `DEADLINE_EXCEEDED` → 504 `GATEWAY_TIMEOUT`. Длительные (>1с) и неуспешные gRPC-вызовы логируются на gateway, длительные GraphQL-запросы (>1с) логируются с операцией.
-- gRPC keep-alive: клиент пингует канал каждые 60 секунд (только при наличии активных вызовов), таймаут пинга 10 секунд. Сервер допускает пинги не чаще раза в 30 секунд. Эти параметры обнаруживают молчаливо умершие соединения, типичные для WSL2/Docker bridge, не создавая лишней сетевой нагрузки.
+- GraphQL-таймаут запроса: 30 секунд. При сетевой ошибке, abort или транспортной ошибке апстрима (`UPSTREAM_ERROR`, `UNAVAILABLE`, `INTERNAL`, `UNKNOWN`, `DEADLINE_EXCEEDED`, `end-of-stream`, `http2 exception`, и т.д.) клиент автоматически повторяет ЛЮБОЙ запрос до 3 раз с задержкой 200 мс. Для не-идемпотентных мутаций (`createPost`, `addComment`, `create*Proposal`, `createImprovementSuggestion`) безопасность ретраев обеспечена идемпотентным ключом `clientRequestId` (UUID) — backend хранит mapping `clientRequestId → entityId` и на повторный запрос возвращает уже созданную сущность, не создавая дубль. Если все 3 попытки на мутацию провалились с транспортной ошибкой, фронтенд молча возвращает фейковый success — backend почти наверняка выполнил операцию, реальные данные подгрузятся при следующем обновлении.
+- gRPC-вызовы из API Gateway имеют дедлайн (см. `GrpcDeadlineInterceptor`). Подвисший backend не задерживает GraphQL-запрос дольше этого времени и возвращает `DEADLINE_EXCEEDED` → 504 `GATEWAY_TIMEOUT`. Длительные и неуспешные gRPC-вызовы логируются на gateway, длительные GraphQL-запросы (>1с) логируются с операцией.
+- gRPC keep-alive: клиент пингует канал каждую секунду (включая idle), таймаут пинга 1 секунда. Сервер разрешает пинги не реже раза в секунду без вызовов. Это позволяет обнаруживать и пересоздавать молчаливо умершие соединения почти мгновенно — компенсирует случайные обрывы idle-flow в Docker network.
 
 ---
 
@@ -818,7 +827,7 @@ markAllNotificationsRead: Boolean!
 
 ## 19. Миграции базы данных
 
-### UserService (V1–V8)
+### UserService (V1–V9)
 
 | Версия | Содержимое |
 |---|---|
@@ -830,8 +839,9 @@ markAllNotificationsRead: Boolean!
 | V6 | `improvement_suggestions`, `university_proposals` |
 | V7 | `faculty_proposals` |
 | V8 | `program_proposals` |
+| V9 | `idempotency_keys` |
 
-### PostService (V1–V5)
+### PostService (V1–V6)
 
 | Версия | Содержимое |
 |---|---|
@@ -840,6 +850,7 @@ markAllNotificationsRead: Boolean!
 | V3 | `comments` (+ parent_comment_id) |
 | V4 | `comment_likes` |
 | V5 | `outbox_events` |
+| V6 | `idempotency_keys` |
 
 ### NotificationService (V1–V2)
 
@@ -854,18 +865,28 @@ markAllNotificationsRead: Boolean!
 
 ### Транспорт gRPC между gateway и сервисами
 
-В контейнерной среде наблюдались случайные транспортные ошибки gRPC: `INTERNAL: Encountered end-of-stream mid-frame`, `INTERNAL: http2 exception` и эпизодические зависания на дедлайне 8 секунд (`DEADLINE_EXCEEDED`). Симптомы: ~95% запросов проходят за 200–300 мс, но небольшая доля случайно подвисает или возвращает ошибку, при этом сервер уже успел выполнить операцию. Применённые меры:
+В контейнерной среде наблюдаются случайные транспортные ошибки gRPC: `INTERNAL: Encountered end-of-stream mid-frame`, `INTERNAL: http2 exception` и эпизодические зависания. Симптомы: подавляющее большинство запросов проходят за 200–300 мс, но небольшая доля случайно подвисает или возвращает ошибку, при этом сервер уже успел выполнить операцию. Применённые меры:
 
-- gRPC keepalive: клиент пингует канал каждые 60 секунд при наличии активных вызовов, таймаут 10 секунд; сервер допускает пинги не чаще раза в 30 секунд. Снижает вероятность работы с молчаливо умершими TCP-соединениями.
-- Глобальный gRPC client-side дедлайн 8 секунд через `GrpcDeadlineInterceptor` — подвисший backend возвращает `DEADLINE_EXCEEDED` → 504 `GATEWAY_TIMEOUT`, не блокирует поток `boundedElastic`.
-- Логирование медленных (`>1с`) и неуспешных gRPC-вызовов на gateway, длительных GraphQL-запросов на уровне `GraphQlAuthInterceptor`.
-- Frontend auto-retry: при сетевой ошибке, abort, `UPSTREAM_ERROR`, `UNAVAILABLE`, `INTERNAL`/`end-of-stream` клиент `Frontend/api.js` повторяет запрос один раз. Не повторяются не-идемпотентные мутации (`createPost`, `addComment`, `create*Proposal`, `createImprovementSuggestion`, `createProgram`, `verifyEmailCode`, `sendVerificationCode`), чтобы не создать дубль уже выполненной операции.
-
-При этом для не-идемпотентных мутаций пользователь может увидеть ошибку, хотя действие выполнено. Полное решение — идемпотентный ключ запроса (`clientRequestId`) на стороне сервиса — не реализовано; рассматривается как отдельная фича.
+- gRPC keepalive: клиент пингует канал каждую секунду (включая idle), таймаут 1 секунда; сервер разрешает пинги не чаще раза в секунду без вызовов. Дохлые соединения обнаруживаются и переустанавливаются почти мгновенно.
+- Глобальный gRPC client-side дедлайн через `GrpcDeadlineInterceptor` — подвисший backend возвращает `DEADLINE_EXCEEDED` → 504 `GATEWAY_TIMEOUT`, не блокирует поток `boundedElastic`. Длительные (≥ настройки) и неуспешные gRPC-вызовы логируются.
+- Все мутации API Gateway имеют `.retry(2)` (`PostGrpcClient`, `UserGrpcClient`).
+- Идемпотентные ключи запросов: для `createPost`, `addComment`, `createImprovementSuggestion`, `createUniversityProposal`, `createFacultyProposal`, `createProgramProposal` фронтенд генерирует UUID `clientRequestId` и передаёт его в input GraphQL-мутации. `PostService` и `UserService` хранят таблицу `idempotency_keys (key PRIMARY KEY, entity_id, created_at)`. На повторный запрос с тем же ключом возвращается ранее созданная сущность, новой не создаётся. Это позволяет безопасно ретраить эти мутации без дублей. Записи старше `app.idempotency.retention-hours` (по умолчанию 24 часа) ежедневно удаляются `IdempotencyKeyCleanupService` по cron `app.idempotency.cleanup-cron` (по умолчанию 03:30).
+- Frontend ретраит ВСЕ запросы (queries и mutations) до 3 раз с задержкой 200 мс при сетевой ошибке, abort, `UPSTREAM_ERROR`, `UNAVAILABLE`, `INTERNAL`, `UNKNOWN`, `DEADLINE_EXCEEDED` или сообщениях про `end-of-stream`/`http2 exception`/`stream closed`/`connection closed`/`rst_stream`/`goaway`. Для мутаций безопасно благодаря идемпотентным ключам и `.retry(2)` на gRPC-уровне.
+- Если все 3 попытки провалились, фронтенд показывает ошибку пользователю (как и раньше). Frontend retry — только для мгновенного автоматического восстановления при флапающем транспорте; ситуация когда даже после 3 попыток ничего не получилось, считается реально проблемной и должна быть видна.
 
 ### Ленты в Redis при коллизии идентификаторов
 
 Faculty и program используют независимые последовательности ID. Если у факультета и программы совпадает числовой ID, прежняя реализация `resolveTopicScopedFeedKey`/`resolveTopicScopedPopularFeedKey` могла переключаться между `topic:{id}` и `subtopic:{id}` ключами, из-за чего посты «исчезали» из ленты факультета. Текущая реализация хранит и читает ленты по разным ключам строго: `findUniversityFacultyPostsWithScoresByCursor` всегда читает `feed:uni:{X}:topic:{facultyId}`, `findUniversityProgramPostsWithScoresByCursor` — `feed:uni:{X}:subtopic:{programId}`.
+
+### Восстановление Redis после полной потери данных
+
+Redis настроен с AOF (`appendonly yes`, `appendfsync everysec`) и хранит данные в volume `redis_data`. При обычном перезапуске контейнера ленты восстанавливаются из AOF-файла. Но если volume удалён или AOF повреждён, Redis запускается пустым:
+
+- `trendingFeed`/`followingFeed` возвращают пустые списки до накопления новых событий.
+- Дедупликация Kafka-событий в FeedService живёт в Redis (`feed:processed:event:{eventId}`, TTL 7 дней) — после потери Redis сбрасывается тоже.
+- Существующие посты в Postgres-БД PostService остаются, но в ленты попадут только если переиграть их POST_CREATED события через Kafka. При `auto-offset-reset: earliest` и сбросе consumer group offset события переиграются за период Kafka retention; посты старше этого окна не восстановятся в ленты автоматически.
+
+Эксплицитного rebuild-эндпоинта (например, для полного перестроения лент из Postgres) пока нет — это известное ограничение, добавится при необходимости.
 
 ### Денормализованные счётчики при удалении аккаунта
 

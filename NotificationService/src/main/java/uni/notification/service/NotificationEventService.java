@@ -52,11 +52,44 @@ public class NotificationEventService {
 		};
 
 		if (!notifications.isEmpty()) {
-			notificationRepository.saveAll(notifications);
+			List<Notification> toSave = new ArrayList<>();
+			LocalDateTime dedupWindow = LocalDateTime.now().minusDays(DEDUP_WINDOW_DAYS);
+			for (Notification notification : notifications) {
+				addNotificationForSave(notification, dedupWindow, toSave);
+			}
+			notificationRepository.saveAll(toSave);
 		}
 
 		processedEventRepository
 				.save(ProcessedEvent.builder().eventId(event.eventId()).processedAt(LocalDateTime.now()).build());
+	}
+
+	private static final long DEDUP_WINDOW_DAYS = 30;
+
+	private static boolean isDedupableType(String type) {
+		return "LIKE_POST".equals(type) || "LIKE_COMMENT".equals(type) || "FOLLOW".equals(type);
+	}
+
+	private void addNotificationForSave(Notification notification, LocalDateTime dedupWindow,
+			List<Notification> toSave) {
+		if (!isDedupableType(notification.getType())) {
+			toSave.add(notification);
+			return;
+		}
+
+		var existing = notificationRepository
+				.findFirstByUserIdAndActorIdAndTypeAndEntityIdAndCreatedAtAfterOrderByCreatedAtDesc(
+						notification.getUserId(), notification.getActorId(), notification.getType(),
+						notification.getEntityId(), dedupWindow);
+		if (existing.isEmpty()) {
+			toSave.add(notification);
+			return;
+		}
+
+		Notification merged = existing.get();
+		merged.setCreatedAt(notification.getCreatedAt());
+		merged.setRead(false);
+		toSave.add(merged);
 	}
 
 	private List<Notification> onPostCreated(EventEnvelope event) {

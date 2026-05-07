@@ -179,11 +179,13 @@ public class UserGrpcClient {
 				.getSuccess()).subscribeOn(Schedulers.boundedElastic()).retry(2);
 	}
 
-	public Mono<Boolean> createImprovementSuggestion(String authorId, String text) {
-		return Mono.fromCallable(() -> stub
-				.createImprovementSuggestion(
-						CreateImprovementSuggestionRequest.newBuilder().setAuthorId(authorId).setText(text).build())
-				.getSuccess()).subscribeOn(Schedulers.boundedElastic()).retry(2);
+	public Mono<Boolean> createImprovementSuggestion(String authorId, String text, String clientRequestId) {
+		CreateImprovementSuggestionRequest.Builder b = CreateImprovementSuggestionRequest.newBuilder()
+				.setAuthorId(authorId).setText(text);
+		if (clientRequestId != null && !clientRequestId.isBlank())
+			b.setClientRequestId(clientRequestId);
+		return Mono.fromCallable(() -> stub.createImprovementSuggestion(b.build()).getSuccess())
+				.subscribeOn(Schedulers.boundedElastic()).retry(2);
 	}
 
 	public Mono<ImprovementSuggestionListResponse> listImprovementSuggestions(String adminId) {
@@ -194,14 +196,16 @@ public class UserGrpcClient {
 	}
 
 	public Mono<Boolean> createUniversityProposal(String authorId, String name, String shortName, String subdomain,
-			String studentDomain, String employeeDomain, String city, String description, String iconUrl) {
-		return Mono
-				.fromCallable(() -> stub.createUniversityProposal(CreateUniversityProposalRequest.newBuilder()
-						.setAuthorId(authorId).setName(name).setShortName(shortName)
-						.setSubdomain(subdomain == null ? "" : subdomain).setStudentDomain(studentDomain)
-						.setEmployeeDomain(employeeDomain == null ? "" : employeeDomain)
-						.setCity(city == null ? "" : city).setDescription(description == null ? "" : description)
-						.setIconUrl(iconUrl == null ? "" : iconUrl).build()).getSuccess())
+			String studentDomain, String employeeDomain, String city, String description, String iconUrl,
+			String clientRequestId) {
+		CreateUniversityProposalRequest.Builder b = CreateUniversityProposalRequest.newBuilder().setAuthorId(authorId)
+				.setName(name).setShortName(shortName).setSubdomain(subdomain == null ? "" : subdomain)
+				.setStudentDomain(studentDomain).setEmployeeDomain(employeeDomain == null ? "" : employeeDomain)
+				.setCity(city == null ? "" : city).setDescription(description == null ? "" : description)
+				.setIconUrl(iconUrl == null ? "" : iconUrl);
+		if (clientRequestId != null && !clientRequestId.isBlank())
+			b.setClientRequestId(clientRequestId);
+		return Mono.fromCallable(() -> stub.createUniversityProposal(b.build()).getSuccess())
 				.subscribeOn(Schedulers.boundedElastic()).retry(2);
 	}
 
@@ -212,12 +216,13 @@ public class UserGrpcClient {
 				.subscribeOn(Schedulers.boundedElastic()).retry(2);
 	}
 
-	public Mono<Boolean> createFacultyProposal(String authorId, long universityId, String name, String shortName) {
-		return Mono
-				.fromCallable(() -> stub
-						.createFacultyProposal(CreateFacultyProposalRequest.newBuilder().setAuthorId(authorId)
-								.setUniversityId(universityId).setName(name).setShortName(shortName).build())
-						.getSuccess())
+	public Mono<Boolean> createFacultyProposal(String authorId, long universityId, String name, String shortName,
+			String clientRequestId) {
+		CreateFacultyProposalRequest.Builder b = CreateFacultyProposalRequest.newBuilder().setAuthorId(authorId)
+				.setUniversityId(universityId).setName(name).setShortName(shortName);
+		if (clientRequestId != null && !clientRequestId.isBlank())
+			b.setClientRequestId(clientRequestId);
+		return Mono.fromCallable(() -> stub.createFacultyProposal(b.build()).getSuccess())
 				.subscribeOn(Schedulers.boundedElastic()).retry(2);
 	}
 
@@ -237,13 +242,13 @@ public class UserGrpcClient {
 				.subscribeOn(Schedulers.boundedElastic()).retry(2);
 	}
 
-	public Mono<Boolean> createProgramProposal(String authorId, long facultyId, String name, String shortName) {
-		return Mono
-				.fromCallable(
-						() -> stub
-								.createProgramProposal(CreateProgramProposalRequest.newBuilder().setAuthorId(authorId)
-										.setFacultyId(facultyId).setName(name).setShortName(shortName).build())
-								.getSuccess())
+	public Mono<Boolean> createProgramProposal(String authorId, long facultyId, String name, String shortName,
+			String clientRequestId) {
+		CreateProgramProposalRequest.Builder b = CreateProgramProposalRequest.newBuilder().setAuthorId(authorId)
+				.setFacultyId(facultyId).setName(name).setShortName(shortName);
+		if (clientRequestId != null && !clientRequestId.isBlank())
+			b.setClientRequestId(clientRequestId);
+		return Mono.fromCallable(() -> stub.createProgramProposal(b.build()).getSuccess())
 				.subscribeOn(Schedulers.boundedElastic()).retry(2);
 	}
 

@@ -28,23 +28,23 @@ type Mutation {
     subscribe(targetUserId: ID!):     SubscribeResult!
     unsubscribe(targetUserId: ID!):   SubscribeResult!
 
-    createPost(input: CreatePostInput!): Post!
+    createPost(input: CreatePostInput!, clientRequestId: String): Post!
     editPost(postId: ID!, input: EditPostInput!): Post!
     deletePost(postId: ID!):             DeleteResult!
     likePost(postId: ID!):               LikeResult!
     unlikePost(postId: ID!):             LikeResult!
 
-    addComment(postId: ID!, content: String!, parentCommentId: ID): Comment!
+    addComment(postId: ID!, content: String!, parentCommentId: ID, clientRequestId: String): Comment!
     editComment(commentId: ID!, content: String!):  Comment!
     deleteComment(commentId: ID!):                  DeleteResult!
     likeComment(commentId: ID!):                    LikeResult!
     unlikeComment(commentId: ID!):                  LikeResult!
 
     createProgram(facultyId: ID!, name: String!, shortName: String!): Program!
-    createImprovementSuggestion(text: String!): AdminActionResult!
-    createUniversityProposal(input: UniversityProposalInput!): AdminActionResult!
-    createFacultyProposal(input: FacultyProposalInput!): AdminActionResult!
-    createProgramProposal(input: ProgramProposalInput!): AdminActionResult!
+    createImprovementSuggestion(text: String!, clientRequestId: String): AdminActionResult!
+    createUniversityProposal(input: UniversityProposalInput!, clientRequestId: String): AdminActionResult!
+    createFacultyProposal(input: FacultyProposalInput!, clientRequestId: String): AdminActionResult!
+    createProgramProposal(input: ProgramProposalInput!, clientRequestId: String): AdminActionResult!
     deleteAccount: DeleteResult!
     adminBanUser(input: BanUserInput!): AdminActionResult!
     adminGrantAdmin(targetUserId: ID!): User

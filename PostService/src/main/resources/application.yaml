@@ -57,20 +57,23 @@ app:
       post-events-dlq: post-events.dlq
   outbox:
     publish-delay-ms: 1500
+  idempotency:
+    retention-hours: 24
+    cleanup-cron: "0 30 3 * * *"
 
 grpc:
   server:
     port: 9091
-    permit-keep-alive-without-calls: false
-    permit-keep-alive-time: 30s
+    permit-keep-alive-without-calls: true
+    permit-keep-alive-time: 1s
   client:
     user-service:
       address: 'discovery:///user-service'
       negotiation-type: plaintext
       default-load-balancing-policy: round_robin
-      keep-alive-time: 60s
-      keep-alive-timeout: 10s
-      keep-alive-without-calls: false
+      keep-alive-time: 1s
+      keep-alive-timeout: 1s
+      keep-alive-without-calls: true
       enable-keep-alive: true
 
 eureka:

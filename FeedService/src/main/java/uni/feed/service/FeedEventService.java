@@ -218,7 +218,7 @@ public class FeedEventService {
 
 		redisRepository.removeFollowingRelation(subscriberId, targetUserId);
 
-		Map<String, Double> latestPosts = redisRepository.findLatestAuthorPostsWithScores(targetUserId, 0, 499);
+		Map<String, Double> latestPosts = redisRepository.findLatestAuthorPostsWithScores(targetUserId, 0, -1);
 		if (!latestPosts.isEmpty()) {
 			redisRepository.removePostsFromUserFeed(subscriberId, latestPosts.keySet());
 		}

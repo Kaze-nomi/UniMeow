@@ -48,8 +48,8 @@ app:
 grpc:
   server:
     port: 9095
-    permit-keep-alive-without-calls: false
-    permit-keep-alive-time: 30s
+    permit-keep-alive-without-calls: true
+    permit-keep-alive-time: 1s
 
 eureka:
   client:

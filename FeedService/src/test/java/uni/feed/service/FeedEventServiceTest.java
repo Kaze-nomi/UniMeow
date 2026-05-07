@@ -356,7 +356,7 @@ class FeedEventServiceTest {
 
 		Map<String, Double> latestPosts = Map.of("post1", 100.0, "post2", 200.0);
 		when(redisRepository.isEventProcessed(EVENT_ID)).thenReturn(false);
-		when(redisRepository.findLatestAuthorPostsWithScores(TARGET_USER_ID, 0, 499)).thenReturn(latestPosts);
+		when(redisRepository.findLatestAuthorPostsWithScores(TARGET_USER_ID, 0, -1)).thenReturn(latestPosts);
 
 		feedEventService.processRaw(json);
 

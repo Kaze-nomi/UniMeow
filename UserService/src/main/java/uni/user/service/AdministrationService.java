@@ -5,6 +5,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import uni.user.entity.FacultyProposal;
+import uni.user.entity.IdempotencyKey;
 import uni.user.entity.ImprovementSuggestion;
 import uni.user.entity.ProgramProposal;
 import uni.user.entity.University;
@@ -14,6 +15,7 @@ import uni.user.entity.UniversityProgram;
 import uni.user.entity.UniversityProposal;
 import uni.user.entity.User;
 import uni.user.repository.FacultyProposalRepository;
+import uni.user.repository.IdempotencyKeyRepository;
 import uni.user.repository.ImprovementSuggestionRepository;
 import uni.user.repository.ProgramProposalRepository;
 import uni.user.repository.UniversityDomainRepository;
@@ -40,16 +42,36 @@ public class AdministrationService {
 	private final UniversityDomainRepository universityDomainRepository;
 	private final UniversityFacultyRepository universityFacultyRepository;
 	private final UniversityProgramRepository universityProgramRepository;
+	private final IdempotencyKeyRepository idempotencyKeyRepository;
 	private final UserService userService;
 
+	private boolean isDuplicateRequest(String clientRequestId) {
+		if (clientRequestId == null || clientRequestId.isBlank()) {
+			return false;
+		}
+		return idempotencyKeyRepository.findById(clientRequestId).isPresent();
+	}
+
+	private void recordRequest(String clientRequestId, String entityId) {
+		if (clientRequestId == null || clientRequestId.isBlank()) {
+			return;
+		}
+		idempotencyKeyRepository.save(IdempotencyKey.builder().key(clientRequestId).entityId(entityId)
+				.createdAt(LocalDateTime.now()).build());
+	}
+
 	@Transactional
-	public void createSuggestion(UUID authorId, String text) {
+	public void createSuggestion(UUID authorId, String text, String clientRequestId) {
+		if (isDuplicateRequest(clientRequestId)) {
+			return;
+		}
 		ensureActiveUser(authorId);
 		if (text == null || text.isBlank()) {
 			throw new IllegalArgumentException("Suggestion text cannot be empty");
 		}
-		suggestionRepository.save(ImprovementSuggestion.builder().authorId(authorId).text(text.trim()).status("NEW")
-				.createdAt(LocalDateTime.now()).build());
+		ImprovementSuggestion saved = suggestionRepository.save(ImprovementSuggestion.builder().authorId(authorId)
+				.text(text.trim()).status("NEW").createdAt(LocalDateTime.now()).build());
+		recordRequest(clientRequestId, String.valueOf(saved.getId()));
 		log.info("Improvement suggestion created by user {}", authorId);
 	}
 
@@ -71,7 +93,11 @@ public class AdministrationService {
 
 	@Transactional
 	public void createUniversityProposal(UUID authorId, String name, String shortName, String subdomain,
-			String studentDomain, String employeeDomain, String city, String description, String iconUrl) {
+			String studentDomain, String employeeDomain, String city, String description, String iconUrl,
+			String clientRequestId) {
+		if (isDuplicateRequest(clientRequestId)) {
+			return;
+		}
 		ensureActiveUser(authorId);
 		if (name == null || name.isBlank()) {
 			throw new IllegalArgumentException("University name cannot be empty");
@@ -91,11 +117,12 @@ public class AdministrationService {
 		if (employeeDomain == null || employeeDomain.isBlank()) {
 			throw new IllegalArgumentException("Employee university domain cannot be empty");
 		}
-		universityProposalRepository.save(UniversityProposal.builder().authorId(authorId).name(name.trim())
-				.shortName(shortName.trim()).subdomain(subdomain.trim().toLowerCase())
+		UniversityProposal saved = universityProposalRepository.save(UniversityProposal.builder().authorId(authorId)
+				.name(name.trim()).shortName(shortName.trim()).subdomain(subdomain.trim().toLowerCase())
 				.studentDomain(studentDomain.trim().toLowerCase()).employeeDomain(employeeDomain.trim().toLowerCase())
 				.city(blankToNull(city)).description(blankToNull(description)).iconUrl(blankToNull(iconUrl))
 				.status("NEW").createdAt(LocalDateTime.now()).build());
+		recordRequest(clientRequestId, String.valueOf(saved.getId()));
 		log.info("University proposal '{}' submitted by user {}", name.trim(), authorId);
 	}
 
@@ -107,7 +134,11 @@ public class AdministrationService {
 	}
 
 	@Transactional
-	public void createFacultyProposal(UUID authorId, long universityId, String name, String shortName) {
+	public void createFacultyProposal(UUID authorId, long universityId, String name, String shortName,
+			String clientRequestId) {
+		if (isDuplicateRequest(clientRequestId)) {
+			return;
+		}
 		ensureActiveUser(authorId);
 		if (name == null || name.isBlank()) {
 			throw new IllegalArgumentException("Faculty name cannot be empty");
@@ -117,8 +148,10 @@ public class AdministrationService {
 		}
 		University university = universityRepository.findById(universityId)
 				.orElseThrow(() -> new IllegalArgumentException("University not found: " + universityId));
-		facultyProposalRepository.save(FacultyProposal.builder().authorId(authorId).university(university)
-				.name(name.trim()).shortName(shortName.trim()).status("NEW").createdAt(LocalDateTime.now()).build());
+		FacultyProposal saved = facultyProposalRepository
+				.save(FacultyProposal.builder().authorId(authorId).university(university).name(name.trim())
+						.shortName(shortName.trim()).status("NEW").createdAt(LocalDateTime.now()).build());
+		recordRequest(clientRequestId, String.valueOf(saved.getId()));
 		log.info("Faculty proposal '{}' submitted for university {} by user {}", shortName.trim(), universityId,
 				authorId);
 	}
@@ -131,7 +164,11 @@ public class AdministrationService {
 	}
 
 	@Transactional
-	public void createProgramProposal(UUID authorId, long facultyId, String name, String shortName) {
+	public void createProgramProposal(UUID authorId, long facultyId, String name, String shortName,
+			String clientRequestId) {
+		if (isDuplicateRequest(clientRequestId)) {
+			return;
+		}
 		ensureActiveUser(authorId);
 		if (name == null || name.isBlank()) {
 			throw new IllegalArgumentException("Program name cannot be empty");
@@ -141,9 +178,11 @@ public class AdministrationService {
 		}
 		UniversityFaculty faculty = universityFacultyRepository.findById(facultyId)
 				.orElseThrow(() -> new IllegalArgumentException("Faculty not found: " + facultyId));
-		programProposalRepository.save(ProgramProposal.builder().authorId(authorId).university(faculty.getUniversity())
-				.faculty(faculty).facultyName(faculty.getName()).facultyShortName(faculty.getShortName())
-				.name(name.trim()).shortName(shortName.trim()).status("NEW").createdAt(LocalDateTime.now()).build());
+		ProgramProposal saved = programProposalRepository
+				.save(ProgramProposal.builder().authorId(authorId).university(faculty.getUniversity()).faculty(faculty)
+						.facultyName(faculty.getName()).facultyShortName(faculty.getShortName()).name(name.trim())
+						.shortName(shortName.trim()).status("NEW").createdAt(LocalDateTime.now()).build());
+		recordRequest(clientRequestId, String.valueOf(saved.getId()));
 		log.info("Program proposal '{}' submitted for faculty {} by user {}", shortName.trim(), facultyId, authorId);
 	}
 

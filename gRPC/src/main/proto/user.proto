@@ -253,6 +253,7 @@ message ModerationResponse {
 message CreateImprovementSuggestionRequest {
     string author_id = 1;
     string text = 2;
+    optional string client_request_id = 3;
 }
 
 message ImprovementSuggestion {
@@ -286,6 +287,7 @@ message CreateUniversityProposalRequest {
     string city = 7;
     string description = 8;
     string icon_url = 9;
+    optional string client_request_id = 10;
 }
 
 message UniversityProposal {
@@ -324,6 +326,7 @@ message CreateFacultyProposalRequest {
     int64 university_id = 2;
     string name = 3;
     string short_name = 4;
+    optional string client_request_id = 5;
 }
 
 message FacultyProposal {
@@ -359,6 +362,7 @@ message CreateProgramProposalRequest {
     int64 faculty_id = 2;
     string name = 3;
     string short_name = 4;
+    optional string client_request_id = 5;
 }
 
 message ProgramProposal {

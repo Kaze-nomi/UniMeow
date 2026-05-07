@@ -278,11 +278,14 @@ function FeedPage({ currentUser, onNavigate, universitySlug, composeOpen, setCom
             <PostCard key={post.id} post={post} onNavigate={onNavigate} currentUser={currentUser} />
           ))}
           {hasMore && (
-            <div style={{ padding: 16, textAlign: 'center' }}>
-              <Button variant="secondary" onClick={() => loadFeed(isScopedFeed ? 'trending' : tab, cursor, universityId, facultyId, programId, isNoUniversityScope)} loading={loadingMore}>
-                Загрузить ещё
-              </Button>
-            </div>
+            <InfiniteSentinel
+              onIntersect={() => {
+                if (!loadingMore) {
+                  loadFeed(isScopedFeed ? 'trending' : tab, cursor, universityId, facultyId, programId, isNoUniversityScope);
+                }
+              }}
+              loading={loadingMore}
+            />
           )}
         </div>
       )}
@@ -329,14 +332,19 @@ function InlineCompose({ currentUser, onCreated, defaultTopicId }) {
   const submit = async () => {
     if ((!text.trim() && mediaFiles.length === 0) || busy || text.length > 1000) return;
     setBusy(true); setError('');
+    const submittedText = text.trim();
+    const submittedMediaFiles = mediaFiles;
+    setText('');
+    setMediaFiles([]);
     try {
       const tmpId = 'tmp-' + Date.now();
-      const optimisticMedia = mediaFiles.map(m => m.previewUrl);
+      const clientRequestId = API.newClientRequestId();
+      const optimisticMedia = submittedMediaFiles.map(m => m.previewUrl);
       const optimisticPost = {
         id: tmpId,
         author: currentUser,
         authorId: currentUser?.id,
-        content: text.trim(),
+        content: submittedText,
         mediaUrls: optimisticMedia,
         likesCount: 0,
         commentsCount: 0,
@@ -345,9 +353,11 @@ function InlineCompose({ currentUser, onCreated, defaultTopicId }) {
       };
       onCreated && onCreated(optimisticPost);
       try {
-        const mediaUrls = mediaFiles.length ? await Promise.all(mediaFiles.map(m => API.uploadFile(m.file, 'post-media'))) : [];
-        const input = { content: text.trim(), mediaUrls };
-        const d = await API.gql(API.M.createPost, { input });
+        const mediaUrls = submittedMediaFiles.length
+          ? await Promise.all(submittedMediaFiles.map(m => API.uploadFile(m.file, 'post-media')))
+          : [];
+        const input = { content: submittedText, mediaUrls };
+        const d = await API.gql(API.M.createPost, { input, clientRequestId });
         const newPost = {
           ...d.createPost,
           author: currentUser,
@@ -355,10 +365,11 @@ function InlineCompose({ currentUser, onCreated, defaultTopicId }) {
           commentsCount: 0,
           likedByMe: false,
         };
-        setText(''); setMediaFiles([]);
         onCreated && onCreated(newPost);
       } catch (innerErr) {
         onCreated && onCreated({ removeTmpId: tmpId });
+        setText(submittedText);
+        setMediaFiles(submittedMediaFiles);
         throw innerErr;
       }
     } catch (e) { setError(e.message || 'Не удалось опубликовать'); }
@@ -607,4 +618,26 @@ function TopicChipBar({ topics, currentId, onSelect }) {
   );
 }
 
-Object.assign(window, { FeedPage, InlineCompose, UniversityPicker, FacultyProgramBar });
+function InfiniteSentinel({ onIntersect, loading }) {
+  const ref = React.useRef(null);
+  const cbRef = React.useRef(onIntersect);
+  React.useEffect(() => { cbRef.current = onIntersect; }, [onIntersect]);
+  React.useEffect(() => {
+    const node = ref.current;
+    if (!node) return;
+    const observer = new IntersectionObserver(entries => {
+      for (const e of entries) {
+        if (e.isIntersecting) cbRef.current && cbRef.current();
+      }
+    }, { rootMargin: '600px 0px' });
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, []);
+  return (
+    <div ref={ref} style={{ padding: 24, textAlign: 'center', color: 'var(--text-muted)', fontSize: 13 }}>
+      {loading ? <Spinner size={18} /> : ''}
+    </div>
+  );
+}
+
+Object.assign(window, { FeedPage, InlineCompose, UniversityPicker, FacultyProgramBar, InfiniteSentinel });

@@ -212,8 +212,8 @@ class PostControllerTest {
 						.setShortName("PRG"))
 				.build();
 		when(userGrpcClient.getUserById(USER_ID)).thenReturn(Mono.just(fullProfile));
-		when(postGrpcClient.createPost(eq(USER_ID), eq("Hello!"), any(), eq(1L), eq(2L), eq(3L), isNull(), isNull()))
-				.thenReturn(Mono.just(buildPostResponse()));
+		when(postGrpcClient.createPost(eq(USER_ID), eq("Hello!"), any(), eq(1L), eq(2L), eq(3L), isNull(), isNull(),
+				any())).thenReturn(Mono.just(buildPostResponse()));
 
 		graphqlPost().bodyValue(
 				"{\"query\": \"mutation { createPost(input: { content: \\\"Hello!\\\", topicId: 1 }) { id content universityId topicId } }\"}")
@@ -240,13 +240,14 @@ class PostControllerTest {
 				.jsonPath("$.errors[0].message").value(v -> org.hamcrest.MatcherAssert.assertThat((String) v,
 						org.hamcrest.Matchers.containsString("Завершите регистрацию")));
 
-		verify(postGrpcClient, never()).createPost(any(), any(), any(), any(), any(), any(), any(), any());
+		verify(postGrpcClient, never()).createPost(any(), any(), any(), any(), any(), any(), any(), any(), any());
 	}
 
 	@Test
 	void create_post_returns_graphql_error_on_blank_content() {
-		when(postGrpcClient.createPost(any(), any(), any(), any(), any(), any(), any(), any())).thenReturn(Mono.error(
-				io.grpc.Status.INVALID_ARGUMENT.withDescription("content cannot be empty").asRuntimeException()));
+		when(postGrpcClient.createPost(any(), any(), any(), any(), any(), any(), any(), any(), any()))
+				.thenReturn(Mono.error(io.grpc.Status.INVALID_ARGUMENT.withDescription("content cannot be empty")
+						.asRuntimeException()));
 
 		graphqlPost().bodyValue("{\"query\": \"mutation { createPost(input: { content: \\\"\\\" }) { id } }\"}")
 				.exchange().expectStatus().isOk().expectBody().jsonPath("$.errors").isArray();
@@ -348,7 +349,7 @@ class PostControllerTest {
 
 	@Test
 	void add_comment_returns_comment_with_id_and_content() {
-		when(postGrpcClient.addComment(eq(POST_ID), eq(USER_ID), eq("Nice post!"), isNull()))
+		when(postGrpcClient.addComment(eq(POST_ID), eq(USER_ID), eq("Nice post!"), isNull(), any()))
 				.thenReturn(Mono.just(buildCommentResponse()));
 
 		graphqlPost().bodyValue(String.format(
@@ -359,7 +360,7 @@ class PostControllerTest {
 
 	@Test
 	void add_comment_returns_updated_at() {
-		when(postGrpcClient.addComment(eq(POST_ID), eq(USER_ID), eq("Nice post!"), isNull()))
+		when(postGrpcClient.addComment(eq(POST_ID), eq(USER_ID), eq("Nice post!"), isNull(), any()))
 				.thenReturn(Mono.just(buildCommentResponse()));
 
 		graphqlPost().bodyValue(String.format(
@@ -379,7 +380,7 @@ class PostControllerTest {
 
 	@Test
 	void add_comment_returns_graphql_error_when_post_not_found() {
-		when(postGrpcClient.addComment(any(), any(), any(), any()))
+		when(postGrpcClient.addComment(any(), any(), any(), any(), any()))
 				.thenReturn(Mono.error(io.grpc.Status.NOT_FOUND.asRuntimeException()));
 
 		graphqlPost().bodyValue(String.format(

@@ -54,7 +54,7 @@ function PostPage({ postId, currentUser, onNavigate }) {
     if (!commentText.trim() || !currentUser) return;
     setCommenting(true);
     try {
-      const d = await API.gql(API.M.addComment, { postId, content: commentText.trim(), parentCommentId: replyTo?.id || null });
+      const d = await API.gql(API.M.addComment, { postId, content: commentText.trim(), parentCommentId: replyTo?.id || null, clientRequestId: API.newClientRequestId() });
       const newComment = { ...d.addComment, likedByMe: false, likesCount: 0 };
       setComments(c => [newComment, ...c]);
       setPost(p => p ? { ...p, commentsCount: (p.commentsCount || 0) + 1 } : p);

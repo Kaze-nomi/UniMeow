@@ -8,6 +8,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import uni.post.entity.Comment;
 import uni.post.entity.CommentLike;
+import uni.post.entity.IdempotencyKey;
 import uni.post.entity.Post;
 import uni.post.exception.CommentNotFoundException;
 import uni.post.exception.PostNotFoundException;
@@ -16,6 +17,7 @@ import uni.post.record.CommentPageResult;
 import uni.post.record.CommentResult;
 import uni.post.repository.CommentLikeRepository;
 import uni.post.repository.CommentRepository;
+import uni.post.repository.IdempotencyKeyRepository;
 import uni.post.repository.PostRepository;
 
 import java.time.LocalDateTime;
@@ -35,13 +37,24 @@ public class CommentService {
 	private final CommentRepository commentRepository;
 	private final CommentLikeRepository commentLikeRepository;
 	private final PostRepository postRepository;
+	private final IdempotencyKeyRepository idempotencyKeyRepository;
 	private final OutboxService outboxService;
 	private final MentionResolver mentionResolver;
 
 	@Transactional
-	public CommentResult addComment(UUID postId, UUID authorId, String content, UUID parentCommentId) {
+	public CommentResult addComment(UUID postId, UUID authorId, String content, UUID parentCommentId,
+			String clientRequestId) {
 		if (content == null || content.isBlank()) {
 			throw new IllegalArgumentException("Comment content cannot be empty");
+		}
+
+		if (clientRequestId != null && !clientRequestId.isBlank()) {
+			var existing = idempotencyKeyRepository.findById(clientRequestId);
+			if (existing.isPresent()) {
+				UUID existingCommentId = UUID.fromString(existing.get().getEntityId());
+				return commentRepository.findById(existingCommentId).map(c -> new CommentResult(c, false)).orElseThrow(
+						() -> new CommentNotFoundException("Idempotent comment not found: " + existingCommentId));
+			}
 		}
 
 		Post post = postRepository.findById(postId)
@@ -63,6 +76,11 @@ public class CommentService {
 		Comment comment = commentRepository.save(Comment.builder().id(UUID.randomUUID()).postId(postId)
 				.authorId(authorId).parentCommentId(parentCommentId).content(content.trim()).createdAt(now)
 				.updatedAt(now).build());
+
+		if (clientRequestId != null && !clientRequestId.isBlank()) {
+			idempotencyKeyRepository.save(IdempotencyKey.builder().key(clientRequestId)
+					.entityId(comment.getId().toString()).createdAt(now).build());
+		}
 
 		post.setCommentsCount(post.getCommentsCount() + 1);
 		postRepository.save(post);

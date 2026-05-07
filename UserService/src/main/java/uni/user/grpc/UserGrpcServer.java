@@ -350,7 +350,8 @@ public class UserGrpcServer extends UserServiceGrpc.UserServiceImplBase {
 	public void createImprovementSuggestion(CreateImprovementSuggestionRequest req,
 			StreamObserver<ModerationResponse> obs) {
 		try {
-			administrationService.createSuggestion(UUID.fromString(req.getAuthorId()), req.getText());
+			administrationService.createSuggestion(UUID.fromString(req.getAuthorId()), req.getText(),
+					req.hasClientRequestId() ? req.getClientRequestId() : null);
 			obs.onNext(ModerationResponse.newBuilder().setSuccess(true).build());
 			obs.onCompleted();
 		} catch (SecurityException e) {
@@ -401,7 +402,8 @@ public class UserGrpcServer extends UserServiceGrpc.UserServiceImplBase {
 		try {
 			administrationService.createUniversityProposal(UUID.fromString(req.getAuthorId()), req.getName(),
 					req.getShortName(), req.getSubdomain(), req.getStudentDomain(), req.getEmployeeDomain(),
-					req.getCity(), req.getDescription(), req.getIconUrl());
+					req.getCity(), req.getDescription(), req.getIconUrl(),
+					req.hasClientRequestId() ? req.getClientRequestId() : null);
 			obs.onNext(ModerationResponse.newBuilder().setSuccess(true).build());
 			obs.onCompleted();
 		} catch (SecurityException e) {
@@ -457,7 +459,7 @@ public class UserGrpcServer extends UserServiceGrpc.UserServiceImplBase {
 	public void createFacultyProposal(CreateFacultyProposalRequest req, StreamObserver<ModerationResponse> obs) {
 		try {
 			administrationService.createFacultyProposal(UUID.fromString(req.getAuthorId()), req.getUniversityId(),
-					req.getName(), req.getShortName());
+					req.getName(), req.getShortName(), req.hasClientRequestId() ? req.getClientRequestId() : null);
 			obs.onNext(ModerationResponse.newBuilder().setSuccess(true).build());
 			obs.onCompleted();
 		} catch (SecurityException e) {
@@ -511,7 +513,7 @@ public class UserGrpcServer extends UserServiceGrpc.UserServiceImplBase {
 	public void createProgramProposal(CreateProgramProposalRequest req, StreamObserver<ModerationResponse> obs) {
 		try {
 			administrationService.createProgramProposal(UUID.fromString(req.getAuthorId()), req.getFacultyId(),
-					req.getName(), req.getShortName());
+					req.getName(), req.getShortName(), req.hasClientRequestId() ? req.getClientRequestId() : null);
 			obs.onNext(ModerationResponse.newBuilder().setSuccess(true).build());
 			obs.onCompleted();
 		} catch (SecurityException e) {

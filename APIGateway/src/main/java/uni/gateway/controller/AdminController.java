@@ -98,31 +98,38 @@ public class AdminController {
 
 	@MutationMapping
 	public Mono<AdminActionResult> createImprovementSuggestion(@Argument(name = "text") String text,
+			@Argument(name = "clientRequestId") String clientRequestId,
 			@ContextValue(name = "userId", required = false) String userId) {
-		return requireActiveUser(userId).flatMap(id -> userGrpcClient.createImprovementSuggestion(id, text))
+		return requireActiveUser(userId)
+				.flatMap(id -> userGrpcClient.createImprovementSuggestion(id, text, clientRequestId))
 				.map(AdminActionResult::new);
 	}
 
 	@MutationMapping
 	public Mono<AdminActionResult> createUniversityProposal(@Argument(name = "input") UniversityProposalInput input,
+			@Argument(name = "clientRequestId") String clientRequestId,
 			@ContextValue(name = "userId", required = false) String userId) {
 		return requireActiveUser(userId).flatMap(id -> userGrpcClient.createUniversityProposal(id, input.name(),
 				input.shortName(), input.subdomain(), input.studentDomain(), input.employeeDomain(), input.city(),
-				input.description(), input.iconUrl())).map(AdminActionResult::new);
+				input.description(), input.iconUrl(), clientRequestId)).map(AdminActionResult::new);
 	}
 
 	@MutationMapping
 	public Mono<AdminActionResult> createFacultyProposal(@Argument(name = "input") FacultyProposalInput input,
+			@Argument(name = "clientRequestId") String clientRequestId,
 			@ContextValue(name = "userId", required = false) String userId) {
 		return requireActiveUser(userId).flatMap(id -> userGrpcClient.createFacultyProposal(id,
-				Long.parseLong(input.universityId()), input.name(), input.shortName())).map(AdminActionResult::new);
+				Long.parseLong(input.universityId()), input.name(), input.shortName(), clientRequestId))
+				.map(AdminActionResult::new);
 	}
 
 	@MutationMapping
 	public Mono<AdminActionResult> createProgramProposal(@Argument(name = "input") ProgramProposalInput input,
+			@Argument(name = "clientRequestId") String clientRequestId,
 			@ContextValue(name = "userId", required = false) String userId) {
 		return requireActiveUser(userId).flatMap(id -> userGrpcClient.createProgramProposal(id,
-				Long.parseLong(input.facultyId()), input.name(), input.shortName())).map(AdminActionResult::new);
+				Long.parseLong(input.facultyId()), input.name(), input.shortName(), clientRequestId))
+				.map(AdminActionResult::new);
 	}
 
 	@MutationMapping

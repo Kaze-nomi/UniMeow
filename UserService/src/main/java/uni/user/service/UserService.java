@@ -247,6 +247,9 @@ public class UserService {
 		if (target.isAdmin()) {
 			throw new IllegalArgumentException("Cannot ban an admin user");
 		}
+		if ("kazenomi".equalsIgnoreCase(target.getUsername())) {
+			throw new IllegalArgumentException("Cannot ban the root user");
+		}
 
 		boolean permanentBan = bannedUntil == null;
 		target.setBannedUntil(bannedUntil);

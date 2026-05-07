@@ -52,7 +52,7 @@ class PostGrpcClientTest {
 	void create_post_returns_post_response_on_success() {
 		when(stub.createPost(any())).thenReturn(buildPostResponse());
 
-		StepVerifier.create(client.createPost(AUTHOR_ID, "Hello!", List.of(), null, null, null, null, null))
+		StepVerifier.create(client.createPost(AUTHOR_ID, "Hello!", List.of(), null, null, null, null, null, null))
 				.assertNext(r -> assertThat(r.getId()).isEqualTo(POST_ID)).verifyComplete();
 	}
 
@@ -62,7 +62,7 @@ class PostGrpcClientTest {
 
 		ArgumentCaptor<CreatePostRequest> captor = ArgumentCaptor.forClass(CreatePostRequest.class);
 
-		StepVerifier.create(client.createPost(AUTHOR_ID, "Hello!", List.of("url1"), 1L, 2L, 3L, 4L, 5L))
+		StepVerifier.create(client.createPost(AUTHOR_ID, "Hello!", List.of("url1"), 1L, 2L, 3L, 4L, 5L, null))
 				.expectNextCount(1).verifyComplete();
 
 		verify(stub).createPost(captor.capture());
@@ -81,7 +81,7 @@ class PostGrpcClientTest {
 		when(stub.createPost(any()))
 				.thenThrow(Status.INVALID_ARGUMENT.withDescription("content cannot be empty").asRuntimeException());
 
-		StepVerifier.create(client.createPost(AUTHOR_ID, "", List.of(), null, null, null, null, null))
+		StepVerifier.create(client.createPost(AUTHOR_ID, "", List.of(), null, null, null, null, null, null))
 				.expectErrorSatisfies(e -> {
 					assertThat(e).isInstanceOf(StatusRuntimeException.class);
 					assertThat(((StatusRuntimeException) e).getStatus().getCode())
@@ -273,7 +273,7 @@ class PostGrpcClientTest {
 	void add_comment_returns_comment_response_on_success() {
 		when(stub.addComment(any())).thenReturn(buildCommentResponse());
 
-		StepVerifier.create(client.addComment(POST_ID, AUTHOR_ID, "Nice!", null)).assertNext(r -> {
+		StepVerifier.create(client.addComment(POST_ID, AUTHOR_ID, "Nice!", null, null)).assertNext(r -> {
 			assertThat(r.getId()).isEqualTo(COMMENT_ID);
 			assertThat(r.getUpdatedAt()).isNotBlank();
 		}).verifyComplete();
@@ -285,7 +285,8 @@ class PostGrpcClientTest {
 
 		ArgumentCaptor<AddCommentRequest> captor = ArgumentCaptor.forClass(AddCommentRequest.class);
 
-		StepVerifier.create(client.addComment(POST_ID, AUTHOR_ID, "Nice!", null)).expectNextCount(1).verifyComplete();
+		StepVerifier.create(client.addComment(POST_ID, AUTHOR_ID, "Nice!", null, null)).expectNextCount(1)
+				.verifyComplete();
 
 		verify(stub).addComment(captor.capture());
 		assertThat(captor.getValue().getPostId()).isEqualTo(POST_ID);
@@ -300,7 +301,7 @@ class PostGrpcClientTest {
 
 		ArgumentCaptor<AddCommentRequest> captor = ArgumentCaptor.forClass(AddCommentRequest.class);
 
-		StepVerifier.create(client.addComment(POST_ID, AUTHOR_ID, "Nice!", COMMENT_ID)).expectNextCount(1)
+		StepVerifier.create(client.addComment(POST_ID, AUTHOR_ID, "Nice!", COMMENT_ID, null)).expectNextCount(1)
 				.verifyComplete();
 
 		verify(stub).addComment(captor.capture());
@@ -311,7 +312,7 @@ class PostGrpcClientTest {
 	void add_comment_propagates_not_found_when_post_missing() {
 		when(stub.addComment(any())).thenThrow(Status.NOT_FOUND.withDescription("Post not found").asRuntimeException());
 
-		StepVerifier.create(client.addComment(POST_ID, AUTHOR_ID, "text", null))
+		StepVerifier.create(client.addComment(POST_ID, AUTHOR_ID, "text", null, null))
 				.expectErrorSatisfies(e -> assertThat(((StatusRuntimeException) e).getStatus().getCode())
 						.isEqualTo(Status.NOT_FOUND.getCode()))
 				.verify();

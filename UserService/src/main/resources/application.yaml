@@ -63,12 +63,15 @@ app:
       user-events-dlq: user-events.dlq
   outbox:
     publish-delay-ms: 1500
+  idempotency:
+    retention-hours: 24
+    cleanup-cron: "0 30 3 * * *"
 
 grpc:
   server:
     port: 9090
-    permit-keep-alive-without-calls: false
-    permit-keep-alive-time: 30s
+    permit-keep-alive-without-calls: true
+    permit-keep-alive-time: 1s
 
 eureka:
   client:

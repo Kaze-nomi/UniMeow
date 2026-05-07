@@ -579,7 +579,8 @@ function AppModals() {
           city: null,
           description: null,
           iconUrl: uniForm.iconUrl || null
-        }
+        },
+        clientRequestId: API.newClientRequestId(),
       });
       setSubmitted(true);
       window.dispatchEvent(new CustomEvent('um-admin-refresh'));
@@ -590,7 +591,7 @@ function AppModals() {
   const submitSuggestion = async () => {
     setLoading(true); setError('');
     try {
-      await API.gql(API.M.createImprovementSuggestion, { text: suggestion.trim() });
+      await API.gql(API.M.createImprovementSuggestion, { text: suggestion.trim(), clientRequestId: API.newClientRequestId() });
       setSubmitted(true);
       window.dispatchEvent(new CustomEvent('um-admin-refresh'));
     } catch (e) {
@@ -605,7 +606,8 @@ function AppModals() {
           universityId: facultyForm.universityId,
           name: facultyForm.facultyName.trim(),
           shortName: facultyForm.shortName.trim()
-        }
+        },
+        clientRequestId: API.newClientRequestId(),
       });
       setSubmitted(true);
       window.dispatchEvent(new CustomEvent('um-admin-refresh'));
@@ -621,7 +623,8 @@ function AppModals() {
           facultyId: programForm.facultyId,
           name: programForm.name.trim(),
           shortName: programForm.shortName.trim()
-        }
+        },
+        clientRequestId: API.newClientRequestId(),
       });
       setSubmitted(true);
       window.dispatchEvent(new CustomEvent('um-admin-refresh'));

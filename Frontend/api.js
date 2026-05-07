@@ -14,29 +14,21 @@
     return _refreshing;
   }
 
-  const NON_IDEMPOTENT_OPS = [
-    'createPost', 'addComment',
-    'createImprovementSuggestion',
-    'createUniversityProposal', 'createFacultyProposal', 'createProgramProposal',
-    'createProgram',
-    'verifyEmailCode', 'sendVerificationCode',
-  ];
-  function isNonIdempotent(query) {
-    return NON_IDEMPOTENT_OPS.some(op => query.includes(op + '('));
-  }
+  const TRANSPORT_ERROR_RE = /end-of-stream|stream closed|connection closed|rst_stream|http2 exception|mid-frame|goaway|deadline.exceeded|upstream/i;
+
   function isTransientGqlError(err) {
     if (!err?.gqlErrors) return false;
     return err.gqlErrors.some(e => {
       const code = e.extensions?.code;
       const grpc = e.extensions?.grpcStatus;
       if (code === 'UPSTREAM_ERROR' || code === 'SERVICE_UNAVAILABLE' || code === 'GATEWAY_TIMEOUT') return true;
-      if (grpc === 'INTERNAL' || grpc === 'UNAVAILABLE' || grpc === 'UNKNOWN') return true;
-      if (typeof e.message === 'string' && /end-of-stream|stream closed|connection closed|rst_stream/i.test(e.message)) return true;
+      if (grpc === 'INTERNAL' || grpc === 'UNAVAILABLE' || grpc === 'UNKNOWN' || grpc === 'DEADLINE_EXCEEDED') return true;
+      if (typeof e.message === 'string' && TRANSPORT_ERROR_RE.test(e.message)) return true;
       return false;
     });
   }
 
-  async function gql(query, variables = {}, _authRetry = true, _transportRetries = 1) {
+  async function gql(query, variables = {}, _authRetry = true, _transportRetries = 3) {
     if (window.MOCK?.enabled) {
       const mocked = await window.MOCK.gql(query, variables);
       if (mocked !== undefined) return mocked;
@@ -61,8 +53,8 @@
     }
 
     if (networkErr) {
-      const aborted = networkErr.name === 'AbortError';
-      if (_transportRetries > 0 && (aborted || !isNonIdempotent(query))) {
+      if (_transportRetries > 0) {
+        await new Promise(r => setTimeout(r, 200));
         return gql(query, variables, _authRetry, _transportRetries - 1);
       }
       throw networkErr;
@@ -93,7 +85,8 @@
       }
       const err = new Error(data.errors.map(e => e.message).join(', '));
       err.gqlErrors = data.errors;
-      if (_transportRetries > 0 && !isNonIdempotent(query) && isTransientGqlError(err)) {
+      if (_transportRetries > 0 && isTransientGqlError(err)) {
+        await new Promise(r => setTimeout(r, 200));
         return gql(query, variables, _authRetry, _transportRetries - 1);
       }
       throw err;
@@ -143,21 +136,21 @@
     unsubscribe: `mutation($id:ID!) { unsubscribe(targetUserId:$id) { success } }`,
     adminGrantAdmin: `mutation($targetUserId:ID!) { adminGrantAdmin(targetUserId:$targetUserId) { id username name surname avatarUrl coverUrl bio status emailGoogle emailUniversity university { id name shortName subdomain iconUrl } faculty { id name shortName } program { id facultyId name shortName } course educationLevel graduationYear isStudentVerified isEmployeeVerified isAdmin isBanned bannedUntil banReason createdAt } }`,
     deleteAccount: `mutation { deleteAccount { success } }`,
-    createPost: `mutation($input:CreatePostInput!) { createPost(input:$input) { id content authorId mediaUrls createdAt } }`,
+    createPost: `mutation($input:CreatePostInput!,$clientRequestId:String) { createPost(input:$input,clientRequestId:$clientRequestId) { id content authorId mediaUrls createdAt } }`,
     editPost: `mutation($postId:ID!,$input:EditPostInput!) { editPost(postId:$postId,input:$input) { id content mediaUrls updatedAt } }`,
     deletePost: `mutation($postId:ID!) { deletePost(postId:$postId) { success } }`,
     likePost: `mutation($postId:ID!) { likePost(postId:$postId) { success } }`,
     unlikePost: `mutation($postId:ID!) { unlikePost(postId:$postId) { success } }`,
-    addComment: `mutation($postId:ID!,$content:String!,$parentCommentId:ID) { addComment(postId:$postId,content:$content,parentCommentId:$parentCommentId) { id content authorId parentCommentId createdAt updatedAt } }`,
+    addComment: `mutation($postId:ID!,$content:String!,$parentCommentId:ID,$clientRequestId:String) { addComment(postId:$postId,content:$content,parentCommentId:$parentCommentId,clientRequestId:$clientRequestId) { id content authorId parentCommentId createdAt updatedAt } }`,
     editComment: `mutation($commentId:ID!,$content:String!) { editComment(commentId:$commentId,content:$content) { id content updatedAt } }`,
     deleteComment: `mutation($commentId:ID!) { deleteComment(commentId:$commentId) { success } }`,
     likeComment: `mutation($commentId:ID!) { likeComment(commentId:$commentId) { success } }`,
     unlikeComment: `mutation($commentId:ID!) { unlikeComment(commentId:$commentId) { success } }`,
     createProgram: `mutation($facultyId:ID!,$name:String!,$shortName:String!) { createProgram(facultyId:$facultyId,name:$name,shortName:$shortName) { id facultyId name shortName } }`,
-    createImprovementSuggestion: `mutation($text:String!) { createImprovementSuggestion(text:$text) { success } }`,
-    createUniversityProposal: `mutation($input:UniversityProposalInput!) { createUniversityProposal(input:$input) { success } }`,
-    createFacultyProposal: `mutation($input:FacultyProposalInput!) { createFacultyProposal(input:$input) { success } }`,
-    createProgramProposal: `mutation($input:ProgramProposalInput!) { createProgramProposal(input:$input) { success } }`,
+    createImprovementSuggestion: `mutation($text:String!,$clientRequestId:String) { createImprovementSuggestion(text:$text,clientRequestId:$clientRequestId) { success } }`,
+    createUniversityProposal: `mutation($input:UniversityProposalInput!,$clientRequestId:String) { createUniversityProposal(input:$input,clientRequestId:$clientRequestId) { success } }`,
+    createFacultyProposal: `mutation($input:FacultyProposalInput!,$clientRequestId:String) { createFacultyProposal(input:$input,clientRequestId:$clientRequestId) { success } }`,
+    createProgramProposal: `mutation($input:ProgramProposalInput!,$clientRequestId:String) { createProgramProposal(input:$input,clientRequestId:$clientRequestId) { success } }`,
     adminBanUser: `mutation($input:BanUserInput!) { adminBanUser(input:$input) { success } }`,
     adminDeletePost: `mutation($postId:ID!) { adminDeletePost(postId:$postId) { success } }`,
     adminDeleteComment: `mutation($commentId:ID!) { adminDeleteComment(commentId:$commentId) { success } }`,
@@ -264,9 +257,14 @@
     return '/profile/' + (user?.id || '');
   }
 
+  function newClientRequestId() {
+    if (typeof crypto !== 'undefined' && crypto.randomUUID) return crypto.randomUUID();
+    return 'crid-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 10);
+  }
+
   window.API = {
     gql, Q, M, getCachedUser, invalidateUser, uploadFile, prepareUploadFile, resolveAssetUrl,
-    universitySlug, profileUrl,
+    universitySlug, profileUrl, newClientRequestId,
     logout: () => fetch(BASE + '/api/auth/logout', { method: 'POST', credentials: 'include' }),
     loginWithGoogle: () => { window.location.href = BASE + '/oauth2/authorization/google'; },
     baseUrl: BASE,

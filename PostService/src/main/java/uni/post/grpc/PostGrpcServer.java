@@ -31,7 +31,8 @@ public class PostGrpcServer extends PostServiceGrpc.PostServiceImplBase {
 			PostResult result = postService.createPost(UUID.fromString(req.getAuthorId()), req.getContent(),
 					req.getMediaUrlsList(), req.hasUniversityId() ? req.getUniversityId() : null,
 					req.hasFacultyId() ? req.getFacultyId() : null, req.hasProgramId() ? req.getProgramId() : null,
-					req.hasTopicId() ? req.getTopicId() : null, req.hasParentTopicId() ? req.getParentTopicId() : null);
+					req.hasTopicId() ? req.getTopicId() : null, req.hasParentTopicId() ? req.getParentTopicId() : null,
+					req.hasClientRequestId() ? req.getClientRequestId() : null);
 			obs.onNext(toProto(result));
 			obs.onCompleted();
 		} catch (IllegalArgumentException e) {
@@ -177,7 +178,8 @@ public class PostGrpcServer extends PostServiceGrpc.PostServiceImplBase {
 					UUID.fromString(req.getAuthorId()), req.getContent(),
 					req.hasParentCommentId() && !req.getParentCommentId().isBlank()
 							? UUID.fromString(req.getParentCommentId())
-							: null);
+							: null,
+					req.hasClientRequestId() ? req.getClientRequestId() : null);
 			obs.onNext(toProto(comment));
 			obs.onCompleted();
 		} catch (PostNotFoundException e) {

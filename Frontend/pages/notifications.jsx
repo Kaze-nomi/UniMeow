@@ -141,16 +141,7 @@ function NotificationsPage({ currentUser, onNavigate }) {
       </div>
 
       {notifications.length < total && (
-        <div style={{ display: 'flex', justifyContent: 'center', padding: '20px 0' }}>
-          <button onClick={loadMore} disabled={loading} style={{
-            padding: '10px 28px', borderRadius: 9999,
-            border: '1px solid var(--border)', background: 'transparent',
-            color: 'var(--accent)', fontFamily: 'inherit', fontSize: 14, fontWeight: 600,
-            cursor: loading ? 'default' : 'pointer',
-          }}>
-            {loading ? <Spinner size={16} /> : 'Загрузить ещё'}
-          </button>
-        </div>
+        <InfiniteSentinel onIntersect={() => { if (!loading) loadMore(); }} loading={loading} />
       )}
     </div>
   );

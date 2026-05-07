@@ -8,6 +8,7 @@ import org.springframework.data.jpa.repository.Query;
 import uni.notification.entity.Notification;
 
 import java.time.LocalDateTime;
+import java.util.Optional;
 import java.util.UUID;
 
 public interface NotificationRepository extends JpaRepository<Notification, UUID> {
@@ -23,4 +24,7 @@ public interface NotificationRepository extends JpaRepository<Notification, UUID
 	@Modifying
 	@Query("DELETE FROM Notification n WHERE n.createdAt < :cutoff")
 	int deleteOlderThan(LocalDateTime cutoff);
+
+	Optional<Notification> findFirstByUserIdAndActorIdAndTypeAndEntityIdAndCreatedAtAfterOrderByCreatedAtDesc(
+			UUID userId, UUID actorId, String type, String entityId, LocalDateTime after);
 }
