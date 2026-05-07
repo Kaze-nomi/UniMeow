@@ -601,9 +601,10 @@ query {
 - Уведомления: страница `/notifications` со списком уведомлений, бейдж непрочитанных на иконке колокольчика в боковом меню. Время отображается в таймзоне пользователя.
 - Дефолтный аватар: если у пользователя нет аватарки, frontend показывает цветной аватар с инициалами.
 - Email подтверждения: письмо содержит preview text «Ваш код для подтверждения университетского email...» и HTML-шаблон с кодом подтверждения.
-- GraphQL-таймаут запроса: 30 секунд. При сетевой ошибке, abort или транспортной ошибке апстрима (`UPSTREAM_ERROR`, `UNAVAILABLE`, `INTERNAL`, `UNKNOWN`, `DEADLINE_EXCEEDED`, `end-of-stream`, `http2 exception`, и т.д.) клиент автоматически повторяет ЛЮБОЙ запрос до 3 раз с задержкой 200 мс. Для не-идемпотентных мутаций (`createPost`, `addComment`, `create*Proposal`, `createImprovementSuggestion`) безопасность ретраев обеспечена идемпотентным ключом `clientRequestId` (UUID) — backend хранит mapping `clientRequestId → entityId` и на повторный запрос возвращает уже созданную сущность, не создавая дубль. Если все 3 попытки на мутацию провалились с транспортной ошибкой, фронтенд молча возвращает фейковый success — backend почти наверняка выполнил операцию, реальные данные подгрузятся при следующем обновлении.
-- gRPC-вызовы из API Gateway имеют дедлайн (см. `GrpcDeadlineInterceptor`). Подвисший backend не задерживает GraphQL-запрос дольше этого времени и возвращает `DEADLINE_EXCEEDED` → 504 `GATEWAY_TIMEOUT`. Длительные и неуспешные gRPC-вызовы логируются на gateway, длительные GraphQL-запросы (>1с) логируются с операцией.
-- gRPC keep-alive: клиент пингует канал каждую секунду (включая idle), таймаут пинга 1 секунда. Сервер разрешает пинги не реже раза в секунду без вызовов. Это позволяет обнаруживать и пересоздавать молчаливо умершие соединения почти мгновенно — компенсирует случайные обрывы idle-flow в Docker network.
+- GraphQL-таймаут запроса: 30 секунд на frontend. При сетевой ошибке, abort или временной ошибке апстрима (`UPSTREAM_ERROR`, `SERVICE_UNAVAILABLE`, `GATEWAY_TIMEOUT`, `UNAVAILABLE`, `INTERNAL`, `UNKNOWN`, `DEADLINE_EXCEEDED`, `end-of-stream`, `http2 exception`, `rst_stream`, `goaway`, и т.д.) клиент автоматически повторяет GraphQL-запрос до 3 раз с задержкой 200 мс. При истекшем access token выполняется один auth-retry после успешного `/api/auth/refresh`.
+- gRPC-вызовы из API Gateway имеют client-side дедлайн (см. `GrpcDeadlineInterceptor`, `APP_GRPC_DEADLINE_MS`, default 10 секунд). Чтение профилей пользователей для GraphQL (`GetUserById`/`GetUserByUsername`) имеет отдельный короткий дедлайн `APP_GRPC_USER_READ_DEADLINE_MS` (default 2 секунды), чтобы вторичная гидрация авторов не держала ленту до глобального дедлайна. Длительные и неуспешные gRPC-вызовы логируются на gateway, длительные GraphQL-запросы (>1с) логируются с операцией.
+- gRPC transport в API Gateway использует `grpc-netty-shaded`, чтобы gRPC HTTP/2 Netty был изолирован от Reactor Netty, используемого WebFlux HTTP-сервером.
+- gRPC keep-alive: клиент пингует канал раз в 30 секунд (включая idle), таймаут пинга 5 секунд. Сервер разрешает idle-пинги, но не чаще чем раз в 20 секунд. Keepalive используется только для обнаружения мёртвого TCP/HTTP2 соединения, а не как retry-механизм.
 
 ---
 
@@ -862,17 +863,6 @@ markAllNotificationsRead: Boolean!
 ---
 
 ## 20. Известные проблемы и ограничения
-
-### Транспорт gRPC между gateway и сервисами
-
-В контейнерной среде наблюдаются случайные транспортные ошибки gRPC: `INTERNAL: Encountered end-of-stream mid-frame`, `INTERNAL: http2 exception` и эпизодические зависания. Симптомы: подавляющее большинство запросов проходят за 200–300 мс, но небольшая доля случайно подвисает или возвращает ошибку, при этом сервер уже успел выполнить операцию. Применённые меры:
-
-- gRPC keepalive: клиент пингует канал каждую секунду (включая idle), таймаут 1 секунда; сервер разрешает пинги не чаще раза в секунду без вызовов. Дохлые соединения обнаруживаются и переустанавливаются почти мгновенно.
-- Глобальный gRPC client-side дедлайн через `GrpcDeadlineInterceptor` — подвисший backend возвращает `DEADLINE_EXCEEDED` → 504 `GATEWAY_TIMEOUT`, не блокирует поток `boundedElastic`. Длительные (≥ настройки) и неуспешные gRPC-вызовы логируются.
-- Все мутации API Gateway имеют `.retry(2)` (`PostGrpcClient`, `UserGrpcClient`).
-- Идемпотентные ключи запросов: для `createPost`, `addComment`, `createImprovementSuggestion`, `createUniversityProposal`, `createFacultyProposal`, `createProgramProposal` фронтенд генерирует UUID `clientRequestId` и передаёт его в input GraphQL-мутации. `PostService` и `UserService` хранят таблицу `idempotency_keys (key PRIMARY KEY, entity_id, created_at)`. На повторный запрос с тем же ключом возвращается ранее созданная сущность, новой не создаётся. Это позволяет безопасно ретраить эти мутации без дублей. Записи старше `app.idempotency.retention-hours` (по умолчанию 24 часа) ежедневно удаляются `IdempotencyKeyCleanupService` по cron `app.idempotency.cleanup-cron` (по умолчанию 03:30).
-- Frontend ретраит ВСЕ запросы (queries и mutations) до 3 раз с задержкой 200 мс при сетевой ошибке, abort, `UPSTREAM_ERROR`, `UNAVAILABLE`, `INTERNAL`, `UNKNOWN`, `DEADLINE_EXCEEDED` или сообщениях про `end-of-stream`/`http2 exception`/`stream closed`/`connection closed`/`rst_stream`/`goaway`. Для мутаций безопасно благодаря идемпотентным ключам и `.retry(2)` на gRPC-уровне.
-- Если все 3 попытки провалились, фронтенд показывает ошибку пользователю (как и раньше). Frontend retry — только для мгновенного автоматического восстановления при флапающем транспорте; ситуация когда даже после 3 попыток ничего не получилось, считается реально проблемной и должна быть видна.
 
 ### Курсорная пагинация trending feed
 

@@ -32,7 +32,7 @@ public class FeedGrpcClient {
 			builder.setTopicId(topicId);
 		}
 
-		return Mono.fromCallable(() -> stub.getFeed(builder.build())).subscribeOn(Schedulers.boundedElastic()).retry(2);
+		return Mono.fromCallable(() -> stub.getFeed(builder.build())).subscribeOn(Schedulers.boundedElastic());
 	}
 
 	public Mono<GetFeedResponse> getUniversityFeed(FeedType feedType, String userId, Long cursor, int size,
@@ -49,6 +49,6 @@ public class FeedGrpcClient {
 		if (cursor != null)
 			builder.setCursor(cursor);
 
-		return Mono.fromCallable(() -> stub.getFeed(builder.build())).subscribeOn(Schedulers.boundedElastic()).retry(2);
+		return Mono.fromCallable(() -> stub.getFeed(builder.build())).subscribeOn(Schedulers.boundedElastic());
 	}
 }

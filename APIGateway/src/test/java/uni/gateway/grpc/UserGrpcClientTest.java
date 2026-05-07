@@ -15,12 +15,13 @@ import uni.grpc.user.FacultyListResponse;
 import uni.grpc.user.ListFacultiesRequest;
 import uni.grpc.user.UniversityListResponse;
 
+import java.util.concurrent.TimeUnit;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.when;
+import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
 class UserGrpcClientTest {
@@ -36,6 +37,8 @@ class UserGrpcClientTest {
 	void setUp() {
 		client = new UserGrpcClient();
 		ReflectionTestUtils.setField(client, "stub", stub);
+		ReflectionTestUtils.setField(client, "userReadDeadlineMs", 2000L);
+		lenient().when(stub.withDeadlineAfter(anyLong(), any(TimeUnit.class))).thenReturn(stub);
 	}
 
 	@Test

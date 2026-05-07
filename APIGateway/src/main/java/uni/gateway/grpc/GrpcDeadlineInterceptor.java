@@ -11,6 +11,7 @@ import io.grpc.MethodDescriptor;
 import io.grpc.Status;
 import lombok.extern.slf4j.Slf4j;
 import net.devh.boot.grpc.client.interceptor.GrpcGlobalClientInterceptor;
+import org.springframework.beans.factory.annotation.Value;
 
 import java.util.concurrent.TimeUnit;
 
@@ -18,14 +19,17 @@ import java.util.concurrent.TimeUnit;
 @GrpcGlobalClientInterceptor
 public class GrpcDeadlineInterceptor implements ClientInterceptor {
 
-	private static final long DEADLINE_MS = 10_000L;
-	private static final long SLOW_THRESHOLD_MS = 8_000L;
+	@Value("${app.grpc.deadline-ms:10000}")
+	private long defaultDeadlineMs;
+
+	@Value("${app.grpc.slow-threshold-ms:1000}")
+	private long slowThresholdMs;
 
 	@Override
 	public <ReqT, RespT> ClientCall<ReqT, RespT> interceptCall(MethodDescriptor<ReqT, RespT> method,
 			CallOptions callOptions, Channel next) {
 		CallOptions opts = callOptions.getDeadline() == null
-				? callOptions.withDeadlineAfter(DEADLINE_MS, TimeUnit.MILLISECONDS)
+				? callOptions.withDeadlineAfter(defaultDeadlineMs, TimeUnit.MILLISECONDS)
 				: callOptions;
 		long start = System.nanoTime();
 		String methodName = method.getFullMethodName();
@@ -39,7 +43,7 @@ public class GrpcDeadlineInterceptor implements ClientInterceptor {
 						if (!status.isOk()) {
 							log.warn("gRPC call {} failed in {}ms: code={} desc={}", methodName, durMs,
 									status.getCode(), status.getDescription());
-						} else if (durMs >= SLOW_THRESHOLD_MS) {
+						} else if (durMs >= slowThresholdMs) {
 							log.warn("gRPC slow call {} took {}ms", methodName, durMs);
 						}
 						super.onClose(status, trailers);

@@ -16,17 +16,17 @@ public class NotificationGrpcClient {
 		return Mono
 				.fromCallable(() -> stub.getNotifications(
 						GetNotificationsRequest.newBuilder().setUserId(userId).setPage(page).setSize(size).build()))
-				.subscribeOn(Schedulers.boundedElastic()).retry(2);
+				.subscribeOn(Schedulers.boundedElastic());
 	}
 
 	public Mono<MarkAllReadResponse> markAllRead(String userId) {
 		return Mono.fromCallable(() -> stub.markAllRead(MarkAllReadRequest.newBuilder().setUserId(userId).build()))
-				.subscribeOn(Schedulers.boundedElastic()).retry(2);
+				.subscribeOn(Schedulers.boundedElastic());
 	}
 
 	public Mono<GetUnreadCountResponse> getUnreadCount(String userId) {
 		return Mono
 				.fromCallable(() -> stub.getUnreadCount(GetUnreadCountRequest.newBuilder().setUserId(userId).build()))
-				.subscribeOn(Schedulers.boundedElastic()).retry(2);
+				.subscribeOn(Schedulers.boundedElastic());
 	}
 }

@@ -28,6 +28,11 @@
     });
   }
 
+  async function retryGraphQl(query, variables, authRetry, retriesLeft) {
+    await new Promise(r => setTimeout(r, 200));
+    return gql(query, variables, authRetry, retriesLeft - 1);
+  }
+
   async function gql(query, variables = {}, _authRetry = true, _transportRetries = 3) {
     if (window.MOCK?.enabled) {
       const mocked = await window.MOCK.gql(query, variables);
@@ -54,8 +59,7 @@
 
     if (networkErr) {
       if (_transportRetries > 0) {
-        await new Promise(r => setTimeout(r, 200));
-        return gql(query, variables, _authRetry, _transportRetries - 1);
+        return retryGraphQl(query, variables, _authRetry, _transportRetries);
       }
       throw networkErr;
     }
@@ -86,8 +90,7 @@
       const err = new Error(data.errors.map(e => e.message).join(', '));
       err.gqlErrors = data.errors;
       if (_transportRetries > 0 && isTransientGqlError(err)) {
-        await new Promise(r => setTimeout(r, 200));
-        return gql(query, variables, _authRetry, _transportRetries - 1);
+        return retryGraphQl(query, variables, _authRetry, _transportRetries);
       }
       throw err;
     }

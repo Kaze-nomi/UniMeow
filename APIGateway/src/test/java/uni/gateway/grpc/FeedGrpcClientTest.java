@@ -144,15 +144,15 @@ class FeedGrpcClientTest {
 	}
 
 	@Test
-	void getFeed_retries_on_failure_and_succeeds() {
+	void getFeed_does_not_retry_failure() {
 		ReflectionTestUtils.setField(feedGrpcClient, "stub", stub);
-		GetFeedResponse expectedResponse = GetFeedResponse.newBuilder().addPostIds("post1").build();
 
-		when(stub.getFeed(any())).thenThrow(new RuntimeException("Temporary failure"))
-				.thenThrow(new RuntimeException("Still failing")).thenReturn(expectedResponse);
+		when(stub.getFeed(any())).thenThrow(new RuntimeException("Temporary failure"));
 
 		StepVerifier.create(feedGrpcClient.getFeed(FeedType.TRENDING, "user-123", null, 20))
-				.assertNext(response -> assertThat(response.getPostIdsList()).contains("post1")).verifyComplete();
+				.expectError(RuntimeException.class).verify(Duration.ofSeconds(5));
+
+		verify(stub, times(1)).getFeed(any());
 	}
 
 	@Test

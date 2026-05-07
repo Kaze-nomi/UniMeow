@@ -19,6 +19,6 @@ public class MediaGrpcClient {
 			UploadFileRequest req = UploadFileRequest.newBuilder().setBucket(bucket).setFilename(filename)
 					.setContentType(contentType).setData(ByteString.copyFrom(data)).build();
 			return stub.uploadFile(req).getUrl();
-		}).subscribeOn(Schedulers.boundedElastic()).retry(2);
+		}).subscribeOn(Schedulers.boundedElastic());
 	}
 }

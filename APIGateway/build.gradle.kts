@@ -29,7 +29,7 @@ dependencyManagement {
 dependencies {
     implementation(project(":gRPC"))
 
-    implementation("org.springframework.cloud:spring-cloud-starter-gateway-server-webflux")
+    implementation("org.springframework.boot:spring-boot-starter-webflux")
     implementation("org.springframework.cloud:spring-cloud-starter-netflix-eureka-client")
 
     implementation("org.springframework.boot:spring-boot-starter-graphql")
@@ -40,11 +40,9 @@ dependencies {
     implementation("org.springframework.boot:spring-boot-starter-actuator")
     runtimeOnly("io.micrometer:micrometer-registry-prometheus")
 
-    implementation("io.grpc:grpc-netty")
+    implementation("io.grpc:grpc-netty-shaded")
 
-    implementation("net.devh:grpc-client-spring-boot-starter:${property("grpcSpringVersion")}") {
-        exclude(group = "io.grpc", module = "grpc-netty-shaded")
-    }
+    implementation("net.devh:grpc-client-spring-boot-starter:${property("grpcSpringVersion")}")
 
     implementation("io.jsonwebtoken:jjwt-api:0.12.6")
     runtimeOnly("io.jsonwebtoken:jjwt-impl:0.12.6")

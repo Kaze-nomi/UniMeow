@@ -7,6 +7,10 @@ app:
     secure-cookie: ${APP_SECURITY_SECURE_COOKIE:false}
     allowed-origins: ${APP_SECURITY_ALLOWED_ORIGINS:http://localhost:*,null}
     oauth2-success-redirect: ${APP_SECURITY_OAUTH2_SUCCESS_REDIRECT:http://localhost:5173/}
+  grpc:
+    deadline-ms: ${APP_GRPC_DEADLINE_MS:10000}
+    slow-threshold-ms: ${APP_GRPC_SLOW_THRESHOLD_MS:1000}
+    user-read-deadline-ms: ${APP_GRPC_USER_READ_DEADLINE_MS:2000}
 
 spring:
   application:
@@ -50,40 +54,40 @@ grpc:
       address: 'discovery:///user-service'
       negotiation-type: plaintext
       default-load-balancing-policy: round_robin
-      keep-alive-time: 1s
-      keep-alive-timeout: 1s
+      keep-alive-time: 30s
+      keep-alive-timeout: 5s
       keep-alive-without-calls: true
       enable-keep-alive: true
     post-service:
       address: 'discovery:///post-service'
       negotiation-type: plaintext
       default-load-balancing-policy: round_robin
-      keep-alive-time: 1s
-      keep-alive-timeout: 1s
+      keep-alive-time: 30s
+      keep-alive-timeout: 5s
       keep-alive-without-calls: true
       enable-keep-alive: true
     feed-service:
       address: 'discovery:///feed-service'
       negotiation-type: plaintext
       default-load-balancing-policy: round_robin
-      keep-alive-time: 1s
-      keep-alive-timeout: 1s
+      keep-alive-time: 30s
+      keep-alive-timeout: 5s
       keep-alive-without-calls: true
       enable-keep-alive: true
     media-service:
       address: 'discovery:///media-service'
       negotiation-type: plaintext
       default-load-balancing-policy: round_robin
-      keep-alive-time: 1s
-      keep-alive-timeout: 1s
+      keep-alive-time: 30s
+      keep-alive-timeout: 5s
       keep-alive-without-calls: true
       enable-keep-alive: true
     notification-service:
       address: 'discovery:///notification-service'
       negotiation-type: plaintext
       default-load-balancing-policy: round_robin
-      keep-alive-time: 1s
-      keep-alive-timeout: 1s
+      keep-alive-time: 30s
+      keep-alive-timeout: 5s
       keep-alive-without-calls: true
       enable-keep-alive: true
 

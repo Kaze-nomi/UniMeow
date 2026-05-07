@@ -1,6 +1,7 @@
 package uni.gateway.grpc;
 
 import net.devh.boot.grpc.client.inject.GrpcClient;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import uni.grpc.user.CreateOrGetUserRequest;
 import uni.grpc.user.DeleteAccountRequest;
@@ -53,49 +54,58 @@ import uni.grpc.user.ReviewUniversityProposalRequest;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
 
+import java.util.concurrent.TimeUnit;
+
 @Service
 public class UserGrpcClient {
 
 	@GrpcClient("user-service")
 	private UserServiceGrpc.UserServiceBlockingStub stub;
 
+	@Value("${app.grpc.user-read-deadline-ms:2000}")
+	private long userReadDeadlineMs;
+
 	public Mono<UserResponse> createOrGetUser(CreateOrGetUserRequest request) {
-		return Mono.fromCallable(() -> stub.createOrGetUser(request)).subscribeOn(Schedulers.boundedElastic()).retry(2);
+		return Mono.fromCallable(() -> stub.createOrGetUser(request)).subscribeOn(Schedulers.boundedElastic());
 	}
 
 	public Mono<UserResponse> getUserById(String id) {
-		return Mono.fromCallable(() -> stub.getUserById(GetUserByIdRequest.newBuilder().setId(id).build()))
-				.subscribeOn(Schedulers.boundedElastic()).retry(2);
+		return Mono.fromCallable(() -> readStub().getUserById(GetUserByIdRequest.newBuilder().setId(id).build()))
+				.subscribeOn(Schedulers.boundedElastic());
 	}
 
 	public Mono<UserResponse> getUserByUsername(String username) {
 		return Mono.fromCallable(
-				() -> stub.getUserByUsername(GetUserByUsernameRequest.newBuilder().setUsername(username).build()))
-				.subscribeOn(Schedulers.boundedElastic()).retry(2);
+				() -> readStub().getUserByUsername(GetUserByUsernameRequest.newBuilder().setUsername(username).build()))
+				.subscribeOn(Schedulers.boundedElastic());
+	}
+
+	private UserServiceGrpc.UserServiceBlockingStub readStub() {
+		return stub.withDeadlineAfter(userReadDeadlineMs, TimeUnit.MILLISECONDS);
 	}
 
 	public Mono<UserResponse> updateUser(UpdateUserRequest request) {
-		return Mono.fromCallable(() -> stub.updateUser(request)).subscribeOn(Schedulers.boundedElastic()).retry(2);
+		return Mono.fromCallable(() -> stub.updateUser(request)).subscribeOn(Schedulers.boundedElastic());
 	}
 
 	public Mono<Boolean> deleteAccount(String userId) {
 		return Mono.fromCallable(
 				() -> stub.deleteAccount(DeleteAccountRequest.newBuilder().setUserId(userId).build()).getSuccess())
-				.subscribeOn(Schedulers.boundedElastic()).retry(2);
+				.subscribeOn(Schedulers.boundedElastic());
 	}
 
 	public Mono<Void> createSession(String userId, String refreshToken) {
 		return Mono
 				.fromRunnable(() -> stub.createSession(CreateSessionRequest.newBuilder().setUserId(userId)
 						.setRefreshToken(refreshToken).setExpiresInDays(30).build()))
-				.subscribeOn(Schedulers.boundedElastic()).retry(2).then();
+				.subscribeOn(Schedulers.boundedElastic()).then();
 	}
 
 	public Mono<RefreshSessionResponse> refreshSession(String oldRefreshToken) {
 		return Mono
 				.fromCallable(() -> stub
 						.refreshSession(RefreshSessionRequest.newBuilder().setOldRefreshToken(oldRefreshToken).build()))
-				.subscribeOn(Schedulers.boundedElastic()).retry(2);
+				.subscribeOn(Schedulers.boundedElastic());
 	}
 
 	public Mono<Boolean> revokeRefreshToken(String refreshToken) {
@@ -103,7 +113,7 @@ public class UserGrpcClient {
 			RevokeRefreshTokenResponse response = stub
 					.revokeRefreshToken(RevokeRefreshTokenRequest.newBuilder().setRefreshToken(refreshToken).build());
 			return response.getSuccess();
-		}).subscribeOn(Schedulers.boundedElastic()).retry(2);
+		}).subscribeOn(Schedulers.boundedElastic());
 	}
 
 	public Mono<Boolean> sendVerificationCode(String userId, String universityEmail) {
@@ -111,13 +121,13 @@ public class UserGrpcClient {
 			SendVerificationCodeResponse response = stub.sendVerificationCode(SendVerificationCodeRequest.newBuilder()
 					.setUserId(userId).setUniversityEmail(universityEmail).build());
 			return response.getSuccess();
-		}).subscribeOn(Schedulers.boundedElastic()).retry(2);
+		}).subscribeOn(Schedulers.boundedElastic());
 	}
 
 	public Mono<VerifyEmailCodeResponse> verifyEmailCode(String userId, String code) {
 		return Mono.fromCallable(
 				() -> stub.verifyEmailCode(VerifyEmailCodeRequest.newBuilder().setUserId(userId).setCode(code).build()))
-				.subscribeOn(Schedulers.boundedElastic()).retry(2);
+				.subscribeOn(Schedulers.boundedElastic());
 	}
 
 	public Mono<Boolean> subscribe(String subscriberId, String targetUserId) {
@@ -125,7 +135,7 @@ public class UserGrpcClient {
 			SubscribeResponse response = stub.subscribe(
 					SubscribeRequest.newBuilder().setSubscriberId(subscriberId).setTargetUserId(targetUserId).build());
 			return response.getSuccess();
-		}).subscribeOn(Schedulers.boundedElastic()).retry(2);
+		}).subscribeOn(Schedulers.boundedElastic());
 	}
 
 	public Mono<Boolean> unsubscribe(String subscriberId, String targetUserId) {
@@ -133,7 +143,7 @@ public class UserGrpcClient {
 			UnsubscribeResponse response = stub.unsubscribe(UnsubscribeRequest.newBuilder()
 					.setSubscriberId(subscriberId).setTargetUserId(targetUserId).build());
 			return response.getSuccess();
-		}).subscribeOn(Schedulers.boundedElastic()).retry(2);
+		}).subscribeOn(Schedulers.boundedElastic());
 	}
 
 	public Mono<Boolean> isSubscribed(String subscriberId, String targetUserId) {
@@ -141,24 +151,24 @@ public class UserGrpcClient {
 			IsSubscribedResponse response = stub.isSubscribed(IsSubscribedRequest.newBuilder()
 					.setSubscriberId(subscriberId).setTargetUserId(targetUserId).build());
 			return response.getSubscribed();
-		}).subscribeOn(Schedulers.boundedElastic()).retry(2);
+		}).subscribeOn(Schedulers.boundedElastic());
 	}
 
 	public Mono<UniversityListResponse> listUniversities() {
 		return Mono.fromCallable(() -> stub.listUniversities(ListUniversitiesRequest.newBuilder().build()))
-				.subscribeOn(Schedulers.boundedElastic()).retry(2);
+				.subscribeOn(Schedulers.boundedElastic());
 	}
 
 	public Mono<FacultyListResponse> listFaculties(long universityId) {
 		return Mono.fromCallable(
 				() -> stub.listFaculties(ListFacultiesRequest.newBuilder().setUniversityId(universityId).build()))
-				.subscribeOn(Schedulers.boundedElastic()).retry(2);
+				.subscribeOn(Schedulers.boundedElastic());
 	}
 
 	public Mono<ProgramListResponse> listPrograms(long facultyId) {
 		return Mono
 				.fromCallable(() -> stub.listPrograms(ListProgramsRequest.newBuilder().setFacultyId(facultyId).build()))
-				.subscribeOn(Schedulers.boundedElastic()).retry(2);
+				.subscribeOn(Schedulers.boundedElastic());
 	}
 
 	public Mono<Boolean> banUser(String moderatorId, String targetUserId, String bannedUntil, String reason) {
@@ -169,14 +179,14 @@ public class UserGrpcClient {
 		if (reason != null && !reason.isBlank())
 			builder.setReason(reason);
 		return Mono.fromCallable(() -> stub.banUser(builder.build()).getSuccess())
-				.subscribeOn(Schedulers.boundedElastic()).retry(2);
+				.subscribeOn(Schedulers.boundedElastic());
 	}
 
 	public Mono<Boolean> deleteImprovementSuggestion(String adminId, long id) {
 		return Mono.fromCallable(() -> stub
 				.deleteImprovementSuggestion(
 						DeleteImprovementSuggestionRequest.newBuilder().setAdminId(adminId).setId(id).build())
-				.getSuccess()).subscribeOn(Schedulers.boundedElastic()).retry(2);
+				.getSuccess()).subscribeOn(Schedulers.boundedElastic());
 	}
 
 	public Mono<Boolean> createImprovementSuggestion(String authorId, String text, String clientRequestId) {
@@ -185,14 +195,14 @@ public class UserGrpcClient {
 		if (clientRequestId != null && !clientRequestId.isBlank())
 			b.setClientRequestId(clientRequestId);
 		return Mono.fromCallable(() -> stub.createImprovementSuggestion(b.build()).getSuccess())
-				.subscribeOn(Schedulers.boundedElastic()).retry(2);
+				.subscribeOn(Schedulers.boundedElastic());
 	}
 
 	public Mono<ImprovementSuggestionListResponse> listImprovementSuggestions(String adminId) {
 		return Mono
 				.fromCallable(() -> stub.listImprovementSuggestions(
 						ListImprovementSuggestionsRequest.newBuilder().setAdminId(adminId).build()))
-				.subscribeOn(Schedulers.boundedElastic()).retry(2);
+				.subscribeOn(Schedulers.boundedElastic());
 	}
 
 	public Mono<Boolean> createUniversityProposal(String authorId, String name, String shortName, String subdomain,
@@ -206,14 +216,14 @@ public class UserGrpcClient {
 		if (clientRequestId != null && !clientRequestId.isBlank())
 			b.setClientRequestId(clientRequestId);
 		return Mono.fromCallable(() -> stub.createUniversityProposal(b.build()).getSuccess())
-				.subscribeOn(Schedulers.boundedElastic()).retry(2);
+				.subscribeOn(Schedulers.boundedElastic());
 	}
 
 	public Mono<UniversityProposalListResponse> listUniversityProposals(String adminId) {
 		return Mono
 				.fromCallable(() -> stub.listUniversityProposals(
 						ListUniversityProposalsRequest.newBuilder().setAdminId(adminId).build()))
-				.subscribeOn(Schedulers.boundedElastic()).retry(2);
+				.subscribeOn(Schedulers.boundedElastic());
 	}
 
 	public Mono<Boolean> createFacultyProposal(String authorId, long universityId, String name, String shortName,
@@ -223,13 +233,13 @@ public class UserGrpcClient {
 		if (clientRequestId != null && !clientRequestId.isBlank())
 			b.setClientRequestId(clientRequestId);
 		return Mono.fromCallable(() -> stub.createFacultyProposal(b.build()).getSuccess())
-				.subscribeOn(Schedulers.boundedElastic()).retry(2);
+				.subscribeOn(Schedulers.boundedElastic());
 	}
 
 	public Mono<FacultyProposalListResponse> listFacultyProposals(String adminId) {
 		return Mono.fromCallable(
 				() -> stub.listFacultyProposals(ListFacultyProposalsRequest.newBuilder().setAdminId(adminId).build()))
-				.subscribeOn(Schedulers.boundedElastic()).retry(2);
+				.subscribeOn(Schedulers.boundedElastic());
 	}
 
 	public Mono<Boolean> reviewFacultyProposal(String reviewerId, long proposalId, String status) {
@@ -239,7 +249,7 @@ public class UserGrpcClient {
 								.reviewFacultyProposal(ReviewFacultyProposalRequest.newBuilder()
 										.setReviewerId(reviewerId).setProposalId(proposalId).setStatus(status).build())
 								.getSuccess())
-				.subscribeOn(Schedulers.boundedElastic()).retry(2);
+				.subscribeOn(Schedulers.boundedElastic());
 	}
 
 	public Mono<Boolean> createProgramProposal(String authorId, long facultyId, String name, String shortName,
@@ -249,13 +259,13 @@ public class UserGrpcClient {
 		if (clientRequestId != null && !clientRequestId.isBlank())
 			b.setClientRequestId(clientRequestId);
 		return Mono.fromCallable(() -> stub.createProgramProposal(b.build()).getSuccess())
-				.subscribeOn(Schedulers.boundedElastic()).retry(2);
+				.subscribeOn(Schedulers.boundedElastic());
 	}
 
 	public Mono<ProgramProposalListResponse> listProgramProposals(String adminId) {
 		return Mono.fromCallable(
 				() -> stub.listProgramProposals(ListProgramProposalsRequest.newBuilder().setAdminId(adminId).build()))
-				.subscribeOn(Schedulers.boundedElastic()).retry(2);
+				.subscribeOn(Schedulers.boundedElastic());
 	}
 
 	public Mono<Boolean> reviewProgramProposal(String reviewerId, long proposalId, String status) {
@@ -265,7 +275,7 @@ public class UserGrpcClient {
 								.reviewProgramProposal(ReviewProgramProposalRequest.newBuilder()
 										.setReviewerId(reviewerId).setProposalId(proposalId).setStatus(status).build())
 								.getSuccess())
-				.subscribeOn(Schedulers.boundedElastic()).retry(2);
+				.subscribeOn(Schedulers.boundedElastic());
 	}
 
 	public Mono<Boolean> reviewUniversityProposal(String reviewerId, long proposalId, String status) {
@@ -275,7 +285,7 @@ public class UserGrpcClient {
 								.reviewUniversityProposal(ReviewUniversityProposalRequest.newBuilder()
 										.setReviewerId(reviewerId).setProposalId(proposalId).setStatus(status).build())
 								.getSuccess())
-				.subscribeOn(Schedulers.boundedElastic()).retry(2);
+				.subscribeOn(Schedulers.boundedElastic());
 	}
 
 	public Mono<CreateProgramResponse> createProgramForUser(String userId, long facultyId, String name,
@@ -283,13 +293,13 @@ public class UserGrpcClient {
 		return Mono
 				.fromCallable(() -> stub.createProgramForUser(CreateProgramForUserRequest.newBuilder().setUserId(userId)
 						.setFacultyId(facultyId).setName(name).setShortName(shortName).build()))
-				.subscribeOn(Schedulers.boundedElastic()).retry(2);
+				.subscribeOn(Schedulers.boundedElastic());
 	}
 
 	public Mono<Boolean> grantAdmin(String granterId, String targetUserId) {
 		return Mono.fromCallable(() -> stub
 				.grantAdmin(
 						GrantAdminRequest.newBuilder().setGranterId(granterId).setTargetUserId(targetUserId).build())
-				.getSuccess()).subscribeOn(Schedulers.boundedElastic()).retry(2);
+				.getSuccess()).subscribeOn(Schedulers.boundedElastic());
 	}
 }

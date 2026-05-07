@@ -65,14 +65,14 @@ grpc:
   server:
     port: 9091
     permit-keep-alive-without-calls: true
-    permit-keep-alive-time: 1s
+    permit-keep-alive-time: 20s
   client:
     user-service:
       address: 'discovery:///user-service'
       negotiation-type: plaintext
       default-load-balancing-policy: round_robin
-      keep-alive-time: 1s
-      keep-alive-timeout: 1s
+      keep-alive-time: 30s
+      keep-alive-timeout: 5s
       keep-alive-without-calls: true
       enable-keep-alive: true
 
