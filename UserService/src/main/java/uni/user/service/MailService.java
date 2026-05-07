@@ -65,7 +65,7 @@ public class MailService {
 					          <tr>
 					            <td align="center"
 					                style="background:#7c3aed;padding:24px 32px;text-align:center;">
-					              <img src="%FRONTEND_URL%/logo.png"
+					              <img src="%FRONTEND_URL%/favicon.png"
 					                   alt="UniMeow"
 					                   width="48"
 					                   height="48"
@@ -84,7 +84,7 @@ public class MailService {
 					              </p>
 
 					              <p style="margin:0 0 24px;font-size:15px;color:#555555;line-height:1.55;">
-					                Введи этот код на сайте UniMeow, чтобы подтвердить свой университетский email.
+					                Введи этот код в UniMeow, чтобы подтвердить свой университетский email.
 					              </p>
 
 					              <table role="presentation" cellpadding="0" cellspacing="0" border="0" align="center"

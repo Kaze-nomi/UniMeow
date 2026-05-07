@@ -63,7 +63,7 @@ class MailServiceTest {
 		String html = output.toString(StandardCharsets.UTF_8);
 		assertThat(html).contains("654321");
 		assertThat(html).contains("iivanov");
-		assertThat(html).contains("https://unimeow.ru/logo.png");
+		assertThat(html).contains("https://unimeow.ru/favicon.png");
 	}
 
 	@Test

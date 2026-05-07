@@ -237,7 +237,7 @@ function PostCard({ post, onNavigate, currentUser, onLike }) {
         background: 'var(--text)', color: 'var(--bg)',
         padding: '8px 20px', borderRadius: 9999,
         fontSize: 13, fontWeight: 600,
-        zIndex: 2000, animation: 'fadein 0.15s ease',
+        zIndex: 2000, animation: 'fadein-toast 0.15s ease',
         boxShadow: '0 4px 16px rgba(0,0,0,0.22)',
         pointerEvents: 'none', whiteSpace: 'nowrap',
       }}>Ссылка скопирована</div>,

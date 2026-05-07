@@ -28,11 +28,15 @@ function FeedPage({ currentUser, onNavigate, universitySlug, composeOpen, setCom
     }
     if (!universities.length) return;
     const selected = universities.find(u => API.universitySlug(u) === universitySlug);
-    setUniversityId(selected ? selected.id : null);
+    if (!selected) {
+      onNavigate('/feed');
+      return;
+    }
+    setUniversityId(selected.id);
     setFacultyId(null);
     setProgramId(null);
     setScopeReady(true);
-  }, [universities, universitySlug]);
+  }, [universities, universitySlug, onNavigate]);
 
   React.useEffect(() => {
     setFacultyId(null);
