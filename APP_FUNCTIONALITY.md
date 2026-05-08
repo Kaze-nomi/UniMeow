@@ -55,12 +55,15 @@ UniMeow — университетская социальная сеть с по
 
 ## 3. Авторизация и сессии
 
-Пользователь входит через Google OAuth2:
+Пользователь входит через Google OAuth2. Google используется как источник `emailGoogle`; поля профиля `name`, `surname` и `avatarUrl` заполняются через профиль приложения.
 
 1. Frontend открывает `/oauth2/authorization/google`.
-2. После успешного OAuth gateway создает или находит пользователя в `UserService`.
-3. Gateway выдает `ACCESS_TOKEN` и `REFRESH_TOKEN` в cookies.
-4. `AuthenticationFilter` читает `ACCESS_TOKEN`, валидирует JWT и прокидывает `X-User-Id` / GraphQL context `userId`.
+2. После успешного OAuth gateway передаёт Google email в `UserService`.
+3. `UserService` создаёт или находит пользователя по `emailGoogle`.
+4. Gateway выдает `ACCESS_TOKEN` и `REFRESH_TOKEN` в cookies.
+5. `AuthenticationFilter` читает `ACCESS_TOKEN`, валидирует JWT и прокидывает `X-User-Id` / GraphQL context `userId`.
+
+Аккаунт без `username` считается незавершенной регистрацией. Для такого аккаунта `name` хранится пустой строкой, `surname` и `avatarUrl` отсутствуют до заполнения профиля через `updateProfile`.
 
 Если Google аккаунт находится в реестре бессрочно заблокированных аккаунтов, сессия не создаётся. Пользователь возвращается на страницу входа и видит причину бессрочной блокировки.
 

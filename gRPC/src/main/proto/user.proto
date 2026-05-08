@@ -48,9 +48,7 @@ service UserService {
 
 message CreateOrGetUserRequest {
     string email_google = 1;
-    string name         = 2;
-    string surname      = 3;
-    string avatar_url   = 4;
+    string avatar_url   = 2;
 }
 
 message GetUserByIdRequest       { string id       = 1; }

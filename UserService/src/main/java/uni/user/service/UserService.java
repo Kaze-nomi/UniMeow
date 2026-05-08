@@ -36,9 +36,8 @@ public class UserService {
 	private final OutboxService outboxService;
 
 	@Transactional
-	public User createOrGet(String emailGoogle, String name, String surname, String avatarUrl) {
+	public User createOrGet(String emailGoogle, String avatarUrl) {
 		String normalizedEmail = normalizeGoogleEmail(emailGoogle);
-		String safeSurname = surname == null ? "" : surname;
 		String safeAvatarUrl = avatarUrl == null ? "" : avatarUrl;
 		bannedGoogleAccountRepository.findById(normalizedEmail).ifPresent(ban -> {
 			String reason = ban.getReason();
@@ -49,8 +48,7 @@ public class UserService {
 		User user = userRepository.findByEmailGoogle(normalizedEmail).orElseGet(() -> {
 			log.info("Creating new user for email {}", normalizedEmail);
 			return userRepository.save(User.builder().id(UUID.randomUUID()).emailGoogle(normalizedEmail).username(null)
-					.name(name).surname(safeSurname.isBlank() ? null : safeSurname)
-					.avatarUrl(safeAvatarUrl.isBlank() ? null : safeAvatarUrl).isStudentVerified(false)
+					.name("").avatarUrl(safeAvatarUrl.isBlank() ? null : safeAvatarUrl).isStudentVerified(false)
 					.isEmployeeVerified(false).createdAt(LocalDateTime.now()).build());
 		});
 

@@ -96,7 +96,7 @@ class UserServiceTest {
 		User existing = buildUser();
 		when(userRepository.findByEmailGoogle("ivan@gmail.com")).thenReturn(Optional.of(existing));
 
-		User result = userService.createOrGet("ivan@gmail.com", "Иван", "Петров", "");
+		User result = userService.createOrGet("ivan@gmail.com", "");
 
 		assertThat(result.getId()).isEqualTo(USER_ID);
 		verify(userRepository, never()).save(any());
@@ -107,9 +107,8 @@ class UserServiceTest {
 		when(bannedGoogleAccountRepository.findById("banned@gmail.com")).thenReturn(
 				Optional.of(BannedGoogleAccount.builder().emailGoogle("banned@gmail.com").reason("Spam").build()));
 
-		assertThatThrownBy(() -> userService.createOrGet("banned@gmail.com", "Иван", "Петров", ""))
-				.isInstanceOf(SecurityException.class).hasMessageContaining("permanently banned")
-				.hasMessageContaining("Spam");
+		assertThatThrownBy(() -> userService.createOrGet("banned@gmail.com", "")).isInstanceOf(SecurityException.class)
+				.hasMessageContaining("permanently banned").hasMessageContaining("Spam");
 	}
 
 	@Test
@@ -117,10 +116,11 @@ class UserServiceTest {
 		when(userRepository.findByEmailGoogle("new@gmail.com")).thenReturn(Optional.empty());
 		when(userRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
 
-		User result = userService.createOrGet("new@gmail.com", "Иван", "Петров", "avatar.jpg");
+		User result = userService.createOrGet("new@gmail.com", "avatar.jpg");
 
 		assertThat(result.getEmailGoogle()).isEqualTo("new@gmail.com");
 		assertThat(result.getUsername()).isNull();
+		assertThat(result.getName()).isEmpty();
 		assertThat(result.getId()).isNotNull();
 		verify(userRepository).save(any());
 	}
@@ -130,7 +130,7 @@ class UserServiceTest {
 		when(userRepository.findByEmailGoogle("test@gmail.com")).thenReturn(Optional.empty());
 		when(userRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
 
-		User result = userService.createOrGet("test@gmail.com", "Иван", "", "");
+		User result = userService.createOrGet("test@gmail.com", "");
 
 		assertThat(result.getSurname()).isNull();
 	}
@@ -140,7 +140,7 @@ class UserServiceTest {
 		when(userRepository.findByEmailGoogle("test@gmail.com")).thenReturn(Optional.empty());
 		when(userRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
 
-		User result = userService.createOrGet("test@gmail.com", "Иван", "", "");
+		User result = userService.createOrGet("test@gmail.com", "");
 
 		assertThat(result.getAvatarUrl()).isNull();
 	}

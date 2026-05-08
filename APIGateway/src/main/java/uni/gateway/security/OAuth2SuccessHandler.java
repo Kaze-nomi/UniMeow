@@ -37,11 +37,9 @@ public class OAuth2SuccessHandler implements ServerAuthenticationSuccessHandler 
 		OAuth2User oauth2User = (OAuth2User) authentication.getPrincipal();
 
 		String email = oauth2User.getAttribute("email");
-		String name = oauth2User.getAttribute("given_name");
-		String surname = oauth2User.getAttribute("family_name");
 
 		CreateOrGetUserRequest request = CreateOrGetUserRequest.newBuilder().setEmailGoogle(email != null ? email : "")
-				.setName(name != null ? name : "").setSurname(surname != null ? surname : "").build();
+				.build();
 
 		return userGrpcClient.createOrGetUser(request).flatMap(userResponse -> {
 			String userId = userResponse.getId();

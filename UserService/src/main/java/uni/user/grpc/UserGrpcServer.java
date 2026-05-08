@@ -25,8 +25,7 @@ public class UserGrpcServer extends UserServiceGrpc.UserServiceImplBase {
 	@Override
 	public void createOrGetUser(CreateOrGetUserRequest req, StreamObserver<UserResponse> obs) {
 		try {
-			User user = userService.createOrGet(req.getEmailGoogle(), req.getName(), req.getSurname(),
-					req.getAvatarUrl());
+			User user = userService.createOrGet(req.getEmailGoogle(), req.getAvatarUrl());
 			obs.onNext(toProto(user));
 			obs.onCompleted();
 		} catch (SecurityException e) {

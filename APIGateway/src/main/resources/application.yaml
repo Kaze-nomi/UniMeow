@@ -32,7 +32,10 @@ spring:
           google:
             client-id: ${GOOGLE_CLIENT_ID:test-client-id}
             client-secret: ${GOOGLE_CLIENT_SECRET:test-client-secret}
-            scope: email, profile
+            scope: email
+        provider:
+          google:
+            user-name-attribute: email
   autoconfigure:
     exclude:
       - net.devh.boot.grpc.client.autoconfigure.GrpcClientMetricAutoConfiguration

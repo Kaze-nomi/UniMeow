@@ -48,7 +48,7 @@ class UserGrpcClientTest {
 
 		StepVerifier
 				.create(client.createOrGetUser(CreateOrGetUserRequest.newBuilder().setEmailGoogle("ivan@gmail.com")
-						.setName("Ivan").setSurname("Ivanov").setAvatarUrl("https://img").build()))
+						.setAvatarUrl("https://img").build()))
 				.assertNext(response -> assertThat(response.getId()).isEqualTo(USER_ID)).verifyComplete();
 	}
 
