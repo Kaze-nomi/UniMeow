@@ -164,9 +164,9 @@ services:
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://localhost:8761/actuator/health || exit 1"]
       interval: 15s
-      timeout: 5s
-      retries: 5
-      start_period: 40s
+      timeout: 10s
+      retries: 12
+      start_period: 180s
 
   user-service:
     build:
@@ -200,9 +200,9 @@ services:
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://localhost:9000/actuator/health || exit 1"]
       interval: 15s
-      timeout: 5s
-      retries: 5
-      start_period: 60s
+      timeout: 10s
+      retries: 12
+      start_period: 180s
 
   media-service:
     build:
@@ -229,9 +229,9 @@ services:
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://localhost:9003/actuator/health || exit 1"]
       interval: 15s
-      timeout: 5s
-      retries: 5
-      start_period: 60s
+      timeout: 10s
+      retries: 12
+      start_period: 180s
 
   post-service:
     build:
@@ -260,9 +260,9 @@ services:
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://localhost:9001/actuator/health || exit 1"]
       interval: 15s
-      timeout: 5s
-      retries: 5
-      start_period: 60s
+      timeout: 10s
+      retries: 12
+      start_period: 180s
 
   feed-service:
     build:
@@ -290,9 +290,9 @@ services:
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://localhost:9002/actuator/health || exit 1"]
       interval: 15s
-      timeout: 5s
-      retries: 5
-      start_period: 60s
+      timeout: 10s
+      retries: 12
+      start_period: 180s
 
   notification-service:
     build:
@@ -321,9 +321,9 @@ services:
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://localhost:9006/actuator/health || exit 1"]
       interval: 15s
-      timeout: 5s
-      retries: 5
-      start_period: 60s
+      timeout: 10s
+      retries: 12
+      start_period: 180s
 
   api-gateway:
     build:
@@ -357,9 +357,9 @@ services:
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://localhost:8080/actuator/health || exit 1"]
       interval: 15s
-      timeout: 5s
-      retries: 5
-      start_period: 60s
+      timeout: 10s
+      retries: 12
+      start_period: 180s
 
   frontend:
     build:
