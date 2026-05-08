@@ -180,7 +180,7 @@ function App() {
         ) : route === 'admin' && param === 'universities' ? (
           <AdminPage currentUser={currentUser} onNavigate={navigate} view="universities" />
         ) : (
-          <EmptyState icon={<CatFaceIcon />} title="Страница не найдена" subtitle={<span onClick={() => navigate('/')} style={{ color: 'var(--accent)', cursor: 'pointer' }}>На главную →</span>} />
+          <EmptyState icon={<SearchIcon size={40} color="var(--text-muted)" />} title="Страница не найдена" subtitle={<span onClick={() => navigate('/')} style={{ color: 'var(--accent)', cursor: 'pointer' }}>На главную →</span>} />
         )}
       </AppLayout>
     );
