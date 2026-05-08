@@ -90,6 +90,8 @@ public class UserGrpcServer extends UserServiceGrpc.UserServiceImplBase {
 			userService.deleteAccount(UUID.fromString(req.getUserId()));
 			obs.onNext(ModerationResponse.newBuilder().setSuccess(true).build());
 			obs.onCompleted();
+		} catch (SecurityException e) {
+			obs.onError(Status.PERMISSION_DENIED.withDescription(e.getMessage()).asRuntimeException());
 		} catch (UserNotFoundException e) {
 			obs.onError(Status.NOT_FOUND.withDescription(e.getMessage()).asRuntimeException());
 		} catch (IllegalArgumentException e) {
@@ -583,8 +585,7 @@ public class UserGrpcServer extends UserServiceGrpc.UserServiceImplBase {
 				.setAvatarUrl(u.getAvatarUrl() != null ? u.getAvatarUrl() : "")
 				.setStatus(u.getStatus() != null ? u.getStatus() : "").setIsStudentVerified(u.isStudentVerified())
 				.setIsEmployeeVerified(u.isEmployeeVerified()).setIsAdmin(u.isAdmin())
-				.setIsBanned(u.isBannedPermanent()
-						|| (u.getBannedUntil() != null && u.getBannedUntil().isAfter(LocalDateTime.now())))
+				.setIsBanned(u.getBannedUntil() != null && u.getBannedUntil().isAfter(LocalDateTime.now()))
 				.setCreatedAt(u.getCreatedAt().toString());
 
 		if (u.getUniversity() != null) {

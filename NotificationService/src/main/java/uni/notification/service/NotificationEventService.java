@@ -45,6 +45,10 @@ public class NotificationEventService {
 			case "USER_FOLLOWED" -> onUserFollowed(event);
 			case "ADMIN_GRANTED" -> onAdminGranted(event);
 			case "USER_BANNED" -> onUserBanned(event);
+			case "USER_DELETED", "USER_PERMANENT_BANNED" -> {
+				onUserDeleted(event);
+				yield List.of();
+			}
 			default -> {
 				log.debug("Ignoring event type {}", event.eventType());
 				yield List.of();
@@ -198,6 +202,19 @@ public class NotificationEventService {
 
 		return List
 				.of(buildNotification(targetUserId, moderatorId, "BANNED", targetUserId, "USER", LocalDateTime.now()));
+	}
+
+	private void onUserDeleted(EventEnvelope event) {
+		String userIdText = text(event.payload(), "userId");
+		if (userIdText == null || userIdText.isBlank()) {
+			userIdText = event.aggregateId();
+		}
+		if (userIdText == null || userIdText.isBlank()) {
+			return;
+		}
+		UUID userId = UUID.fromString(userIdText);
+		int deleted = notificationRepository.deleteAllForUser(userId, userIdText);
+		log.info("Deleted {} notifications for removed user {}", deleted, userId);
 	}
 
 	private Notification buildNotification(String userId, String actorId, String type, String entityId,

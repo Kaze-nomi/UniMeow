@@ -58,6 +58,21 @@ function App() {
     };
   }, []);
 
+  React.useEffect(() => {
+    const h = () => {
+      API.gql(API.Q.me, {}, true, 0)
+        .then(d => {
+          if (!d.me) return;
+          setCurrentUser(d.me);
+          API.invalidateUser && API.invalidateUser(d.me.id);
+          navigate('/');
+        })
+        .catch(() => {});
+    };
+    window.addEventListener('um-account-banned', h);
+    return () => window.removeEventListener('um-account-banned', h);
+  }, []);
+
 
   React.useEffect(() => {
     const h = (e) => {
@@ -65,7 +80,8 @@ function App() {
       setCurrentUser(user);
       if (!user) API.clearUserCache && API.clearUserCache();
       if (user) {
-        if (!user.username) navigate('/complete-registration');
+        if (user.isBanned) navigate('/');
+        else if (!user.username) navigate('/complete-registration');
         else navigate('/');
       }
     };
@@ -78,8 +94,9 @@ function App() {
     API.gql(API.Q.me)
       .then(d => {
         const user = d.me;
+        if (!user) return;
         setCurrentUser(user);
-        if (!user.username && path !== '/complete-registration') {
+        if (!user.isBanned && !user.username && path !== '/complete-registration') {
           navigate('/complete-registration');
         }
       })
@@ -97,13 +114,23 @@ function App() {
     API.clearUserCache && API.clearUserCache();
     navigate('/login');
   };
+  const handleBannedLogout = async () => {
+    try { await API.logout(); } catch {}
+    handleLogout();
+  };
   const handleAccountDeleted = () => {
     setCurrentUser(null);
     API.clearUserCache && API.clearUserCache();
     navigate('/login');
   };
+
+  React.useEffect(() => {
+    if (currentUser?.isBanned) setComposeOpen(false);
+  }, [currentUser?.isBanned]);
+
   const openCompose = () => {
     if (!currentUser) { navigate('/login'); return; }
+    if (currentUser.isBanned) return;
     setComposeOpen(true);
   };
 
@@ -122,6 +149,8 @@ function App() {
         </div>
       );
     }
+
+    if (currentUser?.isBanned) return <BannedAccountPage user={currentUser} onLogout={handleBannedLogout} />;
 
     if (route === 'login') return <LoginPage onNavigate={navigate} />;
     if (route === 'complete-registration') return <CompleteRegistrationPage onNavigate={navigate} onUserUpdated={handleUserUpdated} />;
@@ -160,11 +189,91 @@ function App() {
   return (
     <>
       {renderPage()}
-      <ComposeModal open={composeOpen} onClose={() => setComposeOpen(false)} currentUser={currentUser} onNavigate={navigate} onCreated={(newPost) => { if (newPost) window.dispatchEvent(new CustomEvent('um-post-created', { detail: newPost })); }} />
+      <ComposeModal open={composeOpen && !currentUser?.isBanned} onClose={() => setComposeOpen(false)} currentUser={currentUser} onNavigate={navigate} onCreated={(newPost) => { if (newPost) window.dispatchEvent(new CustomEvent('um-post-created', { detail: newPost })); }} />
       <MockUserPicker onUserChange={handleUserUpdated} />
       <AppModals />
     </>
   );
+}
+
+function BannedAccountPage({ user, onLogout }) {
+  const reason = user?.banReason?.trim() || 'Причина не указана';
+  const bannedUntil = formatBanDate(user?.bannedUntil);
+
+  return (
+    <div style={{
+      minHeight: '100vh',
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      padding: 24,
+      background: 'var(--bg)',
+    }}>
+      <div style={{
+        width: '100%',
+        maxWidth: 520,
+        background: 'var(--surface)',
+        border: '1px solid var(--border)',
+        borderRadius: 16,
+        padding: 24,
+        boxShadow: 'var(--card-shadow)',
+      }}>
+        <div style={{
+          width: 52,
+          height: 52,
+          borderRadius: '50%',
+          background: 'var(--like-subtle)',
+          color: 'var(--like)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          marginBottom: 16,
+        }}>
+          <ShieldIcon size={26} />
+        </div>
+        <h1 style={{ margin: '0 0 10px', fontSize: 26, lineHeight: 1.2, fontWeight: 850 }}>
+          Аккаунт заблокирован
+        </h1>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 12, color: 'var(--text)', fontSize: 15, lineHeight: 1.55 }}>
+          <div>
+            <div style={{ fontSize: 12, color: 'var(--text-muted)', fontWeight: 700, textTransform: 'uppercase' }}>
+              Причина
+            </div>
+            <div>{reason}</div>
+          </div>
+          <div>
+            <div style={{ fontSize: 12, color: 'var(--text-muted)', fontWeight: 700, textTransform: 'uppercase' }}>
+              Срок
+            </div>
+            <div>{bannedUntil ? `Разблокировка: ${bannedUntil}` : 'Блокировка бессрочная'}</div>
+          </div>
+        </div>
+        <div style={{ marginTop: 22, display: 'flex', justifyContent: 'flex-end' }}>
+          <Button variant="secondary" onClick={onLogout}>Выйти</Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function formatBanDate(value) {
+  if (!value) return '';
+  try {
+    const normalized = typeof value === 'string' && !/[zZ]|[+-]\d{2}:\d{2}$/.test(value)
+      ? value + 'Z'
+      : value;
+    const date = new Date(normalized);
+    if (Number.isNaN(date.getTime())) return value;
+    return date.toLocaleString('ru-RU', {
+      day: 'numeric',
+      month: 'long',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+  } catch {
+    return value;
+  }
 }
 
 function MockUserPicker({ onUserChange }) {

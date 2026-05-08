@@ -4,6 +4,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import uni.user.entity.BannedGoogleAccount;
 import uni.user.entity.Subscription;
 import uni.user.entity.User;
 import uni.user.entity.UniversityFaculty;
@@ -11,12 +12,14 @@ import uni.user.entity.UniversityProgram;
 import uni.user.exception.UserNotFoundException;
 import uni.user.exception.UsernameAlreadyTakenException;
 import uni.user.outbox.OutboxService;
+import uni.user.repository.BannedGoogleAccountRepository;
 import uni.user.repository.SubscriptionRepository;
 import uni.user.repository.UniversityFacultyRepository;
 import uni.user.repository.UniversityProgramRepository;
 import uni.user.repository.UserRepository;
 
 import java.time.LocalDateTime;
+import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.UUID;
 
@@ -29,21 +32,27 @@ public class UserService {
 	private final SubscriptionRepository subscriptionRepository;
 	private final UniversityFacultyRepository universityFacultyRepository;
 	private final UniversityProgramRepository universityProgramRepository;
+	private final BannedGoogleAccountRepository bannedGoogleAccountRepository;
 	private final OutboxService outboxService;
 
 	@Transactional
 	public User createOrGet(String emailGoogle, String name, String surname, String avatarUrl) {
-		User user = userRepository.findByEmailGoogle(emailGoogle).orElseGet(() -> {
-			log.info("Creating new user for email {}", emailGoogle);
-			return userRepository.save(User.builder().id(UUID.randomUUID()).emailGoogle(emailGoogle).username(null)
-					.name(name).surname(surname.isBlank() ? null : surname)
-					.avatarUrl(avatarUrl.isBlank() ? null : avatarUrl).isStudentVerified(false)
-					.isEmployeeVerified(false).createdAt(LocalDateTime.now()).build());
+		String normalizedEmail = normalizeGoogleEmail(emailGoogle);
+		String safeSurname = surname == null ? "" : surname;
+		String safeAvatarUrl = avatarUrl == null ? "" : avatarUrl;
+		bannedGoogleAccountRepository.findById(normalizedEmail).ifPresent(ban -> {
+			String reason = ban.getReason();
+			throw new SecurityException(
+					"Google account is permanently banned" + (reason == null || reason.isBlank() ? "" : ": " + reason));
 		});
 
-		if (isBanned(user)) {
-			throw new SecurityException("User is banned");
-		}
+		User user = userRepository.findByEmailGoogle(normalizedEmail).orElseGet(() -> {
+			log.info("Creating new user for email {}", normalizedEmail);
+			return userRepository.save(User.builder().id(UUID.randomUUID()).emailGoogle(normalizedEmail).username(null)
+					.name(name).surname(safeSurname.isBlank() ? null : safeSurname)
+					.avatarUrl(safeAvatarUrl.isBlank() ? null : safeAvatarUrl).isStudentVerified(false)
+					.isEmployeeVerified(false).createdAt(LocalDateTime.now()).build());
+		});
 
 		return user;
 	}
@@ -244,28 +253,42 @@ public class UserService {
 		}
 
 		User target = getById(targetUserId);
-		if (target.isAdmin()) {
-			throw new IllegalArgumentException("Cannot ban an admin user");
-		}
 		if ("kazenomi".equalsIgnoreCase(target.getUsername())) {
 			throw new IllegalArgumentException("Cannot ban the root user");
 		}
-
-		boolean permanentBan = bannedUntil == null;
-		target.setBannedUntil(bannedUntil);
-		target.setBannedPermanent(permanentBan);
-		target.setBanReason(reason == null || reason.isBlank() ? null : reason.trim());
-
-		if (permanentBan) {
-			clearOptionalProfileData(target);
-			outboxService.enqueueUserEvent("USER_PERMANENT_BANNED", targetUserId.toString(), targetUserId.toString(),
-					Map.of("userId", targetUserId.toString(), "moderatorId", moderatorId.toString(), "reason",
-							target.getBanReason() == null ? "" : target.getBanReason()));
+		if (target.isAdmin() && !"kazenomi".equalsIgnoreCase(moderator.getUsername())) {
+			throw new IllegalArgumentException("Only kazenomi can ban admin users");
 		}
 
-		outboxService.enqueueUserEvent("USER_BANNED", targetUserId.toString(), targetUserId.toString(),
-				Map.of("targetUserId", targetUserId.toString(), "moderatorId", moderatorId.toString(), "bannedAt",
-						LocalDateTime.now().toString()));
+		boolean permanentBan = bannedUntil == null;
+		String normalizedReason = reason == null || reason.isBlank() ? null : reason.trim();
+		LocalDateTime now = LocalDateTime.now();
+
+		if (permanentBan) {
+			bannedGoogleAccountRepository
+					.save(BannedGoogleAccount.builder().emailGoogle(normalizeGoogleEmail(target.getEmailGoogle()))
+							.reason(normalizedReason).moderatorId(moderatorId).bannedAt(now).build());
+
+			outboxService.enqueueUserEvent("USER_PERMANENT_BANNED", targetUserId.toString(), targetUserId.toString(),
+					Map.of("userId", targetUserId.toString(), "moderatorId", moderatorId.toString(), "reason",
+							normalizedReason == null ? "" : normalizedReason, "bannedAt", now.toString()));
+
+			userRepository.delete(target);
+			log.warn("User {} permanently banned by admin {}; profile data deleted; reason={}", targetUserId,
+					moderatorId, normalizedReason);
+			return;
+		}
+
+		target.setBannedUntil(bannedUntil);
+		target.setBanReason(normalizedReason);
+
+		Map<String, Object> payload = new LinkedHashMap<>();
+		payload.put("targetUserId", targetUserId.toString());
+		payload.put("moderatorId", moderatorId.toString());
+		payload.put("bannedAt", now.toString());
+		payload.put("bannedUntil", bannedUntil.toString());
+		payload.put("reason", normalizedReason == null ? "" : normalizedReason);
+		outboxService.enqueueUserEvent("USER_BANNED", targetUserId.toString(), targetUserId.toString(), payload);
 
 		userRepository.save(target);
 		log.warn("User {} banned by admin {}; until={}, reason={}", targetUserId, moderatorId, bannedUntil, reason);
@@ -274,6 +297,9 @@ public class UserService {
 	@Transactional
 	public void deleteAccount(UUID userId) {
 		User user = getById(userId);
+		if (isBanned(user)) {
+			throw new SecurityException("User is banned");
+		}
 		outboxService.enqueueUserEvent("USER_DELETED", userId.toString(), userId.toString(),
 				Map.of("userId", userId.toString(), "deletedAt", LocalDateTime.now().toString()));
 		userRepository.delete(user);
@@ -282,23 +308,14 @@ public class UserService {
 
 	private static boolean isBanned(User user) {
 		LocalDateTime bannedUntil = user.getBannedUntil();
-		return user.isBannedPermanent() || (bannedUntil != null && bannedUntil.isAfter(LocalDateTime.now()));
+		return bannedUntil != null && bannedUntil.isAfter(LocalDateTime.now());
 	}
 
-	private static void clearOptionalProfileData(User target) {
-		target.setUsername(null);
-		target.setSurname(null);
-		target.setEmailUniversity(null);
-		target.setAvatarUrl(null);
-		target.setCoverUrl(null);
-		target.setStatus(null);
-		target.setUniversity(null);
-		target.setFaculty(null);
-		target.setProgram(null);
-		target.setCourse(null);
-		target.setEducationLevel(null);
-		target.setGraduationYear(null);
-		target.setBio(null);
+	private static String normalizeGoogleEmail(String emailGoogle) {
+		if (emailGoogle == null || emailGoogle.isBlank()) {
+			throw new IllegalArgumentException("Google email cannot be blank");
+		}
+		return emailGoogle.trim().toLowerCase();
 	}
 
 }

@@ -203,7 +203,8 @@ public class UserController {
 		if (userId == null) {
 			return Mono.error(new CredentialException("Authentication required"));
 		}
-		return userGrpcClient.deleteAccount(userId).map(DeleteResult::new);
+		return requireActiveUser(userId).flatMap(activeId -> userGrpcClient.deleteAccount(activeId))
+				.map(DeleteResult::new);
 	}
 
 	private Mono<String> requireActiveUser(String userId) {

@@ -51,8 +51,8 @@ function NotificationsPage({ currentUser, onNavigate }) {
       MENTION_IN_POST: 'упомянул вас в посте',
       MENTION_IN_COMMENT: 'упомянул вас в комментарии',
       FOLLOW: 'подписался на вас',
-      ADMIN_GRANTED: 'вы стали администратором',
-      BANNED: 'вы были заблокированы',
+      ADMIN_GRANTED: 'выдал вам права администратора',
+      BANNED: 'вас заблокировал',
     };
     return labels[type] || type;
   };

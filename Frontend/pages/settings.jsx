@@ -128,7 +128,7 @@ function SettingsPage({ currentUser, onNavigate, onAccountDeleted }) {
         </div>
       )}
 
-      {currentUser && (
+      {currentUser && !currentUser.isBanned && (
         <div style={{ padding: 16, marginTop: 8 }}>
           <h3 style={{ margin: '0 0 4px', fontSize: 17, fontWeight: 700 }}>Аккаунт</h3>
           <p style={{ margin: '0 0 14px', color: 'var(--text-muted)', fontSize: 14, lineHeight: 1.5 }}>

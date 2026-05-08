@@ -2,6 +2,7 @@ package uni.gateway.controller;
 
 import lombok.RequiredArgsConstructor;
 import org.springframework.core.io.buffer.DataBufferUtils;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.codec.multipart.FilePart;
@@ -13,6 +14,7 @@ import org.springframework.web.bind.annotation.RequestPart;
 import org.springframework.web.bind.annotation.RestController;
 import reactor.core.publisher.Mono;
 import uni.gateway.grpc.MediaGrpcClient;
+import uni.gateway.grpc.UserGrpcClient;
 
 import java.util.Map;
 import java.util.Set;
@@ -28,6 +30,7 @@ public class UploadController {
 			"post-media");
 
 	private final MediaGrpcClient mediaGrpcClient;
+	private final UserGrpcClient userGrpcClient;
 
 	@PostMapping(consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
 	public Mono<ResponseEntity<Map<String, String>>> upload(@RequestHeader("X-User-Id") String userId,
@@ -37,6 +40,18 @@ public class UploadController {
 			return Mono.just(ResponseEntity.badRequest().body(Map.of("error", "Неподдерживаемый тип загрузки")));
 		}
 
+		return userGrpcClient.getUserById(userId).flatMap(user -> {
+			if (user.getIsBanned()) {
+				return Mono.just(ResponseEntity.status(HttpStatus.FORBIDDEN)
+						.<Map<String, String>>body(Map.of("error", "Аккаунт заблокирован")));
+			}
+			return uploadActiveUserFile(userId, bucket, filePart);
+		}).onErrorResume(e -> Mono.just(ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+				.<Map<String, String>>body(Map.of("error", "Нужно войти в аккаунт"))));
+	}
+
+	private Mono<ResponseEntity<Map<String, String>>> uploadActiveUserFile(String userId, String bucket,
+			FilePart filePart) {
 		return DataBufferUtils.join(filePart.content()).flatMap(dataBuffer -> {
 			byte[] bytes = new byte[dataBuffer.readableByteCount()];
 			dataBuffer.read(bytes);

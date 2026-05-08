@@ -5,6 +5,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import uni.user.entity.BannedGoogleAccount;
 import uni.user.entity.Subscription;
 import uni.user.entity.User;
 import uni.user.entity.University;
@@ -13,6 +14,7 @@ import uni.user.entity.UniversityProgram;
 import uni.user.exception.UserNotFoundException;
 import uni.user.exception.UsernameAlreadyTakenException;
 import uni.user.outbox.OutboxService;
+import uni.user.repository.BannedGoogleAccountRepository;
 import uni.user.repository.SubscriptionRepository;
 import uni.user.repository.UniversityFacultyRepository;
 import uni.user.repository.UniversityProgramRepository;
@@ -41,6 +43,9 @@ class UserServiceTest {
 
 	@Mock
 	UniversityProgramRepository universityProgramRepository;
+
+	@Mock
+	BannedGoogleAccountRepository bannedGoogleAccountRepository;
 
 	@Mock
 	OutboxService outboxService;
@@ -98,13 +103,13 @@ class UserServiceTest {
 	}
 
 	@Test
-	void create_or_get_throws_when_user_is_permanently_banned() {
-		User banned = buildUser();
-		banned.setBannedPermanent(true);
-		when(userRepository.findByEmailGoogle("banned@gmail.com")).thenReturn(Optional.of(banned));
+	void create_or_get_throws_when_google_account_is_permanently_banned() {
+		when(bannedGoogleAccountRepository.findById("banned@gmail.com")).thenReturn(
+				Optional.of(BannedGoogleAccount.builder().emailGoogle("banned@gmail.com").reason("Spam").build()));
 
 		assertThatThrownBy(() -> userService.createOrGet("banned@gmail.com", "Иван", "Петров", ""))
-				.isInstanceOf(SecurityException.class).hasMessageContaining("banned");
+				.isInstanceOf(SecurityException.class).hasMessageContaining("permanently banned")
+				.hasMessageContaining("Spam");
 	}
 
 	@Test
@@ -372,7 +377,7 @@ class UserServiceTest {
 	}
 
 	@Test
-	void ban_user_permanently_clears_optional_profile_data_and_emits_cleanup_event() {
+	void ban_user_permanently_deletes_user_and_stores_google_account_ban() {
 		UUID moderatorId = UUID.fromString("11111111-1111-1111-1111-111111111111");
 		User moderator = buildUser();
 		moderator.setId(moderatorId);
@@ -398,29 +403,101 @@ class UserServiceTest {
 
 		when(userRepository.findById(moderatorId)).thenReturn(Optional.of(moderator));
 		when(userRepository.findById(TARGET_ID)).thenReturn(Optional.of(target));
-		when(userRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
 
 		userService.banUser(moderatorId, TARGET_ID, null, "Permanent ban");
 
-		assertThat(target.isBannedPermanent()).isTrue();
-		assertThat(target.getBannedUntil()).isNull();
-		assertThat(target.getUsername()).isNull();
-		assertThat(target.getSurname()).isNull();
-		assertThat(target.getEmailUniversity()).isNull();
-		assertThat(target.getAvatarUrl()).isNull();
-		assertThat(target.getCoverUrl()).isNull();
-		assertThat(target.getStatus()).isNull();
-		assertThat(target.getUniversity()).isNull();
-		assertThat(target.getFaculty()).isNull();
-		assertThat(target.getProgram()).isNull();
-		assertThat(target.getCourse()).isNull();
-		assertThat(target.getEducationLevel()).isNull();
-		assertThat(target.getGraduationYear()).isNull();
-		assertThat(target.getBio()).isNull();
-
+		verify(bannedGoogleAccountRepository).save(
+				argThat(ban -> ban.getEmailGoogle().equals("ivan@gmail.com") && "Permanent ban".equals(ban.getReason())
+						&& moderatorId.equals(ban.getModeratorId()) && ban.getBannedAt() != null));
 		verify(outboxService).enqueueUserEvent(eq("USER_PERMANENT_BANNED"), eq(TARGET_ID.toString()),
 				eq(TARGET_ID.toString()), any());
+		verify(userRepository).delete(target);
+		verify(userRepository, never()).save(target);
+	}
+
+	@Test
+	void ban_user_denies_admin_target_for_non_root_admin() {
+		UUID moderatorId = UUID.fromString("11111111-1111-1111-1111-111111111111");
+		User moderator = buildUser();
+		moderator.setId(moderatorId);
+		moderator.setUsername("regular_admin");
+		moderator.setAdmin(true);
+
+		User target = buildUser();
+		target.setId(TARGET_ID);
+		target.setUsername("admin_user");
+		target.setAdmin(true);
+
+		when(userRepository.findById(moderatorId)).thenReturn(Optional.of(moderator));
+		when(userRepository.findById(TARGET_ID)).thenReturn(Optional.of(target));
+
+		assertThatThrownBy(() -> userService.banUser(moderatorId, TARGET_ID, LocalDateTime.now().plusDays(1), "Ban"))
+				.isInstanceOf(IllegalArgumentException.class).hasMessageContaining("Only kazenomi");
+
+		verify(userRepository, never()).save(target);
+		verify(outboxService, never()).enqueueUserEvent(eq("USER_BANNED"), any(), any(), any());
+	}
+
+	@Test
+	void ban_user_allows_admin_target_for_kazenomi() {
+		UUID moderatorId = UUID.fromString("11111111-1111-1111-1111-111111111111");
+		User moderator = buildUser();
+		moderator.setId(moderatorId);
+		moderator.setUsername("kazenomi");
+		moderator.setAdmin(true);
+
+		User target = buildUser();
+		target.setId(TARGET_ID);
+		target.setUsername("admin_user");
+		target.setAdmin(true);
+
+		LocalDateTime bannedUntil = LocalDateTime.now().plusDays(1);
+		when(userRepository.findById(moderatorId)).thenReturn(Optional.of(moderator));
+		when(userRepository.findById(TARGET_ID)).thenReturn(Optional.of(target));
+
+		userService.banUser(moderatorId, TARGET_ID, bannedUntil, "Admin ban");
+
+		assertThat(target.getBannedUntil()).isEqualTo(bannedUntil);
+		assertThat(target.getBanReason()).isEqualTo("Admin ban");
+		verify(outboxService).enqueueUserEvent(eq("USER_BANNED"), eq(TARGET_ID.toString()), eq(TARGET_ID.toString()),
+				any());
 		verify(userRepository).save(target);
+	}
+
+	@Test
+	void ban_user_denies_kazenomi_target() {
+		UUID moderatorId = UUID.fromString("11111111-1111-1111-1111-111111111111");
+		User moderator = buildUser();
+		moderator.setId(moderatorId);
+		moderator.setUsername("kazenomi");
+		moderator.setAdmin(true);
+
+		User target = buildUser();
+		target.setId(TARGET_ID);
+		target.setUsername("kazenomi");
+		target.setAdmin(true);
+
+		when(userRepository.findById(moderatorId)).thenReturn(Optional.of(moderator));
+		when(userRepository.findById(TARGET_ID)).thenReturn(Optional.of(target));
+
+		assertThatThrownBy(() -> userService.banUser(moderatorId, TARGET_ID, LocalDateTime.now().plusDays(1), "Ban"))
+				.isInstanceOf(IllegalArgumentException.class).hasMessageContaining("root user");
+
+		verify(userRepository, never()).save(target);
+		verify(outboxService, never()).enqueueUserEvent(eq("USER_BANNED"), any(), any(), any());
+	}
+
+	@Test
+	void delete_account_denies_active_banned_user() {
+		User user = buildUser();
+		user.setBannedUntil(LocalDateTime.now().plusDays(1));
+		when(userRepository.findById(USER_ID)).thenReturn(Optional.of(user));
+
+		assertThatThrownBy(() -> userService.deleteAccount(USER_ID)).isInstanceOf(SecurityException.class)
+				.hasMessageContaining("banned");
+
+		verify(userRepository, never()).delete(any());
+		verify(outboxService, never()).enqueueUserEvent(eq("USER_DELETED"), any(), any(), any());
 	}
 
 	@Test

@@ -80,9 +80,6 @@ public class User {
 	@Column(nullable = false)
 	private boolean isAdmin;
 
-	@Column(nullable = false)
-	private boolean bannedPermanent;
-
 	private LocalDateTime bannedUntil;
 
 	@Column(length = 500)

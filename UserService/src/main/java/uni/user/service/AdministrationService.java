@@ -314,7 +314,7 @@ public class AdministrationService {
 	private void ensureActiveUser(UUID userId) {
 		User user = userService.getById(userId);
 		LocalDateTime bannedUntil = user.getBannedUntil();
-		if (user.isBannedPermanent() || (bannedUntil != null && bannedUntil.isAfter(LocalDateTime.now()))) {
+		if (bannedUntil != null && bannedUntil.isAfter(LocalDateTime.now())) {
 			throw new SecurityException("User is banned");
 		}
 	}

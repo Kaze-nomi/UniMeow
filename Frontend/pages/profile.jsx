@@ -79,13 +79,21 @@ function ProfilePage({ userId, currentUser, onNavigate, onUserUpdated }) {
     const reason = banReason.trim();
     const days = banDays.trim();
     const input = { targetUserId: user.id, reason };
+    let bannedUntil = null;
     if (days && !Number.isNaN(Number(days)) && Number(days) > 0) {
       const until = new Date(Date.now() + Number(days) * 24 * 60 * 60 * 1000);
-      input.bannedUntil = until.toISOString().slice(0, 19);
+      bannedUntil = until.toISOString().slice(0, 19);
+      input.bannedUntil = bannedUntil;
     }
     try {
       await API.gql(API.M.adminBanUser, { input });
-      setUser(u => ({ ...u, isBanned: true, banReason: reason }));
+      if (bannedUntil) {
+        setUser(u => ({ ...u, isBanned: true, banReason: reason || null, bannedUntil }));
+      } else {
+        setPosts([]);
+        setUser(null);
+        setError('Пользователь не найден');
+      }
       setBanOpen(false);
     } finally {
       setBanLoading(false);
@@ -97,6 +105,11 @@ function ProfilePage({ userId, currentUser, onNavigate, onUserUpdated }) {
 
   const displayName = (user.name && user.surname) ? `${user.name} ${user.surname}` : user.name || user.username || 'Пользователь';
   const joinDate = user.createdAt ? new Date(user.createdAt).toLocaleDateString('ru-RU', { month: 'long', year: 'numeric' }) : '';
+  const banUntilText = formatProfileBanDate(user.bannedUntil);
+  const currentUserIsRoot = currentUser?.username?.toLowerCase() === 'kazenomi';
+  const targetUserIsRoot = user.username?.toLowerCase() === 'kazenomi';
+  const canBanProfile = currentUser?.isAdmin && !isMe && !targetUserIsRoot
+    && (currentUserIsRoot || !user.isAdmin);
   const accentHue = getComputedStyle(document.documentElement).getPropertyValue('--accent-hue').trim() || '288';
 
   return (
@@ -161,15 +174,16 @@ function ProfilePage({ userId, currentUser, onNavigate, onUserUpdated }) {
                     {currentUser?.username === 'kazenomi' && (
                       <Button size="sm" variant="secondary" onClick={() => handleGrantAdmin(user?.id || userId)} loading={grantAdminLoading}>Выдать админку</Button>
                     )}
-                    <Button size="sm" variant="secondary" onClick={handleBan}>Бан</Button>
                   </>
                 )}
-                {currentUser?.isAdmin && user.isAdmin && (
+                {canBanProfile && (
                   <Button size="sm" variant="secondary" onClick={handleBan}>Бан</Button>
                 )}
-                <Button size="sm" variant={subscribed ? 'secondary' : 'primary'} onClick={handleSubscribe} loading={subLoading}>
-                  {subscribed ? 'Вы подписаны' : 'Подписаться'}
-                </Button>
+                {!user.isBanned && (
+                  <Button size="sm" variant={subscribed ? 'secondary' : 'primary'} onClick={handleSubscribe} loading={subLoading}>
+                    {subscribed ? 'Вы подписаны' : 'Подписаться'}
+                  </Button>
+                )}
               </>
             )}
           </div>
@@ -178,8 +192,10 @@ function ProfilePage({ userId, currentUser, onNavigate, onUserUpdated }) {
 
         <div style={{ marginTop: 12 }}>
           {user.isBanned && (
-            <div style={{ marginBottom: 10, padding: '8px 10px', borderRadius: 8, border: '1px solid var(--border)', color: 'var(--like)', fontSize: 13 }}>
-              Пользователь забанен{user.banReason ? `: ${user.banReason}` : ''}
+            <div style={{ marginBottom: 10, padding: '10px 12px', borderRadius: 10, border: '1px solid var(--border)', color: 'var(--like)', background: 'var(--like-subtle)', fontSize: 13, lineHeight: 1.45 }}>
+              <div style={{ fontWeight: 800 }}>Пользователь заблокирован</div>
+              <div>Причина: {user.banReason || 'не указана'}</div>
+              <div>{banUntilText ? `Разблокировка: ${banUntilText}` : 'Блокировка бессрочная'}</div>
             </div>
           )}
           <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
@@ -259,6 +275,26 @@ function ProfilePage({ userId, currentUser, onNavigate, onUserUpdated }) {
 
 function eduLabel(level) {
   return { BACHELOR: 'Бакалавр', MASTER: 'Магистр', PHD: 'Аспирант', SPECIALIST: 'Специалист' }[level] || level;
+}
+
+function formatProfileBanDate(value) {
+  if (!value) return '';
+  try {
+    const normalized = typeof value === 'string' && !/[zZ]|[+-]\d{2}:\d{2}$/.test(value)
+      ? value + 'Z'
+      : value;
+    const date = new Date(normalized);
+    if (Number.isNaN(date.getTime())) return value;
+    return date.toLocaleString('ru-RU', {
+      day: 'numeric',
+      month: 'long',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+  } catch {
+    return value;
+  }
 }
 
 function pluralize(n, one, few, many) {

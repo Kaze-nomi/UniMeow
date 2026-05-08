@@ -51,7 +51,6 @@ CREATE TABLE users (
     is_student_verified  BOOLEAN       NOT NULL DEFAULT FALSE,
     is_employee_verified BOOLEAN       NOT NULL DEFAULT FALSE,
     is_admin             BOOLEAN       NOT NULL DEFAULT FALSE,
-    banned_permanent     BOOLEAN       NOT NULL DEFAULT FALSE,
     banned_until         TIMESTAMP,
     ban_reason           VARCHAR(500),
     created_at           TIMESTAMP     NOT NULL

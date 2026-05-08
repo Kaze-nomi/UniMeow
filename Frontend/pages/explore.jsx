@@ -79,7 +79,6 @@ function ExplorePage({ currentUser, onNavigate }) {
         <div style={{ textAlign: 'center', padding: '48px 24px', color: 'var(--text-muted)' }}>
           <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 12 }}><SearchIcon size={36} color="var(--text-muted)" /></div>
           <div style={{ fontWeight: 600, fontSize: 15, color: 'var(--text)', marginBottom: 6 }}>Найдите однокурсников</div>
-          <div style={{ fontSize: 14 }}>Введите @username и нажмите Enter</div>
         </div>
       )}
     </div>
@@ -87,5 +86,3 @@ function ExplorePage({ currentUser, onNavigate }) {
 }
 
 Object.assign(window, { ExplorePage });
-
-

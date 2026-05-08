@@ -116,7 +116,7 @@ function PostPage({ postId, currentUser, onNavigate }) {
   }, {});
 
   if (loading) return <div style={{ display: 'flex', justifyContent: 'center', padding: 64 }}><Spinner size={36} /></div>;
-  if (!post) return <EmptyState icon={<CatFaceIcon />} title="Запись не найдена" />;
+  if (!post) return <EmptyState icon={<SearchIcon size={40} color="var(--text-muted)" />} title="Запись не найдена" />;
 
   return (
     <div>

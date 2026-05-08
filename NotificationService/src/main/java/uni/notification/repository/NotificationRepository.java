@@ -5,6 +5,7 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 import uni.notification.entity.Notification;
 
 import java.time.LocalDateTime;
@@ -24,6 +25,15 @@ public interface NotificationRepository extends JpaRepository<Notification, UUID
 	@Modifying
 	@Query("DELETE FROM Notification n WHERE n.createdAt < :cutoff")
 	int deleteOlderThan(LocalDateTime cutoff);
+
+	@Modifying
+	@Query("""
+			DELETE FROM Notification n
+			WHERE n.userId = :userId
+			   OR n.actorId = :userId
+			   OR (n.entityType = 'USER' AND n.entityId = :userIdText)
+			""")
+	int deleteAllForUser(@Param("userId") UUID userId, @Param("userIdText") String userIdText);
 
 	Optional<Notification> findFirstByUserIdAndActorIdAndTypeAndEntityIdAndCreatedAtAfterOrderByCreatedAtDesc(
 			UUID userId, UUID actorId, String type, String entityId, LocalDateTime after);

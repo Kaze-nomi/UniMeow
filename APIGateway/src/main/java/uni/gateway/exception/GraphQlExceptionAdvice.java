@@ -24,6 +24,14 @@ public class GraphQlExceptionAdvice {
 		return build(env, "Authentication required", ErrorType.UNAUTHORIZED, 401, "UNAUTHORIZED", null);
 	}
 
+	@GraphQlExceptionHandler({org.springframework.security.access.AccessDeniedException.class,
+			java.nio.file.AccessDeniedException.class})
+	public GraphQLError handleForbidden(Exception ex, DataFetchingEnvironment env) {
+		String message = ex.getMessage() != null && !ex.getMessage().isBlank() ? ex.getMessage() : "Forbidden";
+		String code = message.toLowerCase().contains("banned") ? "BANNED" : "FORBIDDEN";
+		return build(env, message, ErrorType.FORBIDDEN, 403, code, null);
+	}
+
 	@GraphQlExceptionHandler(StatusRuntimeException.class)
 	public GraphQLError handleGrpc(StatusRuntimeException ex, DataFetchingEnvironment env) {
 		Status status = ex.getStatus();
@@ -38,8 +46,11 @@ public class GraphQlExceptionAdvice {
 		String msg = (description != null && !description.isBlank()) ? description : defaultMessage(grpc);
 
 		Mapped mapped = map(grpc);
+		String code = grpc == Status.Code.PERMISSION_DENIED && msg.toLowerCase().contains("banned")
+				? "BANNED"
+				: mapped.code;
 
-		return build(env, msg, mapped.errorType, mapped.httpStatus, mapped.code, grpc.name());
+		return build(env, msg, mapped.errorType, mapped.httpStatus, code, grpc.name());
 	}
 
 	@GraphQlExceptionHandler(IllegalArgumentException.class)

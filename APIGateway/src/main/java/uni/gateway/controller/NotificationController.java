@@ -15,6 +15,7 @@ import uni.gateway.grpc.NotificationGrpcClient;
 import uni.gateway.grpc.UserGrpcClient;
 import uni.grpc.notification.NotificationProto;
 
+import javax.security.auth.login.CredentialException;
 import java.nio.file.AccessDeniedException;
 
 @Controller
@@ -28,10 +29,10 @@ public class NotificationController {
 	public Mono<NotificationPageDto> getNotifications(@Argument(name = "page") Integer page,
 			@Argument(name = "size") Integer size, @ContextValue(name = "userId", required = false) String userId) {
 		if (userId == null)
-			return Mono.error(new AccessDeniedException("Authentication required"));
+			return Mono.error(new CredentialException("Authentication required"));
 		int p = page != null ? page : 0;
 		int s = size != null ? size : 20;
-		return notificationGrpcClient.getNotifications(userId, p, s)
+		return requireActiveUser(userId).flatMap(activeId -> notificationGrpcClient.getNotifications(activeId, p, s))
 				.map(resp -> new NotificationPageDto(resp.getNotificationsList().stream().map(this::toDto).toList(),
 						resp.getTotal()));
 	}
@@ -39,15 +40,15 @@ public class NotificationController {
 	@QueryMapping
 	public Mono<Long> getUnreadNotificationCount(@ContextValue(name = "userId", required = false) String userId) {
 		if (userId == null)
-			return Mono.error(new AccessDeniedException("Authentication required"));
-		return notificationGrpcClient.getUnreadCount(userId).map(r -> r.getCount());
+			return Mono.error(new CredentialException("Authentication required"));
+		return requireActiveUser(userId).flatMap(notificationGrpcClient::getUnreadCount).map(r -> r.getCount());
 	}
 
 	@MutationMapping
 	public Mono<Boolean> markAllNotificationsRead(@ContextValue(name = "userId", required = false) String userId) {
 		if (userId == null)
-			return Mono.error(new AccessDeniedException("Authentication required"));
-		return notificationGrpcClient.markAllRead(userId).map(r -> r.getSuccess());
+			return Mono.error(new CredentialException("Authentication required"));
+		return requireActiveUser(userId).flatMap(notificationGrpcClient::markAllRead).map(r -> r.getSuccess());
 	}
 
 	@SchemaMapping(typeName = "Notification", field = "actor")
@@ -59,6 +60,15 @@ public class NotificationController {
 		return new NotificationDto(proto.getId(), proto.getUserId(), proto.getActorId(), null, proto.getType(),
 				proto.getEntityId(), proto.getEntityType(),
 				proto.hasParentEntityId() ? proto.getParentEntityId() : null, proto.getIsRead(), proto.getCreatedAt());
+	}
+
+	private Mono<String> requireActiveUser(String userId) {
+		return userGrpcClient.getUserById(userId).flatMap(user -> {
+			if (user.getIsBanned()) {
+				return Mono.error(new AccessDeniedException("User is banned"));
+			}
+			return Mono.just(userId);
+		});
 	}
 
 	private UserDto toUserDto(uni.grpc.user.UserResponse r) {

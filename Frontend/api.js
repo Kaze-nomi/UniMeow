@@ -38,6 +38,7 @@
     if (/content.*(blank|empty|required)|must not be blank|must not be empty/i.test(text)) return 'Добавьте текст записи';
     if (/too large|payload|max.*size/i.test(text)) return 'Файл слишком большой';
     if (/upload failed/i.test(text)) return 'Не удалось загрузить файл';
+    if (/banned|blocked|permanent ban/i.test(text)) return 'Аккаунт заблокирован';
     if (/forbidden|access denied|permission/i.test(text)) return 'Недостаточно прав';
     if (/upstream|internal|unknown|service unavailable|gateway/i.test(text)) {
       return 'Временная ошибка сервиса. Попробуйте ещё раз.';
@@ -105,6 +106,7 @@
     const data = await resp.json();
 
     if (data.errors) {
+      const isBanned = data.errors.some(e => e.extensions?.code === 'BANNED' || /banned|blocked/i.test(e.message));
       const isUnauth = data.errors.some(e =>
         e.extensions?.classification === 'UNAUTHORIZED' ||
         e.extensions?.code === 'UNAUTHORIZED' ||
@@ -118,6 +120,9 @@
       }
       const err = new Error(userMessage(data.errors.map(e => e.message).join(', ')));
       err.gqlErrors = data.errors;
+      if (isBanned) {
+        window.dispatchEvent(new CustomEvent('um-account-banned'));
+      }
       if (_transportRetries > 0 && isTransientGqlError(err)) {
         return retryGraphQl(query, variables, _authRetry, _transportRetries);
       }
@@ -261,6 +266,9 @@
       if (ok) {
         ({ resp, data } = await doUpload());
       }
+    }
+    if (resp.status === 403 && /заблок|banned|blocked/i.test(data.error || '')) {
+      window.dispatchEvent(new CustomEvent('um-account-banned'));
     }
     if (!resp.ok) throw new Error(userMessage(data.error || 'Upload failed'));
     return data.url;
