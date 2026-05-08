@@ -51,7 +51,11 @@ function App() {
   const [composeOpen, setComposeOpen] = React.useState(false);
 
   React.useEffect(() => {
-    window.__authFailed = () => { setCurrentUser(null); navigate('/login'); };
+    window.__authFailed = () => {
+      setCurrentUser(null);
+      API.clearUserCache && API.clearUserCache();
+      navigate('/login');
+    };
   }, []);
 
 
@@ -59,6 +63,7 @@ function App() {
     const h = (e) => {
       const user = e.detail;
       setCurrentUser(user);
+      if (!user) API.clearUserCache && API.clearUserCache();
       if (user) {
         if (!user.username) navigate('/complete-registration');
         else navigate('/');
@@ -89,6 +94,12 @@ function App() {
 
   const handleLogout = () => {
     setCurrentUser(null);
+    API.clearUserCache && API.clearUserCache();
+    navigate('/login');
+  };
+  const handleAccountDeleted = () => {
+    setCurrentUser(null);
+    API.clearUserCache && API.clearUserCache();
     navigate('/login');
   };
   const openCompose = () => {
@@ -128,7 +139,7 @@ function App() {
         ) : route === 'post' && param ? (
           <PostPage postId={param} currentUser={currentUser} onNavigate={navigate} />
         ) : route === 'settings' ? (
-          <SettingsPage currentUser={currentUser} onNavigate={navigate} />
+          <SettingsPage currentUser={currentUser} onNavigate={navigate} onAccountDeleted={handleAccountDeleted} />
         ) : route === 'explore' ? (
           <ExplorePage currentUser={currentUser} onNavigate={navigate} />
         ) : route === 'notifications' ? (

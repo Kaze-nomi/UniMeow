@@ -37,17 +37,32 @@ function PostPage({ postId, currentUser, onNavigate }) {
     if (!currentUser) { onNavigate('/login'); return; }
     if (liking) return;
     setLiking(true);
+    const wasLiked = liked;
+    const previousLikes = likes || 0;
+    setLiked(!wasLiked);
+    setLikes(Math.max(0, previousLikes + (wasLiked ? -1 : 1)));
     try {
-      if (liked) { await API.gql(API.M.unlikePost, { postId }); setLiked(false); setLikes(l => l - 1); }
-      else {
+      if (wasLiked) {
+        await API.gql(API.M.unlikePost, { postId });
+      } else {
         await API.gql(API.M.likePost, { postId });
-        setLiked(true);
-        setLikes(l => l + 1);
         setLikePulse(false);
         requestAnimationFrame(() => setLikePulse(true));
         setTimeout(() => setLikePulse(false), 380);
       }
-    } catch (e) { if (e.isUnauth) onNavigate('/login'); } finally { setLiking(false); }
+      try {
+        const fresh = await API.gql(API.Q.getPost, { id: postId });
+        if (fresh?.getPost) {
+          setPost(fresh.getPost);
+          setLiked(!!fresh.getPost.likedByMe);
+          setLikes(fresh.getPost.likesCount ?? 0);
+        }
+      } catch {}
+    } catch (e) {
+      setLiked(wasLiked);
+      setLikes(previousLikes);
+      if (e.isUnauth) onNavigate('/login');
+    } finally { setLiking(false); }
   };
 
   const handleComment = async () => {

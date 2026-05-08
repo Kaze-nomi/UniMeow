@@ -93,7 +93,7 @@ function ProfilePage({ userId, currentUser, onNavigate, onUserUpdated }) {
   };
 
   if (loading) return <div style={{ display: 'flex', justifyContent: 'center', padding: 64 }}><Spinner size={36} /></div>;
-  if (error || !user) return <EmptyState icon={<svg width={56} height={56} viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="8" r="4"/><path d="M6 20v-1a6 6 0 0112 0v1"/><line x1="9" y1="11" x2="9" y2="11"/><line x1="15" y1="11" x2="15" y2="11"/></svg>} title="Пользователь не найден" subtitle={error} />;
+  if (error || !user) return <EmptyState icon={<svg width={56} height={56} viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="8" r="4"/><path d="M5.5 20a6.5 6.5 0 0113 0"/></svg>} title="Пользователь не найден" subtitle={error} />;
 
   const displayName = (user.name && user.surname) ? `${user.name} ${user.surname}` : user.name || user.username || 'Пользователь';
   const joinDate = user.createdAt ? new Date(user.createdAt).toLocaleDateString('ru-RU', { month: 'long', year: 'numeric' }) : '';

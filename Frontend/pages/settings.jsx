@@ -2,10 +2,11 @@
 
 
 
-function SettingsPage({ currentUser, onNavigate }) {
+function SettingsPage({ currentUser, onNavigate, onAccountDeleted }) {
   const [theme, setTheme] = React.useState(document.documentElement.dataset.theme || 'light');
   const [deleteLoading, setDeleteLoading] = React.useState(false);
   const [deleteError, setDeleteError] = React.useState('');
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = React.useState(false);
   const [isMobile, setIsMobile] = React.useState(window.innerWidth < 420);
   React.useEffect(() => {
     const h = () => setIsMobile(window.innerWidth < 420);
@@ -53,15 +54,17 @@ function SettingsPage({ currentUser, onNavigate }) {
   };
 
   const deleteAccount = async () => {
-    if (!window.confirm('Удалить аккаунт навсегда? Это действие нельзя отменить.')) return;
     setDeleteLoading(true);
     setDeleteError('');
     try {
       await API.gql(API.M.deleteAccount);
-      await API.logout();
-      onNavigate('/login');
+      try { await API.logout(); } catch {}
+      API.clearUserCache && API.clearUserCache();
+      setDeleteConfirmOpen(false);
+      if (onAccountDeleted) onAccountDeleted();
+      else onNavigate('/login');
     } catch (e) {
-      setDeleteError(e.message);
+      setDeleteError(API.userMessage ? API.userMessage(e.message) : e.message);
     } finally {
       setDeleteLoading(false);
     }
@@ -136,11 +139,27 @@ function SettingsPage({ currentUser, onNavigate }) {
               {deleteError}
             </div>
           )}
-          <Button variant="secondary" onClick={deleteAccount} loading={deleteLoading} style={{ color: 'var(--danger)', borderColor: 'rgba(244, 63, 94, 0.35)' }}>
+          <Button variant="secondary" onClick={() => { setDeleteError(''); setDeleteConfirmOpen(true); }} loading={deleteLoading} style={{ color: 'var(--danger)', borderColor: 'rgba(244, 63, 94, 0.35)' }}>
             Удалить аккаунт
           </Button>
         </div>
       )}
+      <Modal open={deleteConfirmOpen} onClose={() => !deleteLoading && setDeleteConfirmOpen(false)} title="Удалить аккаунт?" width={460}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+          <div style={{ color: 'var(--text-muted)', fontSize: 14, lineHeight: 1.5 }}>
+            Аккаунт, профиль, посты, комментарии, подписки и активные сессии будут удалены без возможности восстановления.
+          </div>
+          {deleteError && (
+            <div style={{ padding: '10px 14px', background: 'var(--like-subtle)', color: 'var(--like)', borderRadius: 10, fontSize: 13 }}>
+              {deleteError}
+            </div>
+          )}
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+            <Button variant="secondary" onClick={() => setDeleteConfirmOpen(false)} disabled={deleteLoading}>Отмена</Button>
+            <Button variant="danger" onClick={deleteAccount} loading={deleteLoading}>Удалить</Button>
+          </div>
+        </div>
+      </Modal>
     </div>
   );
 }

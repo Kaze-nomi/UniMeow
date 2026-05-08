@@ -54,8 +54,9 @@ function PostCard({ post, onNavigate, currentUser, onLike }) {
     if (likeInFlight.current) return;
     likeInFlight.current = true;
     const wasLiked = liked;
+    const previousLikes = likes || 0;
     setLiked(!wasLiked);
-    setLikes(l => wasLiked ? l - 1 : l + 1);
+    setLikes(Math.max(0, previousLikes + (wasLiked ? -1 : 1)));
     try {
       if (wasLiked) {
         await API.gql(API.M.unlikePost, { postId: post.id });
@@ -65,10 +66,17 @@ function PostCard({ post, onNavigate, currentUser, onLike }) {
         requestAnimationFrame(() => setLikePulse(true));
         setTimeout(() => setLikePulse(false), 380);
       }
+      try {
+        const fresh = await API.gql(API.Q.getPost, { id: post.id });
+        if (fresh?.getPost) {
+          setLiked(!!fresh.getPost.likedByMe);
+          setLikes(fresh.getPost.likesCount ?? 0);
+        }
+      } catch {}
       onLike && onLike(post.id, !wasLiked);
     } catch (err) {
       setLiked(wasLiked);
-      setLikes(l => wasLiked ? l + 1 : l - 1);
+      setLikes(previousLikes);
       if (err.isUnauth) onNavigate('/login');
     } finally { likeInFlight.current = false; }
   };
@@ -320,9 +328,11 @@ function ComposeModal({ open, onClose, currentUser, onNavigate, onCreated, defau
   const removeMedia = (idx) => setMediaFiles(prev => prev.filter((_, i) => i !== idx));
 
   const submit = async () => {
-    if (!content.trim() && mediaFiles.length === 0) return;
-    setLoading(true); setUploading(mediaFiles.length > 0); setError('');
+    if (loading || uploading) return;
     const submittedContent = content.trim();
+    if (!submittedContent) { setError('Добавьте текст записи'); return; }
+    if (content.length > 1000) { setError('Сократите запись до 1000 символов'); return; }
+    setLoading(true); setUploading(mediaFiles.length > 0); setError('');
     const submittedMediaFiles = mediaFiles;
     const submittedTopicId = topicId;
     setContent('');
@@ -342,6 +352,9 @@ function ComposeModal({ open, onClose, currentUser, onNavigate, onCreated, defau
         commentsCount: 0,
         likedByMe: false,
         createdAt: new Date().toISOString(),
+        universityId: currentUser?.university?.id || null,
+        facultyId: currentUser?.faculty?.id || null,
+        programId: currentUser?.program?.id || null,
       };
       onCreated && onCreated(optimisticPost);
       try {
@@ -353,12 +366,16 @@ function ComposeModal({ open, onClose, currentUser, onNavigate, onCreated, defau
         const input = { content: submittedContent, mediaUrls };
         if (submittedTopicId) input.topicId = submittedTopicId;
         const d = await API.gql(API.M.createPost, { input, clientRequestId });
+        const created = d.createPost;
         const newPost = {
-          ...d.createPost,
+          ...created,
           author: currentUser,
-          likesCount: 0,
-          commentsCount: 0,
-          likedByMe: false,
+          likesCount: created.likesCount ?? 0,
+          commentsCount: created.commentsCount ?? 0,
+          likedByMe: created.likedByMe ?? false,
+          universityId: created.universityId ?? currentUser?.university?.id ?? null,
+          facultyId: created.facultyId ?? currentUser?.faculty?.id ?? null,
+          programId: created.programId ?? currentUser?.program?.id ?? null,
         };
         onCreated && onCreated(newPost);
       } catch (innerErr) {
@@ -367,8 +384,8 @@ function ComposeModal({ open, onClose, currentUser, onNavigate, onCreated, defau
       }
     } catch (e) {
       if (e.isUnauth) { onNavigate('/login'); }
-      else setError(e.message);
-    } finally { setLoading(false); }
+      else setError(API.userMessage ? API.userMessage(e.message) : e.message);
+    } finally { setLoading(false); setUploading(false); }
   };
 
   if (!open) return null;

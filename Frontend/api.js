@@ -16,6 +16,35 @@
 
   const TRANSPORT_ERROR_RE = /end-of-stream|stream closed|connection closed|rst_stream|http2 exception|mid-frame|goaway|deadline.exceeded|upstream/i;
 
+  function userMessage(message) {
+    const text = String(message || '').trim();
+    if (!text) return 'Не удалось выполнить запрос';
+    if (/[А-Яа-яЁё]/.test(text) && !/(exception|failed|unauthorized|unauthenticated|deadline|timeout|internal|upstream|network)/i.test(text)) {
+      return text;
+    }
+    if (/unauthorized|unauthenticated|authentication required|UNAUTHORIZED/i.test(text)) {
+      return 'Нужно войти в аккаунт';
+    }
+    if (/abort|timeout|timed out|deadline|deadline_exceeded/i.test(text)) {
+      return 'Запрос занял слишком много времени. Попробуйте ещё раз.';
+    }
+    if (/end-of-stream|stream closed|connection closed|rst_stream|http2 exception|mid-frame|goaway|failed to fetch|network|load failed/i.test(text)) {
+      return 'Временная ошибка соединения. Попробуйте ещё раз.';
+    }
+    if (/user not found/i.test(text)) return 'Пользователь не найден';
+    if (/post not found/i.test(text)) return 'Запись не найдена';
+    if (/comment not found/i.test(text)) return 'Комментарий не найден';
+    if (/username.*(taken|already|exists)|already.*username/i.test(text)) return 'Этот никнейм уже занят';
+    if (/content.*(blank|empty|required)|must not be blank|must not be empty/i.test(text)) return 'Добавьте текст записи';
+    if (/too large|payload|max.*size/i.test(text)) return 'Файл слишком большой';
+    if (/upload failed/i.test(text)) return 'Не удалось загрузить файл';
+    if (/forbidden|access denied|permission/i.test(text)) return 'Недостаточно прав';
+    if (/upstream|internal|unknown|service unavailable|gateway/i.test(text)) {
+      return 'Временная ошибка сервиса. Попробуйте ещё раз.';
+    }
+    return text;
+  }
+
   function isTransientGqlError(err) {
     if (!err?.gqlErrors) return false;
     return err.gqlErrors.some(e => {
@@ -61,7 +90,7 @@
       if (_transportRetries > 0) {
         return retryGraphQl(query, variables, _authRetry, _transportRetries);
       }
-      throw networkErr;
+      throw new Error(userMessage(networkErr.message));
     }
 
     if (resp.status === 401) {
@@ -70,7 +99,7 @@
         if (ok) return gql(query, variables, false, _transportRetries);
       }
       window.__authFailed && window.__authFailed();
-      const err = new Error('UNAUTHORIZED'); err.isUnauth = true; throw err;
+      const err = new Error(userMessage('UNAUTHORIZED')); err.isUnauth = true; throw err;
     }
 
     const data = await resp.json();
@@ -85,9 +114,9 @@
         const ok = await tryRefresh();
         if (ok) return gql(query, variables, false, _transportRetries);
         window.__authFailed && window.__authFailed();
-        const err = new Error('UNAUTHORIZED'); err.isUnauth = true; throw err;
+        const err = new Error(userMessage('UNAUTHORIZED')); err.isUnauth = true; throw err;
       }
-      const err = new Error(data.errors.map(e => e.message).join(', '));
+      const err = new Error(userMessage(data.errors.map(e => e.message).join(', ')));
       err.gqlErrors = data.errors;
       if (_transportRetries > 0 && isTransientGqlError(err)) {
         return retryGraphQl(query, variables, _authRetry, _transportRetries);
@@ -110,6 +139,7 @@
     } catch { return null; }
   }
   function invalidateUser(id) { delete _userCache[id]; }
+  function clearUserCache() { Object.keys(_userCache).forEach(id => delete _userCache[id]); }
 
   const Q = {
     me: `query { me { id username name surname avatarUrl coverUrl bio status emailGoogle emailUniversity university { id name shortName subdomain iconUrl } faculty { id name shortName } program { id facultyId name shortName } course educationLevel graduationYear isStudentVerified isEmployeeVerified isAdmin isBanned bannedUntil banReason createdAt } }`,
@@ -118,7 +148,7 @@
     trendingFeed: `query($cursor:String,$size:Int,$universityId:ID,$facultyId:ID,$programId:ID,$topicId:ID) { trendingFeed(cursor:$cursor,size:$size,universityId:$universityId,facultyId:$facultyId,programId:$programId,topicId:$topicId) { posts { id authorId author { id username name surname avatarUrl coverUrl bio status isStudentVerified isEmployeeVerified university { id name shortName subdomain iconUrl } faculty { id name shortName } program { id facultyId name shortName } } content mediaUrls likesCount commentsCount likedByMe createdAt universityId facultyId programId } nextCursor hasMore } }`,
     followingFeed: `query($cursor:String,$size:Int,$universityId:ID,$facultyId:ID,$programId:ID,$topicId:ID) { followingFeed(cursor:$cursor,size:$size,universityId:$universityId,facultyId:$facultyId,programId:$programId,topicId:$topicId) { posts { id authorId author { id username name surname avatarUrl coverUrl bio status isStudentVerified isEmployeeVerified university { id name shortName subdomain iconUrl } faculty { id name shortName } program { id facultyId name shortName } } content mediaUrls likesCount commentsCount likedByMe createdAt universityId facultyId programId } nextCursor hasMore } }`,
     getPost: `query($id:ID!) { getPost(id:$id) { id authorId author { id username name surname avatarUrl coverUrl bio status isStudentVerified isEmployeeVerified university { id name shortName subdomain iconUrl } faculty { id name shortName } program { id facultyId name shortName } } content mediaUrls likesCount commentsCount likedByMe createdAt updatedAt universityId facultyId programId } }`,
-    getUserPosts: `query($userId:ID!,$page:Int,$size:Int) { getUserPosts(userId:$userId,page:$page,size:$size) { posts { id authorId author { id username name surname avatarUrl coverUrl bio status isStudentVerified isEmployeeVerified university { id name shortName subdomain iconUrl } faculty { id name shortName } program { id facultyId name shortName } } content mediaUrls likesCount commentsCount likedByMe createdAt } total } }`,
+    getUserPosts: `query($userId:ID!,$page:Int,$size:Int) { getUserPosts(userId:$userId,page:$page,size:$size) { posts { id authorId author { id username name surname avatarUrl coverUrl bio status isStudentVerified isEmployeeVerified university { id name shortName subdomain iconUrl } faculty { id name shortName } program { id facultyId name shortName } } content mediaUrls likesCount commentsCount likedByMe createdAt universityId facultyId programId } total } }`,
     getComments: `query($postId:ID!,$page:Int,$size:Int) { getComments(postId:$postId,page:$page,size:$size) { comments { id postId authorId content likesCount likedByMe createdAt updatedAt parentCommentId } total } }`,
     listUniversities: `query { listUniversities { id name shortName subdomain iconUrl } }`,
     listFaculties:    `query($universityId:ID!) { listFaculties(universityId:$universityId) { id name shortName } }`,
@@ -139,7 +169,7 @@
     unsubscribe: `mutation($id:ID!) { unsubscribe(targetUserId:$id) { success } }`,
     adminGrantAdmin: `mutation($targetUserId:ID!) { adminGrantAdmin(targetUserId:$targetUserId) { id username name surname avatarUrl coverUrl bio status emailGoogle emailUniversity university { id name shortName subdomain iconUrl } faculty { id name shortName } program { id facultyId name shortName } course educationLevel graduationYear isStudentVerified isEmployeeVerified isAdmin isBanned bannedUntil banReason createdAt } }`,
     deleteAccount: `mutation { deleteAccount { success } }`,
-    createPost: `mutation($input:CreatePostInput!,$clientRequestId:String) { createPost(input:$input,clientRequestId:$clientRequestId) { id content authorId mediaUrls createdAt } }`,
+    createPost: `mutation($input:CreatePostInput!,$clientRequestId:String) { createPost(input:$input,clientRequestId:$clientRequestId) { id content authorId mediaUrls likesCount commentsCount likedByMe createdAt universityId facultyId programId } }`,
     editPost: `mutation($postId:ID!,$input:EditPostInput!) { editPost(postId:$postId,input:$input) { id content mediaUrls updatedAt } }`,
     deletePost: `mutation($postId:ID!) { deletePost(postId:$postId) { success } }`,
     likePost: `mutation($postId:ID!) { likePost(postId:$postId) { success } }`,
@@ -232,7 +262,7 @@
         ({ resp, data } = await doUpload());
       }
     }
-    if (!resp.ok) throw new Error(data.error || 'Upload failed');
+    if (!resp.ok) throw new Error(userMessage(data.error || 'Upload failed'));
     return data.url;
   }
 
@@ -266,9 +296,15 @@
   }
 
   window.API = {
-    gql, Q, M, getCachedUser, invalidateUser, uploadFile, prepareUploadFile, resolveAssetUrl,
+    gql, Q, M, getCachedUser, invalidateUser, clearUserCache, userMessage, uploadFile, prepareUploadFile, resolveAssetUrl,
     universitySlug, profileUrl, newClientRequestId,
-    logout: () => fetch(BASE + '/api/auth/logout', { method: 'POST', credentials: 'include' }),
+    logout: () => {
+      if (window.MOCK?.enabled) {
+        window.MOCK.logout();
+        return Promise.resolve({ ok: true });
+      }
+      return fetch(BASE + '/api/auth/logout', { method: 'POST', credentials: 'include' });
+    },
     loginWithGoogle: () => { window.location.href = BASE + '/oauth2/authorization/google'; },
     baseUrl: BASE,
   };

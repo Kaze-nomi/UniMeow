@@ -334,9 +334,11 @@ function InlineCompose({ currentUser, onCreated, defaultTopicId }) {
   };
 
   const submit = async () => {
-    if ((!text.trim() && mediaFiles.length === 0) || busy || text.length > 1000) return;
-    setBusy(true); setError('');
+    if (busy) return;
     const submittedText = text.trim();
+    if (!submittedText) { setError('Добавьте текст записи'); return; }
+    if (text.length > 1000) { setError('Сократите запись до 1000 символов'); return; }
+    setBusy(true); setError('');
     const submittedMediaFiles = mediaFiles;
     setText('');
     setMediaFiles([]);
@@ -354,6 +356,9 @@ function InlineCompose({ currentUser, onCreated, defaultTopicId }) {
         commentsCount: 0,
         likedByMe: false,
         createdAt: new Date().toISOString(),
+        universityId: currentUser?.university?.id || null,
+        facultyId: currentUser?.faculty?.id || null,
+        programId: currentUser?.program?.id || null,
       };
       onCreated && onCreated(optimisticPost);
       try {
@@ -362,12 +367,16 @@ function InlineCompose({ currentUser, onCreated, defaultTopicId }) {
           : [];
         const input = { content: submittedText, mediaUrls };
         const d = await API.gql(API.M.createPost, { input, clientRequestId });
+        const created = d.createPost;
         const newPost = {
-          ...d.createPost,
+          ...created,
           author: currentUser,
-          likesCount: 0,
-          commentsCount: 0,
-          likedByMe: false,
+          likesCount: created.likesCount ?? 0,
+          commentsCount: created.commentsCount ?? 0,
+          likedByMe: created.likedByMe ?? false,
+          universityId: created.universityId ?? currentUser?.university?.id ?? null,
+          facultyId: created.facultyId ?? currentUser?.faculty?.id ?? null,
+          programId: created.programId ?? currentUser?.program?.id ?? null,
         };
         onCreated && onCreated(newPost);
       } catch (innerErr) {
@@ -376,7 +385,7 @@ function InlineCompose({ currentUser, onCreated, defaultTopicId }) {
         setMediaFiles(submittedMediaFiles);
         throw innerErr;
       }
-    } catch (e) { setError(e.message || 'Не удалось опубликовать'); }
+    } catch (e) { setError(API.userMessage ? API.userMessage(e.message) : (e.message || 'Не удалось опубликовать')); }
     finally { setBusy(false); }
   };
   return (
@@ -446,8 +455,8 @@ function InlineCompose({ currentUser, onCreated, defaultTopicId }) {
           <button onClick={submit} disabled={(!text.trim() && mediaFiles.length === 0) || busy || text.length > 1000} style={{
             padding: '8px 18px', borderRadius: 9999, border: 'none',
             background: 'var(--accent)', color: '#fff', fontFamily: 'inherit',
-            fontSize: 15, fontWeight: 700, cursor: (text.trim() || mediaFiles.length) && !busy && text.length <= 1000 ? 'pointer' : 'not-allowed',
-            opacity: (text.trim() || mediaFiles.length) && !busy && text.length <= 1000 ? 1 : 0.5,
+            fontSize: 15, fontWeight: 700, cursor: ((text.trim() || mediaFiles.length) && !busy && text.length <= 1000) ? 'pointer' : 'not-allowed',
+            opacity: ((text.trim() || mediaFiles.length) && !busy && text.length <= 1000) ? 1 : 0.5,
           }}>
             {busy ? '...' : 'Опубликовать'}
           </button>
