@@ -30,10 +30,10 @@ function AboutPage({ onNavigate }) {
           Верифицированные студенты и сотрудники отмечены специальными значками, чтобы вы всегда знали, кому доверять.
         </p>
         <p style={{ fontSize: 15, lineHeight: 1.7, margin: 0 }}>
-          Проект разрабатывается как дипломная работа. Если хотите помочь — напишите нам через <span onClick={() => window.dispatchEvent(new CustomEvent('open-modal', { detail: 'suggest' }))} style={{ color: 'var(--accent)', cursor: 'pointer' }}>Обратную связь</span>.
+          Если хотите помочь — напишите через <span onClick={() => window.dispatchEvent(new CustomEvent('open-modal', { detail: 'suggest' }))} style={{ color: 'var(--accent)', cursor: 'pointer' }}>Обратную связь</span>.
         </p>
         <p style={{ fontSize: 15, lineHeight: 1.7, margin: 0 }}>
-          Исходный код проекта открыт на GitHub: <a href="https://github.com/Kaze-nomi/UniMeow" target="_blank" rel="noopener noreferrer" style={{ color: 'var(--accent)', textDecoration: 'none', fontWeight: 600 }}>github.com/Kaze-nomi/UniMeow</a>
+          Исходный код проекта на GitHub: <a href="https://github.com/Kaze-nomi/UniMeow" target="_blank" rel="noopener noreferrer" style={{ color: 'var(--accent)', textDecoration: 'none', fontWeight: 600 }}>github.com/Kaze-nomi/UniMeow</a>
         </p>
       </div>
     </div>

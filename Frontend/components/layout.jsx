@@ -656,7 +656,7 @@ function AppModals() {
             </div>
           ))}
           <div style={{ fontSize: 12, color: 'var(--text-muted)', textAlign: 'center', paddingTop: 4 }}>
-            UniMeow — открытый проект. Версия 1.0
+            UniMeow — открытый проект.
           </div>
         </div>
         </TwitterModal>
@@ -667,7 +667,7 @@ function AppModals() {
           <div style={{ textAlign: 'center', padding: '32px 16px' }}>
             <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 12 }}><CheckIcon size={40} color="var(--accent)" /></div>
             <div style={{ fontWeight: 700, fontSize: 17, marginBottom: 8 }}>Заявка отправлена!</div>
-            <div style={{ fontSize: 14, color: 'var(--text-muted)', marginBottom: 20 }}>Мы рассмотрим заявку и добавим университет в течение нескольких дней.</div>
+            <div style={{ fontSize: 14, color: 'var(--text-muted)', marginBottom: 20 }}>Заявка будет рассмотрена в ближайшее время.</div>
             <Button onClick={close} variant="secondary">Закрыть</Button>
           </div>
         ) : (
@@ -762,13 +762,13 @@ function AppModals() {
           <div style={{ textAlign: 'center', padding: '32px 16px' }}>
             <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 12 }}><HeartIcon size={40} color="var(--like)" filled /></div>
             <div style={{ fontWeight: 700, fontSize: 17, marginBottom: 8 }}>Спасибо!</div>
-            <div style={{ fontSize: 14, color: 'var(--text-muted)', marginBottom: 20 }}>Ваше предложение получено. Мы читаем каждый отзыв.</div>
+            <div style={{ fontSize: 14, color: 'var(--text-muted)', marginBottom: 20 }}>Ваше предложение получено.</div>
             <Button onClick={close} variant="secondary">Закрыть</Button>
           </div>
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
             <p style={{ margin: 0, fontSize: 14, color: 'var(--text-muted)', lineHeight: 1.6 }}>
-              Предложите улучшение, опишите новый функционал или сообщите о баге. Мы читаем каждое сообщение.
+              Предложите улучшение, опишите новый функционал или сообщите о баге.
             </p>
             <Input label="Сообщение *" value={suggestion} onChange={e => setSuggestion(e.target.value)} multiline rows={5} placeholder="Опишите улучшение или баг..." />
             {error && <div style={{ color: 'var(--like)', fontSize: 13 }}>{error}</div>}
