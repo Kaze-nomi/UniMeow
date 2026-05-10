@@ -71,7 +71,7 @@ class MailServiceTest {
 		doThrow(new RuntimeException("SMTP unavailable")).when(mailSender).send(any(MimeMessage.class));
 
 		assertThatThrownBy(() -> mailService.sendVerificationCode("student@spbu.ru", "iivanov", "000000"))
-				.isInstanceOf(MailDeliveryException.class).hasMessageContaining("unavailable")
-				.hasCauseInstanceOf(RuntimeException.class);
+				.isInstanceOf(MailDeliveryException.class).hasMessageContaining("Почтовый сервис временно недоступен")
+				.hasMessageContaining("Попробуйте позже").hasCauseInstanceOf(RuntimeException.class);
 	}
 }

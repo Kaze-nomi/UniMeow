@@ -125,7 +125,7 @@ public class MailService {
 			helper.setText(html, true);
 			mailSender.send(message);
 		} catch (Exception e) {
-			throw new MailDeliveryException("Mail service is temporarily unavailable", e);
+			throw new MailDeliveryException("Почтовый сервис временно недоступен. Попробуйте позже.", e);
 		}
 	}
 }

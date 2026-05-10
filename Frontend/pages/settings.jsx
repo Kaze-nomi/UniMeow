@@ -379,7 +379,7 @@ function VerifyModal({ open, onClose, currentUser, onUserUpdated }) {
         }
         setMsg('');
         setStage('profile');
-      } else setErr(d.verifyEmailCode.error || 'Неверный код');
+      } else setErr(formatVerificationCodeError(d.verifyEmailCode.error));
     } catch (e) { setErr(formatVerificationError(e)); } finally { setBusy(false); }
   };
 
@@ -469,6 +469,9 @@ function VerifyModal({ open, onClose, currentUser, onUserUpdated }) {
 
 function formatVerificationError(e) {
   const message = e?.message || '';
+  if (/mail service|почтовый сервис|smtp|mail delivery|unavailable/i.test(message)) {
+    return 'Почтовый сервис временно недоступен. Попробуйте позже.';
+  }
   if (/unknown.?domain|not a registered university domain|domain .*registered/i.test(message)) {
     return 'Домен почты не зарегистрирован как университетский. Проверьте адрес или отправьте заявку на добавление ВУЗа.';
   }
@@ -476,6 +479,15 @@ function formatVerificationError(e) {
     return 'Этот университетский email уже привязан к другому аккаунту.';
   }
   return message || 'Не удалось выполнить запрос';
+}
+
+function formatVerificationCodeError(error) {
+  const code = String(error || '').trim();
+  if (!code) return 'Неверный код';
+  if (code === 'INVALID') return 'Неверный код подтверждения. Проверьте код и попробуйте ещё раз.';
+  if (code === 'EXPIRED') return 'Код подтверждения истёк. Отправьте новый код.';
+  if (code === 'ATTEMPTS_EXCEEDED') return 'Превышено число попыток. Отправьте новый код и попробуйте позже.';
+  return formatVerificationError({ message: code });
 }
 
 Object.assign(window, { EditProfileModal, VerifyModal, SelectField });
