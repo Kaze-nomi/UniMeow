@@ -14,7 +14,7 @@ CREATE TABLE posts (
     updated_at      TIMESTAMP NOT NULL
 );
 
-CREATE INDEX idx_posts_author     ON posts(author_id);
+CREATE INDEX idx_posts_author     ON posts(author_id, created_at DESC);
 CREATE INDEX idx_posts_created_at ON posts(created_at DESC);
 CREATE INDEX idx_posts_uni        ON posts(university_id, created_at DESC);
 CREATE INDEX idx_posts_faculty    ON posts(faculty_id, created_at DESC);

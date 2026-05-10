@@ -14,6 +14,8 @@ CREATE TABLE university_domains (
     university_id BIGINT       NOT NULL REFERENCES universities(id)
 );
 
+CREATE INDEX idx_university_domains_university ON university_domains(university_id);
+
 CREATE TABLE university_faculties (
     id            BIGSERIAL    PRIMARY KEY,
     university_id BIGINT       NOT NULL REFERENCES universities(id) ON DELETE CASCADE,
@@ -30,6 +32,8 @@ CREATE TABLE university_programs (
     short_name    VARCHAR(50)  NOT NULL,
     UNIQUE (faculty_id, short_name)
 );
+
+CREATE INDEX idx_university_programs_university ON university_programs(university_id);
 
 CREATE TABLE users (
     id                   UUID          PRIMARY KEY,
@@ -55,3 +59,8 @@ CREATE TABLE users (
     ban_reason           VARCHAR(500),
     created_at           TIMESTAMP     NOT NULL
 );
+
+CREATE INDEX idx_users_university ON users(university_id);
+CREATE INDEX idx_users_faculty    ON users(faculty_id);
+CREATE INDEX idx_users_program    ON users(program_id);
+CREATE INDEX idx_users_banned_until ON users(banned_until) WHERE banned_until IS NOT NULL;

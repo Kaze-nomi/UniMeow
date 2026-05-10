@@ -12,3 +12,5 @@ CREATE TABLE notifications (
 
 CREATE INDEX idx_notifications_user_created ON notifications(user_id, created_at DESC);
 CREATE INDEX idx_notifications_user_unread  ON notifications(user_id, is_read) WHERE is_read = FALSE;
+CREATE INDEX idx_notifications_dedup        ON notifications(user_id, actor_id, type, entity_id, created_at DESC);
+CREATE INDEX idx_notifications_created      ON notifications(created_at);

@@ -12,3 +12,9 @@ CREATE TABLE program_proposals (
     reviewed_by          UUID         REFERENCES users(id) ON DELETE SET NULL,
     reviewed_at          TIMESTAMP
 );
+
+CREATE INDEX idx_program_proposals_status_created ON program_proposals(status, created_at DESC);
+CREATE INDEX idx_program_proposals_author_created ON program_proposals(author_id, created_at DESC);
+CREATE INDEX idx_program_proposals_university     ON program_proposals(university_id);
+CREATE INDEX idx_program_proposals_faculty        ON program_proposals(faculty_id);
+CREATE INDEX idx_program_proposals_reviewed_by    ON program_proposals(reviewed_by);
