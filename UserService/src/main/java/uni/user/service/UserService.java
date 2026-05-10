@@ -30,6 +30,8 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class UserService {
 
+	private static final int MAX_STATUS_LENGTH = 80;
+
 	private final UserRepository userRepository;
 	private final SubscriptionRepository subscriptionRepository;
 	private final UniversityFacultyRepository universityFacultyRepository;
@@ -93,7 +95,7 @@ public class UserService {
 		if (hasSurname)
 			user.setSurname(surname);
 		if (hasStatus)
-			user.setStatus(status);
+			user.setStatus(normalizeStatus(status));
 		if (hasAvatarUrl)
 			user.setAvatarUrl(avatarUrl);
 
@@ -200,6 +202,17 @@ public class UserService {
 					Map.of("subscriberId", subscriberId.toString(), "targetUserId", targetUserId.toString(),
 							"createdAt", now.toString()));
 		}
+	}
+
+	private static String normalizeStatus(String status) {
+		if (status == null) {
+			return null;
+		}
+		String normalized = status.strip();
+		if (normalized.length() > MAX_STATUS_LENGTH) {
+			throw new IllegalArgumentException("Status must be at most " + MAX_STATUS_LENGTH + " characters");
+		}
+		return normalized;
 	}
 
 	@Transactional

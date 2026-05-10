@@ -76,6 +76,11 @@ class UserServiceTest {
 				false, null, false, null, false, null, false, null, false, null, false, null);
 	}
 
+	private User updateStatus(String status) {
+		return userService.update(USER_ID, false, null, false, null, false, null, true, status, false, null, false,
+				null, false, null, false, null, false, null, false, null, false, null, false, null);
+	}
+
 	private User updateCourse(int course) {
 		return userService.update(USER_ID, false, null, false, null, false, null, false, null, false, null, false, null,
 				true, course, false, null, false, null, false, null, false, null, false, null);
@@ -244,6 +249,26 @@ class UserServiceTest {
 
 		assertThat(result.getName()).isEqualTo("Петя");
 		assertThat(result.getUsername()).isEqualTo("ivan_petrov");
+	}
+
+	@Test
+	void update_trims_status() {
+		User user = buildUser();
+		when(userRepository.findById(USER_ID)).thenReturn(Optional.of(user));
+		when(userRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+		User result = updateStatus("  online  ");
+
+		assertThat(result.getStatus()).isEqualTo("online");
+	}
+
+	@Test
+	void update_throws_when_status_is_too_long() {
+		User user = buildUser();
+		when(userRepository.findById(USER_ID)).thenReturn(Optional.of(user));
+
+		assertThatThrownBy(() -> updateStatus("x".repeat(81))).isInstanceOf(IllegalArgumentException.class)
+				.hasMessageContaining("Status must be at most 80 characters");
 	}
 
 	@Test

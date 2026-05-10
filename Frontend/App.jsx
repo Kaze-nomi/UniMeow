@@ -54,6 +54,9 @@ function App() {
     window.__authFailed = () => {
       setCurrentUser(null);
       API.clearUserCache && API.clearUserCache();
+      if (window.location.pathname === '/banned' || window.location.search.includes('banned=')) {
+        return;
+      }
       navigate('/login');
     };
   }, []);
@@ -139,6 +142,8 @@ function App() {
   const param = segments[1];
 
   const renderPage = () => {
+    if (route === 'banned') return <PermanentBanPage onNavigate={navigate} />;
+
     if (authLoading) {
       return (
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '100vh' }}>
@@ -155,7 +160,7 @@ function App() {
     if (route === 'login') return <LoginPage onNavigate={navigate} />;
     if (route === 'complete-registration') return <CompleteRegistrationPage onNavigate={navigate} onUserUpdated={handleUserUpdated} />;
 
-    const universitySlug = route && !['feed', 'profile', 'post', 'settings', 'explore', 'notifications', 'about', 'admin', 'login', 'complete-registration'].includes(route)
+    const universitySlug = route && !['feed', 'profile', 'post', 'settings', 'explore', 'notifications', 'about', 'admin', 'login', 'banned', 'complete-registration'].includes(route)
       ? route
       : null;
 
@@ -193,6 +198,59 @@ function App() {
       <MockUserPicker onUserChange={handleUserUpdated} />
       <AppModals />
     </>
+  );
+}
+
+function PermanentBanPage({ onNavigate }) {
+  const params = new URLSearchParams(window.location.search);
+  const reason = params.get('reason')?.trim() || 'Причина не указана';
+
+  return (
+    <div style={{
+      minHeight: '100vh',
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      padding: 24,
+      background: 'var(--bg)',
+    }}>
+      <div style={{
+        width: '100%',
+        maxWidth: 520,
+        background: 'var(--surface)',
+        border: '1px solid var(--border)',
+        borderRadius: 16,
+        padding: 24,
+        boxShadow: 'var(--card-shadow)',
+      }}>
+        <div style={{
+          width: 52,
+          height: 52,
+          borderRadius: '50%',
+          background: 'var(--like-subtle)',
+          color: 'var(--like)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          marginBottom: 16,
+          fontWeight: 900,
+          fontSize: 24,
+        }}>!</div>
+        <h1 style={{ margin: '0 0 10px', fontSize: 24, fontWeight: 900 }}>Аккаунт заблокирован</h1>
+        <p style={{ margin: '0 0 18px', color: 'var(--text-muted)', fontSize: 15, lineHeight: 1.55 }}>
+          Этот Google аккаунт заблокирован бессрочно. Войти или создать новый аккаунт с ним нельзя.
+        </p>
+        <div style={{ padding: '12px 14px', border: '1px solid var(--border)', borderRadius: 10, background: 'var(--surface-2)', marginBottom: 18 }}>
+          <div style={{ fontSize: 12, color: 'var(--text-muted)', fontWeight: 700, textTransform: 'uppercase', marginBottom: 4 }}>
+            Причина
+          </div>
+          <div style={{ fontSize: 14, lineHeight: 1.5, overflowWrap: 'anywhere' }}>
+            {reason}
+          </div>
+        </div>
+        <Button variant="secondary" onClick={() => onNavigate('/login')}>На страницу входа</Button>
+      </div>
+    </div>
   );
 }
 

@@ -72,7 +72,7 @@ public class OAuth2SuccessHandler implements ServerAuthenticationSuccessHandler 
 		response.addCookie(cookieUtil.revokeCookie("REFRESH_TOKEN"));
 		response.setStatusCode(HttpStatus.FOUND);
 
-		UriComponentsBuilder redirect = UriComponentsBuilder.fromUriString(frontendOrigin()).path("/login")
+		UriComponentsBuilder redirect = UriComponentsBuilder.fromUriString(frontendOrigin()).path("/banned")
 				.queryParam("banned", "permanent");
 		if (reason != null && !reason.isBlank()) {
 			redirect.queryParam("reason", reason);

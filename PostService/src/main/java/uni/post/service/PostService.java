@@ -7,7 +7,6 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import uni.post.entity.Comment;
-import uni.post.entity.CommentLike;
 import uni.post.entity.IdempotencyKey;
 import uni.post.entity.PostLike;
 import uni.post.entity.Post;
@@ -199,8 +198,8 @@ public class PostService {
 
 	@Transactional
 	public void deleteAllContentByAuthor(UUID authorId) {
-		List<PostLike> postLikes = likeRepository.findByUserId(authorId);
-		List<CommentLike> commentLikes = commentLikeRepository.findByUserId(authorId);
+		List<UUID> likedPostIds = likeRepository.findPostIdsByUserId(authorId);
+		List<UUID> likedCommentIds = commentLikeRepository.findCommentIdsByUserId(authorId);
 		List<Comment> ownComments = commentRepository.findByAuthorId(authorId);
 		List<Post> authoredPosts = postRepository.findByAuthorId(authorId);
 		Set<UUID> authoredPostIds = authoredPosts.stream().map(Post::getId).collect(Collectors.toSet());
@@ -213,11 +212,11 @@ public class PostService {
 		commentsToDelete.addAll(commentsOnAuthoredPosts.stream().map(Comment::getId).collect(Collectors.toSet()));
 
 		int decrementedPostLikes = 0;
-		for (PostLike like : postLikes) {
-			if (authoredPostIds.contains(like.getPostId())) {
+		for (UUID likedPostId : likedPostIds) {
+			if (authoredPostIds.contains(likedPostId)) {
 				continue;
 			}
-			Post post = postRepository.findById(like.getPostId()).orElse(null);
+			Post post = postRepository.findById(likedPostId).orElse(null);
 			if (post != null) {
 				post.setLikesCount(Math.max(0, post.getLikesCount() - 1));
 				postRepository.save(post);
@@ -227,11 +226,11 @@ public class PostService {
 		likeRepository.deleteByUserId(authorId);
 
 		int decrementedCommentLikes = 0;
-		for (CommentLike like : commentLikes) {
-			if (commentsToDelete.contains(like.getCommentId())) {
+		for (UUID likedCommentId : likedCommentIds) {
+			if (commentsToDelete.contains(likedCommentId)) {
 				continue;
 			}
-			Comment comment = commentRepository.findById(like.getCommentId()).orElse(null);
+			Comment comment = commentRepository.findById(likedCommentId).orElse(null);
 			if (comment != null) {
 				comment.setLikesCount(Math.max(0, comment.getLikesCount() - 1));
 				commentRepository.save(comment);
@@ -277,8 +276,8 @@ public class PostService {
 		int deletedPosts = postRepository.deleteAllByAuthorId(authorId);
 		log.info(
 				"Deleted all content for user {}: {} comments (incl. replies), {} posts, {} post-likes (decremented {} foreign posts), {} comment-likes (decremented {} foreign comments)",
-				authorId, commentsToDelete.size(), deletedPosts, postLikes.size(), decrementedPostLikes,
-				commentLikes.size(), decrementedCommentLikes);
+				authorId, commentsToDelete.size(), deletedPosts, likedPostIds.size(), decrementedPostLikes,
+				likedCommentIds.size(), decrementedCommentLikes);
 	}
 
 	private Set<UUID> collectCommentSubtree(Set<UUID> rootIds) {

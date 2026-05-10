@@ -166,6 +166,7 @@ function SettingsPage({ currentUser, onNavigate, onAccountDeleted }) {
 
 
 function EditProfileModal({ open, onClose, currentUser, onUserUpdated }) {
+  const STATUS_MAX_LENGTH = 80;
   const [form, setForm] = React.useState({});
   const [loading, setLoading] = React.useState(false);
   const [error, setError] = React.useState('');
@@ -211,6 +212,7 @@ function EditProfileModal({ open, onClose, currentUser, onUserUpdated }) {
 
   if (!open) return null;
   const set = (k) => (e) => setForm(f => ({ ...f, [k]: e.target.value }));
+  const setLimited = (k, maxLength) => (e) => setForm(f => ({ ...f, [k]: e.target.value.slice(0, maxLength) }));
 
   const save = async () => {
     setLoading(true); setError('');
@@ -250,7 +252,7 @@ function EditProfileModal({ open, onClose, currentUser, onUserUpdated }) {
             <Input label="Фамилия" value={form.surname || ''} onChange={set('surname')} />
           </div>
           <Input label="О себе" value={form.bio || ''} onChange={set('bio')} multiline rows={3} />
-          <Input label="Статус" value={form.status || ''} onChange={set('status')} />
+          <Input label="Статус" value={form.status || ''} onChange={setLimited('status', STATUS_MAX_LENGTH)} maxLength={STATUS_MAX_LENGTH} hint={`${(form.status || '').length}/${STATUS_MAX_LENGTH}`} />
           <ImageUploadField label="Аватар" value={form.avatarUrl || ''} onChange={v => setForm(f => ({ ...f, avatarUrl: v }))} preview="circle" bucket="user-avatars" />
           <ImageUploadField label="Обложка (баннер)" value={form.coverUrl || ''} onChange={v => setForm(f => ({ ...f, coverUrl: v }))} preview="wide" bucket="user-banners" />
 

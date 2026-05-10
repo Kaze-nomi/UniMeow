@@ -59,7 +59,7 @@ function Button({ children, variant = 'primary', size = 'md', onClick, disabled,
   );
 }
 
-function Input({ label, value, onChange, placeholder, type = 'text', multiline, rows = 4, error, hint, name, autoFocus }) {
+function Input({ label, value, onChange, placeholder, type = 'text', multiline, rows = 4, error, hint, name, autoFocus, ...props }) {
   const inputStyle = {
     width: '100%', padding: '10px 14px', borderRadius: 10, boxSizing: 'border-box',
     border: '1.5px solid ' + (error ? 'oklch(0.55 0.22 15)' : 'var(--border)'),
@@ -71,8 +71,8 @@ function Input({ label, value, onChange, placeholder, type = 'text', multiline, 
     <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
       {label && <label style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-muted)' }}>{label}</label>}
       {multiline
-        ? <textarea name={name} value={value} onChange={onChange} placeholder={placeholder} rows={rows} style={inputStyle} autoFocus={autoFocus} />
-        : <input name={name} type={type} value={value} onChange={onChange} placeholder={placeholder} style={inputStyle} autoFocus={autoFocus} />
+        ? <textarea name={name} value={value} onChange={onChange} placeholder={placeholder} rows={rows} style={inputStyle} autoFocus={autoFocus} {...props} />
+        : <input name={name} type={type} value={value} onChange={onChange} placeholder={placeholder} style={inputStyle} autoFocus={autoFocus} {...props} />
       }
       {error && <span style={{ fontSize: 12, color: 'oklch(0.55 0.22 15)' }}>{error}</span>}
       {hint && !error && <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>{hint}</span>}

@@ -246,7 +246,19 @@ function ProfilePage({ userId, currentUser, onNavigate, onUserUpdated }) {
         </div>
 
         {user.bio && <p style={{ margin: '12px 0 0', fontSize: 15, lineHeight: 1.45, color: 'var(--text)', whiteSpace: 'pre-wrap' }}>{user.bio}</p>}
-        {user.status && <p style={{ margin: '8px 0 0', fontSize: 14, color: 'var(--text-muted)' }}>«{user.status}»</p>}
+        {user.status && <p style={{
+          margin: '8px 0 0',
+          maxWidth: '100%',
+          fontSize: 14,
+          lineHeight: 1.45,
+          color: 'var(--text-muted)',
+          overflow: 'hidden',
+          overflowWrap: 'anywhere',
+          wordBreak: 'break-word',
+          display: '-webkit-box',
+          WebkitBoxOrient: 'vertical',
+          WebkitLineClamp: 3,
+        }}>«{user.status}»</p>}
 
 
         <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', fontSize: 14, color: 'var(--text-muted)', marginTop: 12 }}>
