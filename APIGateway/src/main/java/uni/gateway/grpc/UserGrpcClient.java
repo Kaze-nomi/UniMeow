@@ -25,6 +25,8 @@ import uni.grpc.user.UnsubscribeRequest;
 import uni.grpc.user.UnsubscribeResponse;
 import uni.grpc.user.IsSubscribedRequest;
 import uni.grpc.user.IsSubscribedResponse;
+import uni.grpc.user.ListSubscriptionsRequest;
+import uni.grpc.user.UserListResponse;
 import uni.grpc.user.ListUniversitiesRequest;
 import uni.grpc.user.UniversityListResponse;
 import uni.grpc.user.ListFacultiesRequest;
@@ -32,8 +34,6 @@ import uni.grpc.user.FacultyListResponse;
 import uni.grpc.user.ListProgramsRequest;
 import uni.grpc.user.ProgramListResponse;
 import uni.grpc.user.DeleteImprovementSuggestionRequest;
-import uni.grpc.user.CreateProgramForUserRequest;
-import uni.grpc.user.CreateProgramResponse;
 import uni.grpc.user.BanUserRequest;
 import uni.grpc.user.GrantAdminRequest;
 import uni.grpc.user.CreateImprovementSuggestionRequest;
@@ -152,6 +152,20 @@ public class UserGrpcClient {
 					.setSubscriberId(subscriberId).setTargetUserId(targetUserId).build());
 			return response.getSubscribed();
 		}).subscribeOn(Schedulers.boundedElastic());
+	}
+
+	public Mono<UserListResponse> listFollowing(String userId) {
+		return Mono
+				.fromCallable(
+						() -> readStub().listFollowing(ListSubscriptionsRequest.newBuilder().setUserId(userId).build()))
+				.subscribeOn(Schedulers.boundedElastic());
+	}
+
+	public Mono<UserListResponse> listFollowers(String userId) {
+		return Mono
+				.fromCallable(
+						() -> readStub().listFollowers(ListSubscriptionsRequest.newBuilder().setUserId(userId).build()))
+				.subscribeOn(Schedulers.boundedElastic());
 	}
 
 	public Mono<UniversityListResponse> listUniversities() {
@@ -285,14 +299,6 @@ public class UserGrpcClient {
 								.reviewUniversityProposal(ReviewUniversityProposalRequest.newBuilder()
 										.setReviewerId(reviewerId).setProposalId(proposalId).setStatus(status).build())
 								.getSuccess())
-				.subscribeOn(Schedulers.boundedElastic());
-	}
-
-	public Mono<CreateProgramResponse> createProgramForUser(String userId, long facultyId, String name,
-			String shortName) {
-		return Mono
-				.fromCallable(() -> stub.createProgramForUser(CreateProgramForUserRequest.newBuilder().setUserId(userId)
-						.setFacultyId(facultyId).setName(name).setShortName(shortName).build()))
 				.subscribeOn(Schedulers.boundedElastic());
 	}
 

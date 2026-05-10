@@ -1,4 +1,13 @@
-
+const subscriptionButtonStyle = {
+  background: 'none',
+  border: 'none',
+  padding: 0,
+  color: 'var(--text)',
+  cursor: 'pointer',
+  fontFamily: 'inherit',
+  fontSize: 14,
+  fontWeight: 700,
+};
 
 function ProfilePage({ userId, currentUser, onNavigate, onUserUpdated }) {
   const [user, setUser] = React.useState(null);
@@ -15,6 +24,11 @@ function ProfilePage({ userId, currentUser, onNavigate, onUserUpdated }) {
   const [banReason, setBanReason] = React.useState('Нарушение правил');
   const [banLoading, setBanLoading] = React.useState(false);
   const [grantAdminLoading, setGrantAdminLoading] = React.useState(false);
+  const [subscriptionsOpen, setSubscriptionsOpen] = React.useState(false);
+  const [subscriptionsType, setSubscriptionsType] = React.useState('following');
+  const [subscriptions, setSubscriptions] = React.useState([]);
+  const [subscriptionsLoading, setSubscriptionsLoading] = React.useState(false);
+  const [subscriptionsError, setSubscriptionsError] = React.useState('');
 
   const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(userId);
   const isMe = currentUser && (currentUser.id === userId || currentUser.username === userId);
@@ -52,6 +66,23 @@ function ProfilePage({ userId, currentUser, onNavigate, onUserUpdated }) {
       else            { await API.gql(API.M.subscribe,   { id: targetId }); setSubscribed(true);  }
     } catch (e) { if (e.isUnauth) onNavigate('/login'); }
     finally { setSubLoading(false); }
+  };
+
+  const openSubscriptions = async (type) => {
+    if (!user?.id) return;
+    setSubscriptionsType(type);
+    setSubscriptionsOpen(true);
+    setSubscriptionsLoading(true);
+    setSubscriptionsError('');
+    try {
+      const d = await API.gql(type === 'followers' ? API.Q.listFollowers : API.Q.listFollowing, { userId: user.id });
+      setSubscriptions(type === 'followers' ? d.listFollowers : d.listFollowing);
+    } catch (e) {
+      setSubscriptions([]);
+      setSubscriptionsError(e.message || 'Не удалось загрузить список');
+    } finally {
+      setSubscriptionsLoading(false);
+    }
   };
 
   const handleBan = async () => {
@@ -226,6 +257,14 @@ function ProfilePage({ userId, currentUser, onNavigate, onUserUpdated }) {
           {user.educationLevel && <span>{eduLabel(user.educationLevel)}</span>}
           {joinDate && <span>с {joinDate}</span>}
         </div>
+        <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginTop: 12 }}>
+          <button onClick={() => openSubscriptions('following')} style={subscriptionButtonStyle}>
+            Подписки
+          </button>
+          <button onClick={() => openSubscriptions('followers')} style={subscriptionButtonStyle}>
+            Подписчики
+          </button>
+        </div>
       </div>
 
 
@@ -243,6 +282,38 @@ function ProfilePage({ userId, currentUser, onNavigate, onUserUpdated }) {
 
       {isMe && <EditProfileModal open={editOpen} onClose={() => setEditOpen(false)} currentUser={currentUser} onUserUpdated={onUserUpdated} />}
       {isMe && <VerifyModal open={verifyOpen} onClose={() => setVerifyOpen(false)} currentUser={currentUser} onUserUpdated={onUserUpdated} />}
+      <Modal open={subscriptionsOpen} onClose={() => setSubscriptionsOpen(false)}
+        title={subscriptionsType === 'followers' ? 'Подписчики' : 'Подписки'}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          {subscriptionsLoading ? (
+            <div style={{ display: 'flex', justifyContent: 'center', padding: 24 }}><Spinner size={24} /></div>
+          ) : subscriptionsError ? (
+            <div style={{ padding: '10px 14px', background: 'var(--like-subtle)', color: 'var(--like)', borderRadius: 10, fontSize: 13 }}>{subscriptionsError}</div>
+          ) : subscriptions.length === 0 ? (
+            <div style={{ padding: '20px 8px', color: 'var(--text-muted)', fontSize: 14, textAlign: 'center' }}>
+              {subscriptionsType === 'followers' ? 'Подписчиков пока нет' : 'Подписок пока нет'}
+            </div>
+          ) : (
+            subscriptions.map(item => (
+              <button key={item.id} onClick={() => { setSubscriptionsOpen(false); onNavigate(API.profileUrl(item)); }} style={{
+                display: 'flex', alignItems: 'center', gap: 12, padding: '10px 4px',
+                border: 'none', background: 'transparent', cursor: 'pointer', textAlign: 'left',
+                color: 'var(--text)', fontFamily: 'inherit',
+              }}>
+                <Avatar user={item} size={42} />
+                <div style={{ minWidth: 0, flex: 1 }}>
+                  <div style={{ fontWeight: 700, fontSize: 14, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                    {(item.name && item.surname) ? `${item.name} ${item.surname}` : item.name || item.username || 'Пользователь'}
+                  </div>
+                  <div style={{ fontSize: 13, color: 'var(--text-muted)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                    @{item.username || item.id}
+                  </div>
+                </div>
+              </button>
+            ))
+          )}
+        </div>
+      </Modal>
       <Modal open={banOpen} onClose={() => !banLoading && setBanOpen(false)} title="Заблокировать пользователя">
         <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
           <div style={{ color: 'var(--text-muted)', fontSize: 14, lineHeight: 1.5 }}>

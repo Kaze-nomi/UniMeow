@@ -13,12 +13,14 @@ import uni.user.exception.UserNotFoundException;
 import uni.user.exception.UsernameAlreadyTakenException;
 import uni.user.outbox.OutboxService;
 import uni.user.repository.BannedGoogleAccountRepository;
+import uni.user.repository.RefreshSessionRepository;
 import uni.user.repository.SubscriptionRepository;
 import uni.user.repository.UniversityFacultyRepository;
 import uni.user.repository.UniversityProgramRepository;
 import uni.user.repository.UserRepository;
 
 import java.time.LocalDateTime;
+import java.util.List;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.UUID;
@@ -33,6 +35,7 @@ public class UserService {
 	private final UniversityFacultyRepository universityFacultyRepository;
 	private final UniversityProgramRepository universityProgramRepository;
 	private final BannedGoogleAccountRepository bannedGoogleAccountRepository;
+	private final RefreshSessionRepository refreshSessionRepository;
 	private final OutboxService outboxService;
 
 	@Transactional
@@ -223,6 +226,22 @@ public class UserService {
 	}
 
 	@Transactional(readOnly = true)
+	public List<User> listFollowing(UUID userId) {
+		getById(userId);
+		return subscriptionRepository.findBySubscriberIdOrderByCreatedAtDesc(userId).stream()
+				.map(Subscription::getTargetUserId).map(userRepository::findById).flatMap(java.util.Optional::stream)
+				.toList();
+	}
+
+	@Transactional(readOnly = true)
+	public List<User> listFollowers(UUID userId) {
+		getById(userId);
+		return subscriptionRepository.findByTargetUserIdOrderByCreatedAtDesc(userId).stream()
+				.map(Subscription::getSubscriberId).map(userRepository::findById).flatMap(java.util.Optional::stream)
+				.toList();
+	}
+
+	@Transactional(readOnly = true)
 	public boolean isAdmin(UUID userId) {
 		return getById(userId).isAdmin();
 	}
@@ -271,6 +290,7 @@ public class UserService {
 					Map.of("userId", targetUserId.toString(), "moderatorId", moderatorId.toString(), "reason",
 							normalizedReason == null ? "" : normalizedReason, "bannedAt", now.toString()));
 
+			deleteSubscriptionsForUser(targetUserId);
 			userRepository.delete(target);
 			log.warn("User {} permanently banned by admin {}; profile data deleted; reason={}", targetUserId,
 					moderatorId, normalizedReason);
@@ -300,8 +320,15 @@ public class UserService {
 		}
 		outboxService.enqueueUserEvent("USER_DELETED", userId.toString(), userId.toString(),
 				Map.of("userId", userId.toString(), "deletedAt", LocalDateTime.now().toString()));
+		deleteSubscriptionsForUser(userId);
 		userRepository.delete(user);
 		log.warn("User {} deleted their account", userId);
+	}
+
+	private void deleteSubscriptionsForUser(UUID userId) {
+		int deletedSubscriptions = subscriptionRepository.deleteBySubscriberIdOrTargetUserId(userId, userId);
+		refreshSessionRepository.deleteAllByUserId(userId);
+		log.info("Deleted {} subscriptions for user {}", deletedSubscriptions, userId);
 	}
 
 	private static boolean isBanned(User user) {

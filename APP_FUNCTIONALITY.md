@@ -90,7 +90,7 @@ UniMeow — университетская социальная сеть с по
 ### Матрица доступа
 
 **Публичные операции (без авторизации):**
-`trendingFeed`, `getPost`, `getUser`, `getUserByUsername`, `getUserPosts`, `getComments`, `listUniversities`, `listFaculties`, `listPrograms`, `followingFeed` (только при наличии `universityId` — хронологическая лента ВУЗа)
+`trendingFeed`, `getPost`, `getUser`, `getUserByUsername`, `getUserPosts`, `getComments`, `listUniversities`, `listFaculties`, `listPrograms`, `listFollowing`, `listFollowers`, `followingFeed` (только при наличии `universityId` — хронологическая лента ВУЗа)
 
 **Требуют авторизации:**
 `me`, `updateProfile`, `sendVerificationCode`, `verifyEmailCode`, `subscribe`, `unsubscribe`, `followingFeed` (без `universityId` — персональная лента подписок), `createPost`, `editPost`, `deletePost`, `likePost`, `unlikePost`, `addComment`, `editComment`, `deleteComment`, `likeComment`, `unlikeComment`, `createImprovementSuggestion`, `createUniversityProposal`, `createFacultyProposal`, `createProgramProposal`, `deleteAccount`, `getNotifications`, `getUnreadNotificationCount`, `markAllNotificationsRead`
@@ -121,6 +121,8 @@ UniMeow — университетская социальная сеть с по
 - `listUniversities: [University!]!` — список университетов для onboarding/фильтров/профиля.
 - `listFaculties(universityId: ID!): [Faculty!]!` — факультеты университета.
 - `listPrograms(facultyId: ID!): [Program!]!` — образовательные программы факультета.
+- `listFollowing(userId: ID!): [User!]!` — пользователи, на которых подписан профиль.
+- `listFollowers(userId: ID!): [User!]!` — пользователи, подписанные на профиль.
 
 ### GraphQL mutations
 
@@ -130,7 +132,7 @@ UniMeow — университетская социальная сеть с по
 - `subscribe(targetUserId: ID!): SubscribeResult`
 - `unsubscribe(targetUserId: ID!): SubscribeResult`
 - `createProgramProposal(input: ProgramProposalInput!): AdminActionResult!`
-- `deleteAccount: DeleteResult!` — удаляет аккаунт текущего пользователя; доступно в настройках профиля для активного пользователя. При активной временной блокировке удаление аккаунта недоступно. При удалении из PostService удаляются все посты и комментарии пользователя (включая ответы на эти комментарии и ответы на ответы — рекурсивно), все его лайки на чужих постах и комментариях с пересчётом денормализованных счётчиков `likesCount`/`commentsCount`. FeedService очищает подписки и Redis-следы пользователя.
+- `deleteAccount: DeleteResult!` — удаляет аккаунт текущего пользователя; доступно в настройках профиля для активного пользователя. При активной временной блокировке удаление аккаунта недоступно. При удалении очищаются профиль, refresh-сессии, подписки пользователя в обе стороны, посты, комментарии пользователя, комментарии под постами пользователя, лайки постов, лайки комментариев, уведомления и Redis-следы в лентах. Для чужих постов и комментариев пересчитываются денормализованные счётчики `likesCount`/`commentsCount`.
 
 ### Поля профиля
 
@@ -164,6 +166,8 @@ Username нормализуется при сохранении: приводи�
 
 - `subscribe` создает подписку текущего пользователя на другого.
 - `unsubscribe` удаляет подписку.
+- `listFollowing` показывает список подписок профиля.
+- `listFollowers` показывает список подписчиков профиля.
 - Подписки используются `FeedService` для персональной ленты `followingFeed`.
 
 ---
@@ -320,7 +324,7 @@ GraphQL-запросы ленты: `trendingFeed` (рекомендации с t
 | `POST_DELETED` | Пост удалён |
 | `POST_LIKED` | Лайк поставлен (включает `actorId`, `authorId`) |
 | `POST_UNLIKED` | Лайк снят |
-| `COMMENT_CREATED` | Добавлен комментарий (включает `postAuthorId`, `parentCommentId`, `parentAuthorId`, `mentionedUserIds`) |
+| `COMMENT_CREATED` | Комментарий создан (включает `postAuthorId`, `parentCommentId`, `parentAuthorId`, `mentionedUserIds`) |
 | `COMMENT_LIKED` | Лайк на комментарий (включает `commentAuthorId`, `actorId`, `postId`) |
 
 **UserService** публикует в Kafka топик `user-events` через outbox:
@@ -329,8 +333,8 @@ GraphQL-запросы ленты: `trendingFeed` (рекомендации с t
 |---|---|
 | `USER_FOLLOWED` | Пользователь подписался |
 | `USER_UNFOLLOWED` | Пользователь отписался |
-| `USER_DELETED` | Аккаунт удалён, нужно очистить внешние следы |
-| `USER_PERMANENT_BANNED` | Бессрочная блокировка аккаунта, нужно очистить внешний контент |
+| `USER_DELETED` | Аккаунт удалён, внешние сервисы очищают контент и кэшированные следы |
+| `USER_PERMANENT_BANNED` | Бессрочная блокировка аккаунта, внешние сервисы очищают контент и кэшированные следы |
 | `ADMIN_GRANTED` | Пользователю выданы права администратора |
 | `USER_BANNED` | Пользователь заблокирован |
 
@@ -345,6 +349,31 @@ GraphQL-запросы ленты: `trendingFeed` (рекомендации с t
 - `USER_PERMANENT_BANNED` — убирает подписки, связанные с аккаунтом, и чистит Redis-следы пользователя.
 
 Дедупликация: каждый Kafka-event помечается в Redis на 7 дней (`feed:processed:event:{eventId}`).
+
+**PostService** слушает `user-events`:
+
+- `USER_DELETED` — удаляет посты, комментарии, лайки и связанные счётчики пользователя.
+- `USER_PERMANENT_BANNED` — удаляет посты, комментарии, лайки и связанные счётчики пользователя.
+
+**NotificationService** слушает `post-events` и `user-events`:
+
+- `POST_CREATED` — уведомления об упоминаниях в посте.
+- `POST_LIKED` — уведомление автору поста.
+- `COMMENT_CREATED` — уведомления автору поста, автору родительского комментария и упомянутым пользователям.
+- `COMMENT_LIKED` — уведомление автору комментария.
+- `USER_FOLLOWED` — уведомление о подписке.
+- `ADMIN_GRANTED` — уведомление о выдаче прав администратора.
+- `USER_BANNED` — уведомление о блокировке.
+- `USER_DELETED` и `USER_PERMANENT_BANNED` — очистка уведомлений, связанных с аккаунтом.
+
+**DLQ-топики:**
+
+| Источник | DLQ topic | Когда используется |
+|---|---|---|
+| `UserService` outbox publisher | `user-events.dlq` | Ошибка публикации события `user-events` в Kafka |
+| `PostService` outbox publisher | `post-events.dlq` | Ошибка публикации события `post-events` в Kafka |
+| `FeedService` Kafka consumer | `feed-events.dlq` | Ошибка обработки события из `post-events` или `user-events` |
+| `NotificationService` Kafka consumer | `notification-events.dlq` | Ошибка обработки события из `post-events` или `user-events` |
 
 Gateway получает список post IDs из `FeedService` по gRPC, затем заполняет посты через `PostService`.
 
@@ -476,7 +505,7 @@ query {
 
 | Событие | Когда |
 |---|---|
-| `COMMENT_CREATED` | Добавлен комментарий (включает `postAuthorId`, `parentCommentId`, `parentAuthorId`, `mentionedUserIds`) |
+| `COMMENT_CREATED` | Комментарий создан (включает `postAuthorId`, `parentCommentId`, `parentAuthorId`, `mentionedUserIds`) |
 | `COMMENT_LIKED` | Лайк на комментарий (включает `commentAuthorId`, `actorId`, `postId`) |
 | `POST_LIKED` | Лайк поставлен (включает `actorId`, `authorId`) |
 
@@ -548,7 +577,7 @@ query {
 - Только `kazenomi` может заблокировать другого администратора.
 - Пользователя с username `kazenomi` нельзя заблокировать.
 - Временная блокировка хранится в `users.banned_until` и `users.ban_reason`.
-- Бессрочная блокировка хранится в `banned_google_accounts`: `email_google`, `reason`, `moderator_id`, `banned_at`. Запись пользователя в `users` удаляется, внешний контент очищается через события, повторный вход или регистрация через тот же Google аккаунт невозможны.
+- Бессрочная блокировка хранится в `banned_google_accounts`: `email_google`, `reason`, `moderator_id`, `banned_at`. Запись пользователя в `users` удаляется; refresh-сессии, подписки, посты, комментарии, лайки, уведомления и Redis-следы очищаются через локальные операции и события. Повторный вход или регистрация через тот же Google аккаунт невозможны.
 
 ### Действия администратора
 
@@ -611,14 +640,14 @@ Gateway блокирует действия активного временно 
 **Функции:**
 
 - Auth: Google login, refresh, logout, status bar.
-- Профиль: загрузка `me`, обновление профиля, поиск по username (`/explore`), email-верификация, аватар/баннер. URL профиля — `/profile/{username}`; поддерживается также `/profile/{userId}` (UUID) для обратной совместимости.
+- Профиль: загрузка `me`, обновление профиля, просмотр подписок и подписчиков, поиск по username (`/explore`), email-верификация, аватар/баннер. URL профиля — `/profile/{username}`; поддерживается также `/profile/{userId}` (UUID) для обратной совместимости.
 - Блокировка аккаунта: активный временно заблокированный пользователь видит отдельный экран с причиной и датой разблокировки; бессрочно заблокированный Google аккаунт видит поп-ап на странице входа с причиной блокировки.
 - Лента: вкладки «Рекомендации» (`trendingFeed`), «Подписки» (`followingFeed`); фильтры по университету, факультету, программе.
 - ВУЗ-контекст: read-only лента (`trendingFeed`) без compose и без вкладки «Подписки»; чипы факультетов и программ. URL — `/{subdomain}/` (если задан subdomain) или генерируется из shortName.
 - Контекст «Без ВУЗа»: отдельная trending-лента постов авторов без `universityId` (поступление, общие вопросы). URL — `/outside/`.
 - Посты: создание, редактирование, удаление, лайк/анлайк, share (копирует ссылку на пост в буфер обмена). Страница поста `/post/{id}` содержит кнопки лайк, комментарий, share.
-- Комментарии: получение, добавление, редактирование, удаление, лайк/анлайк.
-- Подписки: подписаться/отписаться.
+- Комментарии: получение, создание, редактирование, удаление, лайк/анлайк.
+- Подписки: подписаться, отписаться, просмотреть подписки и подписчиков профиля.
 - Медиа: загрузка аватара (`user-avatars`), баннера (`user-banners`), иконки ВУЗа (`university-icons`, svg/png), медиа постов (`post-media`).
 - Заявки: предложение улучшения, заявка ВУЗа (название, shortName, subdomain, student domain, employee domain, иконка), заявка факультета, заявка программы.
 - Админка: просмотр предложений улучшения, заявок ВУЗов, факультетов, программ; одобрение/отклонение заявок с подтверждением. В заявке на ВУЗ — ссылка на ленту по subdomain. Кнопка блокировки показывается администраторам на профилях пользователей без прав администратора; `kazenomi` видит кнопку блокировки на любых чужих профилях.
@@ -643,6 +672,8 @@ getUserByUsername(username: String!): User
 listUniversities: [University!]!
 listFaculties(universityId: ID!): [Faculty!]!
 listPrograms(facultyId: ID!): [Program!]!
+listFollowing(userId: ID!): [User!]!
+listFollowers(userId: ID!): [User!]!
 adminImprovementSuggestions: [ImprovementSuggestion!]!
 adminUniversityProposals: [UniversityProposal!]!
 adminFacultyProposals: [FacultyProposal!]!
@@ -678,7 +709,6 @@ createImprovementSuggestion(text: String!): AdminActionResult!
 createUniversityProposal(input: UniversityProposalInput!): AdminActionResult!
 createFacultyProposal(input: FacultyProposalInput!): AdminActionResult!
 createProgramProposal(input: ProgramProposalInput!): AdminActionResult!
-createProgram(facultyId: ID!, name: String!, shortName: String!): Program!
 deleteAccount: DeleteResult!
 adminGrantAdmin(targetUserId: ID!): User
 adminBanUser(input: BanUserInput!): AdminActionResult!
@@ -697,16 +727,36 @@ markAllNotificationsRead: Boolean!
 
 ### Межсервисные gRPC-взаимодействия
 
-- `APIGateway` → `UserService` — `CreateOrGetUser`, `GetUserById`, `GetUserByUsername`, `UpdateUser`, `DeleteAccount`, `CreateSession`, `RefreshSession`, `RevokeRefreshToken`, `SendVerificationCode`, `VerifyEmailCode`, `Subscribe`, `Unsubscribe`, `IsSubscribed`, `ListUniversities`, `ListFaculties`, `ListPrograms`, `BanUser`, `DeleteImprovementSuggestion`, `CreateImprovementSuggestion`, `ListImprovementSuggestions`, `CreateUniversityProposal`, `ListUniversityProposals`, `CreateFacultyProposal`, `ListFacultyProposals`, `ReviewFacultyProposal`, `CreateProgramProposal`, `ListProgramProposals`, `ReviewProgramProposal`, `ReviewUniversityProposal`, `CreateProgramForUser`, `GrantAdmin`
-- `APIGateway` → `PostService` — `CreatePost`, `GetPostById`, `GetPostsByUser`, `GetPostsByIds`, `EditPost`, `DeletePost`, `LikePost`, `UnlikePost`, `AddComment`, `GetComments`, `EditComment`, `DeleteComment`, `LikeComment`, `UnlikeComment`
-- `APIGateway` → `FeedService` — `GetFeed` (`TRENDING` и `FOLLOWING`)
-- `APIGateway` → `MediaService` — `UploadFile`
-- `APIGateway` → `NotificationService` — `GetNotifications`, `MarkAllRead`, `GetUnreadCount`
-- `PostService` → `UserService` — `GetUserByUsername` (резолвинг `@username`)
+| Клиент | Сервер | RPC |
+|---|---|---|
+| `APIGateway` | `UserService` | `CreateOrGetUser`, `GetUserById`, `GetUserByUsername`, `UpdateUser`, `DeleteAccount`, `CreateSession`, `RefreshSession`, `RevokeRefreshToken`, `SendVerificationCode`, `VerifyEmailCode`, `Subscribe`, `Unsubscribe`, `IsSubscribed`, `ListFollowing`, `ListFollowers`, `ListUniversities`, `ListFaculties`, `ListPrograms`, `BanUser`, `GrantAdmin`, `CreateImprovementSuggestion`, `ListImprovementSuggestions`, `DeleteImprovementSuggestion`, `CreateUniversityProposal`, `ListUniversityProposals`, `ReviewUniversityProposal`, `CreateFacultyProposal`, `ListFacultyProposals`, `ReviewFacultyProposal`, `CreateProgramProposal`, `ListProgramProposals`, `ReviewProgramProposal` |
+| `APIGateway` | `PostService` | `CreatePost`, `GetPostById`, `GetPostsByUser`, `GetPostsByIds`, `EditPost`, `DeletePost`, `LikePost`, `UnlikePost`, `AddComment`, `GetComments`, `EditComment`, `DeleteComment`, `LikeComment`, `UnlikeComment` |
+| `APIGateway` | `FeedService` | `GetFeed` (`TRENDING`, `FOLLOWING`) |
+| `APIGateway` | `MediaService` | `UploadFile` |
+| `APIGateway` | `NotificationService` | `GetNotifications`, `MarkAllRead`, `GetUnreadCount` |
+| `PostService` | `UserService` | `GetUserByUsername` для резолвинга `@username` в постах и комментариях |
+
+### Kafka-взаимодействия
+
+| Producer | Topic | Consumer | Назначение |
+|---|---|---|---|
+| `UserService` | `user-events` | `FeedService` | Подписки, отписки, удаление аккаунта, бессрочная блокировка |
+| `UserService` | `user-events` | `NotificationService` | Подписки, выдача прав администратора, блокировки, очистка уведомлений |
+| `UserService` | `user-events` | `PostService` | Очистка контента при удалении аккаунта и бессрочной блокировке |
+| `PostService` | `post-events` | `FeedService` | Создание/удаление постов, пересчёт рейтинга при лайках |
+| `PostService` | `post-events` | `NotificationService` | Лайки, комментарии, ответы, упоминания |
+| `UserService` | `user-events.dlq` | — | Ошибки публикации `user-events` |
+| `PostService` | `post-events.dlq` | — | Ошибки публикации `post-events` |
+| `FeedService` | `feed-events.dlq` | — | Ошибки обработки событий ленты |
+| `NotificationService` | `notification-events.dlq` | — | Ошибки обработки событий уведомлений |
+
+Kafka-события сохраняются в outbox-таблицах сервисов-источников и публикуются асинхронным publisher'ом. `FeedService` дедуплицирует обработанные события в Redis, `NotificationService` дедуплицирует Kafka-события в таблице `processed_events`.
+
+### Сервисы и RPC
 
 ### UserService
 
-`CreateOrGetUser`, `GetUserById`, `GetUserByUsername`, `UpdateUser`, `DeleteAccount`, `CreateSession`, `RefreshSession`, `RevokeRefreshToken`, `SendVerificationCode`, `VerifyEmailCode`, `Subscribe`, `Unsubscribe`, `IsSubscribed`, `ListUniversities`, `ListFaculties`, `CreateImprovementSuggestion`, `ListImprovementSuggestions`, `DeleteImprovementSuggestion`, `ListPrograms`, `CreateProgramForUser`, `CreateUniversityProposal`, `ListUniversityProposals`, `ReviewUniversityProposal`, `CreateFacultyProposal`, `ListFacultyProposals`, `ReviewFacultyProposal`, `CreateProgramProposal`, `ListProgramProposals`, `ReviewProgramProposal`, `GrantAdmin`, `BanUser`, `ValidateTopicForUniversity`, `GetGeneralTopicForUniversity`, `ResolvePostTarget`
+`CreateOrGetUser`, `GetUserById`, `GetUserByUsername`, `UpdateUser`, `DeleteAccount`, `CreateSession`, `RefreshSession`, `RevokeRefreshToken`, `SendVerificationCode`, `VerifyEmailCode`, `Subscribe`, `Unsubscribe`, `IsSubscribed`, `ListFollowing`, `ListFollowers`, `ValidateTopicForUniversity`, `GetGeneralTopicForUniversity`, `ResolvePostTarget`, `ListUniversities`, `ListFaculties`, `ListPrograms`, `BanUser`, `GrantAdmin`, `CreateImprovementSuggestion`, `ListImprovementSuggestions`, `DeleteImprovementSuggestion`, `CreateUniversityProposal`, `ListUniversityProposals`, `ReviewUniversityProposal`, `CreateFacultyProposal`, `ListFacultyProposals`, `ReviewFacultyProposal`, `CreateProgramProposal`, `ListProgramProposals`, `ReviewProgramProposal`
 
 ### PostService
 
@@ -801,7 +851,7 @@ markAllNotificationsRead: Boolean!
 | UserService | Бан пользователя (moderatorId, targetId, until, reason) | WARN |
 | PostService | Создание поста (postId, authorId) | INFO |
 | PostService | Удаление поста (postId, requesterId, adminOverride) | INFO |
-| CommentService | Добавление комментария (commentId, postId, authorId) | INFO |
+| CommentService | Создание комментария (commentId, postId, authorId) | INFO |
 | CommentService | Удаление комментария (commentId, requesterId, adminOverride) | INFO |
 | MediaService | Загрузка файла (bucket, filename) | INFO |
 | MediaService | Удаление файла (bucket, filename) | INFO |

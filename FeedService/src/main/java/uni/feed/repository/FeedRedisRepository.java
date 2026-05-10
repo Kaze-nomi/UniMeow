@@ -289,6 +289,14 @@ public class FeedRedisRepository {
 	}
 
 	public void removeUserFromAllFeeds(String userId) {
+		Map<String, Double> authoredPosts = findLatestAuthorPostsWithScores(userId, 0, -1);
+		Set<String> followers = redis.opsForSet().members(followersKey(userId));
+		if (followers != null) {
+			for (String followerId : followers) {
+				redis.opsForSet().remove(followingKey(followerId), userId);
+				removePostsFromUserFeed(followerId, authoredPosts.keySet());
+			}
+		}
 		Set<String> following = redis.opsForSet().members(followingKey(userId));
 		if (following != null) {
 			for (String targetUserId : following) {

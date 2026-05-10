@@ -314,17 +314,12 @@ function VerifyModal({ open, onClose, currentUser, onUserUpdated }) {
   const [programId, setProgramId] = React.useState('');
   const [loadingFaculties, setLoadingFaculties] = React.useState(false);
   const [loadingPrograms, setLoadingPrograms] = React.useState(false);
-  const [newProgName, setNewProgName] = React.useState('');
-  const [newProgShort, setNewProgShort] = React.useState('');
-  const [showAddProgram, setShowAddProgram] = React.useState(false);
-  const [addingProgram, setAddingProgram] = React.useState(false);
 
   const resetState = React.useCallback(() => {
     setEmail(currentUser?.emailUniversity || '');
     setCode(''); setCodeSent(false); setMsg(''); setErr('');
     setStage('email');
     setFaculties([]); setPrograms([]); setFacultyId(''); setProgramId('');
-    setNewProgName(''); setNewProgShort(''); setShowAddProgram(false);
   }, [currentUser]);
 
   React.useEffect(() => {
@@ -384,18 +379,6 @@ function VerifyModal({ open, onClose, currentUser, onUserUpdated }) {
         setStage('profile');
       } else setErr(d.verifyEmailCode.error || 'Неверный код');
     } catch (e) { setErr(formatVerificationError(e)); } finally { setBusy(false); }
-  };
-
-  const addProgram = async () => {
-    if (!newProgName.trim() || !newProgShort.trim()) return;
-    setAddingProgram(true); setErr('');
-    try {
-      const d = await API.gql(API.M.createProgram, { facultyId, name: newProgName.trim(), shortName: newProgShort.trim() });
-      const prog = d.createProgram;
-      setPrograms(prev => [...prev.filter(p => p.id !== prog.id), prog]);
-      setProgramId(prog.id);
-      setShowAddProgram(false); setNewProgName(''); setNewProgShort('');
-    } catch (e) { setErr(e.message); } finally { setAddingProgram(false); }
   };
 
   const saveProfile = async () => {
@@ -466,25 +449,8 @@ function VerifyModal({ open, onClose, currentUser, onUserUpdated }) {
               loadingPrograms ? (
                 <div style={{ display: 'flex', justifyContent: 'center', padding: 8 }}><Spinner size={20} /></div>
               ) : (
-                <>
-                  <SelectField label="Образовательная программа" value={programId} onChange={e => setProgramId(e.target.value)}
-                    options={[{ value: '', label: 'Выберите программу' }, ...programs.map(p => ({ value: p.id, label: p.name }))]} />
-                  {!showAddProgram ? (
-                    <button onClick={() => setShowAddProgram(true)} style={{ alignSelf: 'flex-start', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--accent)', fontSize: 13, fontWeight: 600, padding: '2px 0', fontFamily: 'inherit' }}>
-                      + Добавить свою программу
-                    </button>
-                  ) : (
-                    <div style={{ padding: 14, border: '1.5px solid var(--border)', borderRadius: 12, display: 'flex', flexDirection: 'column', gap: 10, background: 'var(--surface)' }}>
-                      <div style={{ fontWeight: 700, fontSize: 13 }}>Новая образовательная программа</div>
-                      <Input label="Название" value={newProgName} onChange={e => setNewProgName(e.target.value)} placeholder="Информатика и вычислительная техника" />
-                      <Input label="Код / краткое название" value={newProgShort} onChange={e => setNewProgShort(e.target.value)} placeholder="09.03.01" />
-                      <div style={{ display: 'flex', gap: 8 }}>
-                        <Button size="sm" onClick={addProgram} loading={addingProgram} disabled={!newProgName.trim() || !newProgShort.trim()}>Добавить</Button>
-                        <Button size="sm" variant="secondary" onClick={() => { setShowAddProgram(false); setNewProgName(''); setNewProgShort(''); }}>Отмена</Button>
-                      </div>
-                    </div>
-                  )}
-                </>
+                <SelectField label="Образовательная программа" value={programId} onChange={e => setProgramId(e.target.value)}
+                  options={[{ value: '', label: 'Выберите программу' }, ...programs.map(p => ({ value: p.id, label: p.name }))]} />
               )
             )}
             {err && <div style={{ padding: '10px 14px', background: 'var(--like-subtle)', color: 'var(--like)', borderRadius: 10, fontSize: 13 }}>{err}</div>}

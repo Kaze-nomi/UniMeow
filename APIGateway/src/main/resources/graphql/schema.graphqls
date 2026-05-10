@@ -5,6 +5,8 @@ type Query {
     listUniversities: [University!]!
     listFaculties(universityId: ID!): [Faculty!]!
     listPrograms(facultyId: ID!): [Program!]!
+    listFollowing(userId: ID!): [User!]!
+    listFollowers(userId: ID!): [User!]!
     adminImprovementSuggestions: [ImprovementSuggestion!]!
     adminUniversityProposals: [UniversityProposal!]!
     adminFacultyProposals: [FacultyProposal!]!
@@ -40,7 +42,6 @@ type Mutation {
     likeComment(commentId: ID!):                    LikeResult!
     unlikeComment(commentId: ID!):                  LikeResult!
 
-    createProgram(facultyId: ID!, name: String!, shortName: String!): Program!
     createImprovementSuggestion(text: String!, clientRequestId: String): AdminActionResult!
     createUniversityProposal(input: UniversityProposalInput!, clientRequestId: String): AdminActionResult!
     createFacultyProposal(input: FacultyProposalInput!, clientRequestId: String): AdminActionResult!

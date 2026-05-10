@@ -133,6 +133,9 @@ public class FeedEventService {
 		}
 		if (authorId != null) {
 			redisRepository.removePostFromAuthorFeed(authorId, postId);
+			for (String followerId : redisRepository.findFollowers(authorId)) {
+				redisRepository.removePostsFromUserFeed(followerId, Set.of(postId));
+			}
 		}
 	}
 

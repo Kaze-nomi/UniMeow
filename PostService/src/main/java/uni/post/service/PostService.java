@@ -204,9 +204,13 @@ public class PostService {
 		List<Comment> ownComments = commentRepository.findByAuthorId(authorId);
 		List<Post> authoredPosts = postRepository.findByAuthorId(authorId);
 		Set<UUID> authoredPostIds = authoredPosts.stream().map(Post::getId).collect(Collectors.toSet());
+		List<Comment> commentsOnAuthoredPosts = authoredPostIds.isEmpty()
+				? List.of()
+				: commentRepository.findByPostIdIn(authoredPostIds);
 
 		Set<UUID> commentsToDelete = collectCommentSubtree(
 				ownComments.stream().map(Comment::getId).collect(Collectors.toSet()));
+		commentsToDelete.addAll(commentsOnAuthoredPosts.stream().map(Comment::getId).collect(Collectors.toSet()));
 
 		int decrementedPostLikes = 0;
 		for (PostLike like : postLikes) {
@@ -258,6 +262,16 @@ public class PostService {
 
 		if (!authoredPostIds.isEmpty()) {
 			likeRepository.deleteByPostIdIn(authoredPostIds);
+		}
+
+		for (Post post : authoredPosts) {
+			Map<String, Object> payload = new LinkedHashMap<>();
+			payload.put("postId", post.getId().toString());
+			payload.put("authorId", post.getAuthorId().toString());
+			payload.put("deletedAt", LocalDateTime.now().toString());
+			appendFeedScopePayload(payload, post);
+			outboxService.enqueuePostEvent("POST_DELETED", post.getAuthorId().toString(), post.getId().toString(),
+					payload);
 		}
 
 		int deletedPosts = postRepository.deleteAllByAuthorId(authorId);

@@ -15,6 +15,7 @@ import uni.user.exception.UserNotFoundException;
 import uni.user.exception.UsernameAlreadyTakenException;
 import uni.user.outbox.OutboxService;
 import uni.user.repository.BannedGoogleAccountRepository;
+import uni.user.repository.RefreshSessionRepository;
 import uni.user.repository.SubscriptionRepository;
 import uni.user.repository.UniversityFacultyRepository;
 import uni.user.repository.UniversityProgramRepository;
@@ -46,6 +47,9 @@ class UserServiceTest {
 
 	@Mock
 	BannedGoogleAccountRepository bannedGoogleAccountRepository;
+
+	@Mock
+	RefreshSessionRepository refreshSessionRepository;
 
 	@Mock
 	OutboxService outboxService;
@@ -411,6 +415,8 @@ class UserServiceTest {
 						&& moderatorId.equals(ban.getModeratorId()) && ban.getBannedAt() != null));
 		verify(outboxService).enqueueUserEvent(eq("USER_PERMANENT_BANNED"), eq(TARGET_ID.toString()),
 				eq(TARGET_ID.toString()), any());
+		verify(subscriptionRepository).deleteBySubscriberIdOrTargetUserId(TARGET_ID, TARGET_ID);
+		verify(refreshSessionRepository).deleteAllByUserId(TARGET_ID);
 		verify(userRepository).delete(target);
 		verify(userRepository, never()).save(target);
 	}
@@ -509,6 +515,8 @@ class UserServiceTest {
 
 		verify(outboxService).enqueueUserEvent(eq("USER_DELETED"), eq(USER_ID.toString()), eq(USER_ID.toString()),
 				any());
+		verify(subscriptionRepository).deleteBySubscriberIdOrTargetUserId(USER_ID, USER_ID);
+		verify(refreshSessionRepository).deleteAllByUserId(USER_ID);
 		verify(userRepository).delete(user);
 	}
 }

@@ -91,6 +91,18 @@ public class UserController {
 						.toList());
 	}
 
+	@QueryMapping
+	public Mono<List<UserDto>> listFollowing(@Argument(name = "userId") String userId) {
+		return userGrpcClient.listFollowing(userId)
+				.map(resp -> resp.getUsersList().stream().map(userMapper::toDto).toList());
+	}
+
+	@QueryMapping
+	public Mono<List<UserDto>> listFollowers(@Argument(name = "userId") String userId) {
+		return userGrpcClient.listFollowers(userId)
+				.map(resp -> resp.getUsersList().stream().map(userMapper::toDto).toList());
+	}
+
 	@MutationMapping
 	public Mono<UserDto> updateProfile(@Argument(name = "input") UpdateProfileInput input,
 			@ContextValue(name = "userId", required = false) String userId) {
@@ -140,21 +152,6 @@ public class UserController {
 			builder.setGraduationYear(input.graduationYear());
 
 		return userGrpcClient.updateUser(builder.build()).map(userMapper::toDto);
-	}
-
-	@MutationMapping
-	public Mono<ProgramDto> createProgram(@Argument(name = "facultyId") String facultyId,
-			@Argument(name = "name") String name, @Argument(name = "shortName") String shortName,
-			@ContextValue(name = "userId", required = false) String userId) {
-		if (userId == null) {
-			return Mono.error(new CredentialException("Authentication required"));
-		}
-		long facultyIdLong = parseId(facultyId, "facultyId");
-		return requireActiveUser(userId)
-				.flatMap(activeId -> userGrpcClient.createProgramForUser(activeId, facultyIdLong, name, shortName))
-				.map(resp -> ProgramDto.builder().id(Long.toString(resp.getProgram().getId()))
-						.facultyId(Long.toString(resp.getProgram().getFacultyId())).name(resp.getProgram().getName())
-						.shortName(resp.getProgram().getShortName()).build());
 	}
 
 	@MutationMapping

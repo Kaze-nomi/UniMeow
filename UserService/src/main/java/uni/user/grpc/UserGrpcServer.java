@@ -210,6 +210,34 @@ public class UserGrpcServer extends UserServiceGrpc.UserServiceImplBase {
 	}
 
 	@Override
+	public void listFollowing(ListSubscriptionsRequest req, StreamObserver<UserListResponse> obs) {
+		try {
+			UserListResponse.Builder builder = UserListResponse.newBuilder();
+			userService.listFollowing(UUID.fromString(req.getUserId())).forEach(u -> builder.addUsers(toProto(u)));
+			obs.onNext(builder.build());
+			obs.onCompleted();
+		} catch (UserNotFoundException e) {
+			obs.onError(Status.NOT_FOUND.withDescription(e.getMessage()).asRuntimeException());
+		} catch (IllegalArgumentException e) {
+			obs.onError(Status.INVALID_ARGUMENT.withDescription("Invalid UUID").asRuntimeException());
+		}
+	}
+
+	@Override
+	public void listFollowers(ListSubscriptionsRequest req, StreamObserver<UserListResponse> obs) {
+		try {
+			UserListResponse.Builder builder = UserListResponse.newBuilder();
+			userService.listFollowers(UUID.fromString(req.getUserId())).forEach(u -> builder.addUsers(toProto(u)));
+			obs.onNext(builder.build());
+			obs.onCompleted();
+		} catch (UserNotFoundException e) {
+			obs.onError(Status.NOT_FOUND.withDescription(e.getMessage()).asRuntimeException());
+		} catch (IllegalArgumentException e) {
+			obs.onError(Status.INVALID_ARGUMENT.withDescription("Invalid UUID").asRuntimeException());
+		}
+	}
+
+	@Override
 	public void validateTopicForUniversity(ValidateTopicRequest req, StreamObserver<ValidateTopicResponse> obs) {
 		try {
 			var result = universityService.validateTopicForUniversity(req.getUniversityId(), req.getTopicId());
@@ -557,22 +585,6 @@ public class UserGrpcServer extends UserServiceGrpc.UserServiceImplBase {
 			obs.onError(Status.PERMISSION_DENIED.withDescription(e.getMessage()).asRuntimeException());
 		} catch (IllegalArgumentException e) {
 			obs.onError(Status.INVALID_ARGUMENT.withDescription(e.getMessage()).asRuntimeException());
-		}
-	}
-
-	@Override
-	public void createProgramForUser(CreateProgramForUserRequest req, StreamObserver<CreateProgramResponse> obs) {
-		try {
-			uni.user.entity.UniversityProgram program = administrationService.createProgramForUser(
-					UUID.fromString(req.getUserId()), req.getFacultyId(), req.getName(), req.getShortName());
-			obs.onNext(CreateProgramResponse.newBuilder().setSuccess(true).setProgram(toProgramProto(program)).build());
-			obs.onCompleted();
-		} catch (SecurityException e) {
-			obs.onError(Status.PERMISSION_DENIED.withDescription(e.getMessage()).asRuntimeException());
-		} catch (IllegalArgumentException e) {
-			obs.onError(Status.INVALID_ARGUMENT.withDescription(e.getMessage()).asRuntimeException());
-		} catch (Exception e) {
-			obs.onError(Status.INTERNAL.withDescription(e.getMessage()).asRuntimeException());
 		}
 	}
 

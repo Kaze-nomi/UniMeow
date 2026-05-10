@@ -272,12 +272,6 @@ public class AdministrationService {
 	}
 
 	@Transactional
-	public UniversityProgram createProgram(UUID userId, long facultyId, String name, String shortName) {
-		ensureActiveUser(userId);
-		return createProgramRecord(facultyId, name, shortName);
-	}
-
-	@Transactional
 	public UniversityProgram createProgramForAdmin(UUID adminId, long facultyId, String name, String shortName) {
 		ensureAdmin(adminId);
 		return createProgramRecord(facultyId, name, shortName);
@@ -298,11 +292,6 @@ public class AdministrationService {
 				.orElseGet(() -> universityProgramRepository
 						.save(UniversityProgram.builder().university(faculty.getUniversity()).faculty(faculty)
 								.name(name.trim()).shortName(normalizedShortName).build()));
-	}
-
-	@Transactional
-	public UniversityProgram createProgramForUser(UUID userId, long facultyId, String name, String shortName) {
-		return createProgram(userId, facultyId, name, shortName);
 	}
 
 	private void ensureAdmin(UUID userId) {

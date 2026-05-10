@@ -8,6 +8,6 @@ import uni.user.entity.ProgramProposal;
 
 public interface ProgramProposalRepository extends JpaRepository<ProgramProposal, Long> {
 	@Override
-	@EntityGraph(attributePaths = { "university", "faculty" })
+	@EntityGraph(attributePaths = {"university", "faculty"})
 	List<ProgramProposal> findAll();
 }
