@@ -167,6 +167,7 @@ function SettingsPage({ currentUser, onNavigate, onAccountDeleted }) {
 
 function EditProfileModal({ open, onClose, currentUser, onUserUpdated }) {
   const STATUS_MAX_LENGTH = 80;
+  const USERNAME_MAX_LENGTH = 30;
   const [form, setForm] = React.useState({});
   const [loading, setLoading] = React.useState(false);
   const [error, setError] = React.useState('');
@@ -213,10 +214,18 @@ function EditProfileModal({ open, onClose, currentUser, onUserUpdated }) {
   if (!open) return null;
   const set = (k) => (e) => setForm(f => ({ ...f, [k]: e.target.value }));
   const setLimited = (k, maxLength) => (e) => setForm(f => ({ ...f, [k]: e.target.value.slice(0, maxLength) }));
+  const setUsername = (e) => setForm(f => ({
+    ...f,
+    username: e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, '').slice(0, USERNAME_MAX_LENGTH),
+  }));
 
   const save = async () => {
     setLoading(true); setError('');
     try {
+      if (!/^[a-z0-9_]{3,30}$/.test(form.username || '')) {
+        setError('Юзернейм: 3-30 символов, только a-z, 0-9, _');
+        return;
+      }
       const input = {};
       ['username','name','surname','bio','status','avatarUrl','coverUrl'].forEach(k => {
         if (form[k] !== undefined) input[k] = form[k];
@@ -246,7 +255,7 @@ function EditProfileModal({ open, onClose, currentUser, onUserUpdated }) {
         </div>
         <div style={{ padding: 16, display: 'flex', flexDirection: 'column', gap: 14 }}>
           {error && <div style={{ padding: '10px 14px', background: 'var(--like-subtle)', color: 'var(--like)', borderRadius: 10, fontSize: 13 }}>{error}</div>}
-          <Input label="Никнейм" value={form.username || ''} onChange={set('username')} />
+          <Input label="Никнейм" value={form.username || ''} onChange={setUsername} maxLength={USERNAME_MAX_LENGTH} hint="3-30 символов: a-z, 0-9, _" />
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
             <Input label="Имя" value={form.name || ''} onChange={set('name')} />
             <Input label="Фамилия" value={form.surname || ''} onChange={set('surname')} />

@@ -129,6 +129,7 @@ function PostCard({ post, onNavigate, currentUser, onLike }) {
   };
 
   const timeAgo = useTimeAgo(post.createdAt);
+  const edited = isEditedTimestamp(post.createdAt, post.updatedAt);
   const displayName = author
     ? (author.name && author.surname ? `${author.name} ${author.surname}` : author.username || 'Пользователь')
     : ' ';
@@ -168,6 +169,12 @@ function PostCard({ post, onNavigate, currentUser, onLike }) {
             {author?.username && <span style={{ flexShrink: 1, minWidth: 0, overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis' }}>@{author.username}</span>}
             <span aria-hidden style={{ flexShrink: 0 }}>·</span>
             <span style={{ flexShrink: 0, whiteSpace: 'nowrap' }}>{timeAgo}</span>
+            {edited && (
+              <>
+                <span aria-hidden style={{ flexShrink: 0 }}>·</span>
+                <span style={{ flexShrink: 0, whiteSpace: 'nowrap' }}>изменено</span>
+              </>
+            )}
           </div>
             {post.universityId && author?.university && String(author.university.id) === String(post.universityId) && (
             <div style={{ flexShrink: 0 }}>

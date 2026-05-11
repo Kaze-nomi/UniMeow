@@ -31,6 +31,7 @@ import java.util.UUID;
 public class UserService {
 
 	private static final int MAX_STATUS_LENGTH = 80;
+	private static final String USERNAME_PATTERN = "^[a-z0-9_]{3,30}$";
 
 	private final UserRepository userRepository;
 	private final SubscriptionRepository subscriptionRepository;
@@ -81,10 +82,7 @@ public class UserService {
 		User user = getById(id);
 
 		if (hasUsername) {
-			if (username == null || username.isBlank()) {
-				throw new IllegalArgumentException("Username cannot be empty");
-			}
-			String normalizedUsername = username.strip().toLowerCase().replaceAll("\\s+", "");
+			String normalizedUsername = normalizeUsername(username);
 			if (!normalizedUsername.equals(user.getUsername()) && userRepository.existsByUsername(normalizedUsername)) {
 				throw new UsernameAlreadyTakenException("Username already taken: " + normalizedUsername);
 			}
@@ -211,6 +209,17 @@ public class UserService {
 		String normalized = status.strip();
 		if (normalized.length() > MAX_STATUS_LENGTH) {
 			throw new IllegalArgumentException("Status must be at most " + MAX_STATUS_LENGTH + " characters");
+		}
+		return normalized;
+	}
+
+	private static String normalizeUsername(String username) {
+		if (username == null || username.isBlank()) {
+			throw new IllegalArgumentException("Username cannot be empty");
+		}
+		String normalized = username.strip().toLowerCase().replaceAll("\\s+", "");
+		if (!normalized.matches(USERNAME_PATTERN)) {
+			throw new IllegalArgumentException("Username must be 3-30 characters and contain only a-z, 0-9, _");
 		}
 		return normalized;
 	}

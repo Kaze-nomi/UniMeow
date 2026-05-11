@@ -172,6 +172,14 @@ function normalizeIsoDate(isoStr) {
   return isoStr;
 }
 
+function isEditedTimestamp(createdAt, updatedAt) {
+  if (!createdAt || !updatedAt) return false;
+  const created = new Date(normalizeIsoDate(createdAt)).getTime();
+  const updated = new Date(normalizeIsoDate(updatedAt)).getTime();
+  if (!Number.isFinite(created) || !Number.isFinite(updated)) return false;
+  return updated - created > 1000;
+}
+
 function useTimeAgo(isoStr) {
   if (!isoStr) return '';
   const date = new Date(normalizeIsoDate(isoStr));
@@ -303,4 +311,5 @@ Object.assign(window, {
   ProfileHoverCard,
   ImageUploadField,
   normalizeIsoDate,
+  isEditedTimestamp,
 });

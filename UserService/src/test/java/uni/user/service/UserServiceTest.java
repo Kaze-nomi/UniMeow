@@ -240,6 +240,33 @@ class UserServiceTest {
 	}
 
 	@Test
+	void update_throws_when_username_is_too_short() {
+		User user = buildUser();
+		when(userRepository.findById(USER_ID)).thenReturn(Optional.of(user));
+
+		assertThatThrownBy(() -> updateUsername("ab")).isInstanceOf(IllegalArgumentException.class)
+				.hasMessageContaining("Username must be 3-30 characters");
+	}
+
+	@Test
+	void update_throws_when_username_is_too_long() {
+		User user = buildUser();
+		when(userRepository.findById(USER_ID)).thenReturn(Optional.of(user));
+
+		assertThatThrownBy(() -> updateUsername("a".repeat(31))).isInstanceOf(IllegalArgumentException.class)
+				.hasMessageContaining("Username must be 3-30 characters");
+	}
+
+	@Test
+	void update_throws_when_username_contains_unsupported_characters() {
+		User user = buildUser();
+		when(userRepository.findById(USER_ID)).thenReturn(Optional.of(user));
+
+		assertThatThrownBy(() -> updateUsername("new-name")).isInstanceOf(IllegalArgumentException.class)
+				.hasMessageContaining("contain only a-z, 0-9, _");
+	}
+
+	@Test
 	void update_only_changes_fields_that_are_flagged() {
 		User user = buildUser();
 		when(userRepository.findById(USER_ID)).thenReturn(Optional.of(user));

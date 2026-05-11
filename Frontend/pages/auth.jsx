@@ -106,12 +106,14 @@ function LoginPage({ onNavigate }) {
 }
 
 function CompleteRegistrationPage({ onNavigate, onUserUpdated }) {
+  const USERNAME_MAX_LENGTH = 30;
   const [username, setUsername] = React.useState('');
   const [name, setName] = React.useState('');
   const [surname, setSurname] = React.useState('');
   const [error, setError] = React.useState('');
   const [loading, setLoading] = React.useState(false);
 
+  const normalizeUsernameInput = (value) => value.toLowerCase().replace(/[^a-z0-9_]/g, '').slice(0, USERNAME_MAX_LENGTH);
   const validateUsername = (u) => /^[a-z0-9_]{3,30}$/.test(u);
 
   const submit = async () => {
@@ -150,9 +152,10 @@ function CompleteRegistrationPage({ onNavigate, onUserUpdated }) {
           <Input
             label="Никнейм *"
             value={username}
-            onChange={e => setUsername(e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, ''))}
+            onChange={e => setUsername(normalizeUsernameInput(e.target.value))}
             placeholder="your_username"
             hint="3-30 символов: a-z, 0-9, _"
+            maxLength={USERNAME_MAX_LENGTH}
             autoFocus
           />
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>

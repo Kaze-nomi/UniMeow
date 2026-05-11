@@ -93,7 +93,7 @@ function PostPage({ postId, currentUser, onNavigate }) {
     setEditLoading(true);
     try {
       const d = await API.gql(API.M.editPost, { postId, input: { content: editContent } });
-      setPost(p => ({ ...p, content: d.editPost.content }));
+      setPost(p => ({ ...p, content: d.editPost.content, updatedAt: d.editPost.updatedAt || p?.updatedAt }));
       setEditModal(false);
     } catch {} finally { setEditLoading(false); }
   };
@@ -106,6 +106,7 @@ function PostPage({ postId, currentUser, onNavigate }) {
   };
 
   const timeAgo = useTimeAgo(post?.createdAt);
+  const postEdited = isEditedTimestamp(post?.createdAt, post?.updatedAt);
   const displayName = author ? ((author.name && author.surname) ? `${author.name} ${author.surname}` : author.username) : '...';
   const isMyPost = currentUser && post && currentUser.id === post.authorId;
   const canDeletePost = isMyPost || currentUser?.isAdmin;
@@ -139,6 +140,7 @@ function PostPage({ postId, currentUser, onNavigate }) {
             </div>
             <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
               @{author?.username} · {timeAgo}
+              {postEdited && ' · изменено'}
               {post.universityId && author?.university?.name && String(author.university.id) === String(post.universityId) && ` · ${author.university.name}`}
             </div>
           </div>
@@ -232,7 +234,7 @@ function PostPage({ postId, currentUser, onNavigate }) {
                 if (author?.username && !commentText.trim()) setCommentText('@' + author.username + ' ');
               }}
               onDelete={(id) => setComments(cs => cs.filter(x => x.id !== id && x.parentCommentId !== id))}
-              onUpdate={(id, content) => setComments(cs => cs.map(x => x.id === id ? { ...x, content } : x))} />
+              onUpdate={(id, content, updatedAt) => setComments(cs => cs.map(x => x.id === id ? { ...x, content, updatedAt: updatedAt || x.updatedAt } : x))} />
             {(repliesByParent[c.id] || []).map(reply => (
               <CommentItem key={reply.id} comment={reply} currentUser={currentUser} onNavigate={onNavigate} nested
                 onReply={(author) => {
@@ -240,7 +242,7 @@ function PostPage({ postId, currentUser, onNavigate }) {
                   if (author?.username && !commentText.trim()) setCommentText('@' + author.username + ' ');
                 }}
                 onDelete={(id) => setComments(cs => cs.filter(x => x.id !== id))}
-                onUpdate={(id, content) => setComments(cs => cs.map(x => x.id === id ? { ...x, content } : x))} />
+                onUpdate={(id, content, updatedAt) => setComments(cs => cs.map(x => x.id === id ? { ...x, content, updatedAt: updatedAt || x.updatedAt } : x))} />
             ))}
           </React.Fragment>
         ))}
@@ -290,6 +292,7 @@ function CommentItem({ comment, currentUser, onNavigate, onDelete, onUpdate, onR
   const [deleteModal, setDeleteModal] = React.useState(false);
   const [deleteLoading, setDeleteLoading] = React.useState(false);
   const timeAgo = useTimeAgo(comment.createdAt);
+  const edited = isEditedTimestamp(comment.createdAt, comment.updatedAt);
   const isMe = currentUser?.id === comment.authorId;
 
   React.useEffect(() => { API.getCachedUser(comment.authorId).then(setAuthor); }, [comment.authorId]);
@@ -329,7 +332,11 @@ function CommentItem({ comment, currentUser, onNavigate, onDelete, onUpdate, onR
 
   const handleEdit = async () => {
     setLoading(true);
-    try { await API.gql(API.M.editComment, { commentId: comment.id, content: editText }); onUpdate(comment.id, editText); setEditing(false); }
+    try {
+      const d = await API.gql(API.M.editComment, { commentId: comment.id, content: editText });
+      onUpdate(comment.id, editText, d.editComment?.updatedAt);
+      setEditing(false);
+    }
     catch {} finally { setLoading(false); }
   };
 
@@ -346,6 +353,7 @@ function CommentItem({ comment, currentUser, onNavigate, onDelete, onUpdate, onR
             </span>
             {author?.username && <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>@{author.username}</span>}
             <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>{timeAgo}</span>
+            {edited && <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>· изменено</span>}
             {(isMe || currentUser?.isAdmin) && (
               <div style={{ marginLeft: 'auto', display: 'flex', gap: 2 }}>
                 {isMe && <button onClick={() => setEditing(e => !e)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', padding: 3 }}><EditIcon size={13} /></button>}
