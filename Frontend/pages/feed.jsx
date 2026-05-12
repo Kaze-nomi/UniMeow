@@ -321,8 +321,12 @@ function InlineCompose({ currentUser, onCreated, defaultTopicId }) {
     const remaining = MAX_FILES - mediaFiles.length;
     const selected = files.slice(0, remaining);
     if (files.length > remaining) { setError('Можно прикрепить не больше 10 файлов'); return; }
-    if (selected.some(file => !file.type.startsWith('image/') && file.size > MAX_MEDIA_SIZE)) {
+    if (selected.some(file => file.size > MAX_MEDIA_SIZE)) {
       setError('Файл слишком большой (максимум 10 МБ)');
+      return;
+    }
+    if (selected.some(file => !file.type.startsWith('image/') && !file.type.startsWith('video/'))) {
+      setError('Можно прикрепить только изображения или видео');
       return;
     }
     setError('');
@@ -416,13 +420,16 @@ function InlineCompose({ currentUser, onCreated, defaultTopicId }) {
                 <div style={{ display: 'grid', gridTemplateColumns: columns, gap: 4, borderRadius: 12, overflow: 'hidden', border: '1px solid var(--border)', marginBottom: 8 }}>
                   {urls.map((url, i) => {
                     const isFirst = i === 0;
+                    const isVideo = mediaFiles[i]?.file?.type?.startsWith('video/') || isVideoMediaUrl(url);
                     const style = { width: '100%', objectFit: 'cover', display: 'block' };
                     if (count === 1) style.aspectRatio = '16/9';
                     else if (odd && isFirst) { style.gridColumn = '1 / -1'; style.aspectRatio = '16/9'; }
                     else style.aspectRatio = '1';
                     return (
                       <div key={i} style={{ position: 'relative' }}>
-                        <img src={url} alt="" style={style} />
+                        {isVideo
+                          ? <video src={url} controls preload="metadata" style={style} />
+                          : <img src={url} alt="" style={style} />}
                         <button onClick={() => removeMedia(i)} style={{
                           position: 'absolute', top: 4, right: 4,
                           background: 'rgba(0,0,0,0.6)', color: '#fff', border: 'none',
@@ -437,7 +444,7 @@ function InlineCompose({ currentUser, onCreated, defaultTopicId }) {
             })()
         )}
         {error && <div style={{ color: 'var(--like)', fontSize: 13, marginBottom: 6 }}>{error}</div>}
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, marginTop: 8, flexWrap: 'wrap' }}>
           <div>
             {mediaFiles.length < MAX_FILES && (
               <button onClick={() => inputRef.current?.click()} title="Прикрепить медиа" style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 6, borderRadius: '50%', color: 'var(--accent)', display: 'inline-flex', alignItems: 'center' }}>

@@ -83,7 +83,7 @@ function PostPage({ postId, currentUser, onNavigate }) {
     try {
       await API.gql(currentUser?.isAdmin && !isMyPost ? API.M.adminDeletePost : API.M.deletePost, { postId });
       setDeleteModal(false);
-      onNavigate(-1);
+      onNavigate('/feed');
     } finally {
       setDeleteLoading(false);
     }
@@ -157,6 +157,7 @@ function PostPage({ postId, currentUser, onNavigate }) {
         {post.mediaUrls?.length > 0 && (
           (() => {
             const urls = post.mediaUrls.map(url => API.resolveAssetUrl(url));
+            const imageUrls = urls.filter(url => !isVideoMediaUrl(url));
             const count = urls.length;
             const odd = count % 2 === 1 && count > 1;
             const columns = count === 1 ? '1fr' : 'repeat(2,1fr)';
@@ -164,11 +165,14 @@ function PostPage({ postId, currentUser, onNavigate }) {
               <div style={{ display: 'grid', gridTemplateColumns: columns, gap: 2, borderRadius: 14, overflow: 'hidden', marginBottom: 16, border: '1px solid var(--border)' }}>
                 {urls.map((url, i) => {
                   const isFirst = i === 0;
-                  const style = { width: '100%', objectFit: 'cover', display: 'block', cursor: 'zoom-in' };
+                  const isVideo = isVideoMediaUrl(url);
+                  const style = { width: '100%', objectFit: 'cover', display: 'block', cursor: isVideo ? 'default' : 'zoom-in' };
                   if (count === 1) style.aspectRatio = '16/9';
                   else if (odd && isFirst) { style.gridColumn = '1 / -1'; style.aspectRatio = '16/9'; }
                   else style.aspectRatio = '1';
-                  return <img key={i} src={url} alt="" onClick={() => setLightboxIdx(i)} style={style} />;
+                  if (isVideo) return <video key={i} src={url} controls preload="metadata" style={style} />;
+                  const imageIndex = imageUrls.indexOf(url);
+                  return <img key={i} src={url} alt="" onClick={() => setLightboxIdx(imageIndex)} style={style} />;
                 })}
               </div>
             );
@@ -274,7 +278,7 @@ function PostPage({ postId, currentUser, onNavigate }) {
         document.body
       )}
       {lightboxIdx !== null && post.mediaUrls?.length > 0 && (
-        (window.ImageLightbox ? React.createElement(window.ImageLightbox, { urls: post.mediaUrls.map(url => API.resolveAssetUrl(url)), startIndex: lightboxIdx, onClose: () => setLightboxIdx(null) }) : null)
+        (window.ImageLightbox ? React.createElement(window.ImageLightbox, { urls: post.mediaUrls.map(url => API.resolveAssetUrl(url)).filter(url => !isVideoMediaUrl(url)), startIndex: lightboxIdx, onClose: () => setLightboxIdx(null) }) : null)
       )}
     </div>
   );

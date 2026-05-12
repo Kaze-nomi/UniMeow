@@ -83,7 +83,7 @@ function PostCard({ post, onNavigate, currentUser, onLike }) {
 
   const handleShare = async (e) => {
     e.stopPropagation();
-    const url = window.location.origin + window.location.pathname + '#/post/' + post.id;
+    const url = window.location.origin + '/post/' + post.id;
     try {
       await navigator.clipboard.writeText(url);
       setCopied(true);
@@ -196,6 +196,7 @@ function PostCard({ post, onNavigate, currentUser, onLike }) {
         {post.mediaUrls?.length > 0 && (
           (() => {
             const urls = post.mediaUrls.slice(0, 4).map(url => API.resolveAssetUrl(url));
+            const imageUrls = urls.filter(url => !isVideoMediaUrl(url));
             const count = urls.length;
             const odd = count % 2 === 1 && count > 1;
             const columns = count === 1 ? '1fr' : 'repeat(2, 1fr)';
@@ -208,18 +209,23 @@ function PostCard({ post, onNavigate, currentUser, onLike }) {
               }}>
                 {urls.map((url, i) => {
                   const isFirst = i === 0;
+                  const isVideo = isVideoMediaUrl(url);
                   const style = {
                     width: '100%',
                     objectFit: 'cover',
                     display: 'block',
                     background: 'var(--surface-2)',
-                    cursor: 'zoom-in',
+                    cursor: isVideo ? 'default' : 'zoom-in',
                   };
                   if (count === 1) style.maxHeight = 480;
                   else if (odd && isFirst) { style.gridColumn = '1 / -1'; style.aspectRatio = '16/9'; }
                   else style.aspectRatio = '1';
+                  if (isVideo) {
+                    return <video key={i} src={url} controls preload="metadata" onClick={e => e.stopPropagation()} style={style} />;
+                  }
+                  const imageIndex = imageUrls.indexOf(url);
                   return (
-                    <img key={i} src={url} alt="" onClick={e => { e.stopPropagation(); setLightboxIdx(i); }} style={style} />
+                    <img key={i} src={url} alt="" onClick={e => { e.stopPropagation(); setLightboxIdx(imageIndex); }} style={style} />
                   );
                 })}
               </div>
@@ -262,7 +268,7 @@ function PostCard({ post, onNavigate, currentUser, onLike }) {
       <ProfileHoverCard user={author} pos={hoverPos} onNavigate={onNavigate} onClose={() => setHoverCardOpen(false)} onMouseEnter={onHoverCardEnter} onMouseLeave={onHoverCardLeave} closing={hoverCardClosing} />
     )}
     {lightboxIdx !== null && post.mediaUrls?.length > 0 && (
-      <ImageLightbox urls={post.mediaUrls.map(url => API.resolveAssetUrl(url))} startIndex={lightboxIdx} onClose={() => setLightboxIdx(null)} />
+      <ImageLightbox urls={post.mediaUrls.map(url => API.resolveAssetUrl(url)).filter(url => !isVideoMediaUrl(url))} startIndex={lightboxIdx} onClose={() => setLightboxIdx(null)} />
     )}
     </>
   );
@@ -320,8 +326,12 @@ function ComposeModal({ open, onClose, currentUser, onNavigate, onCreated, defau
     const remaining = MAX_FILES - mediaFiles.length;
     const toAdd = files.slice(0, remaining);
     if (files.length > remaining) { setError('Можно прикрепить не больше 10 файлов'); return; }
-    if (toAdd.some(file => !file.type.startsWith('image/') && file.size > MAX_MEDIA_SIZE)) {
+    if (toAdd.some(file => file.size > MAX_MEDIA_SIZE)) {
       setError('Файл слишком большой (максимум 10 МБ)');
+      return;
+    }
+    if (toAdd.some(file => !file.type.startsWith('image/') && !file.type.startsWith('video/'))) {
+      setError('Можно прикрепить только изображения или видео');
       return;
     }
     setError('');
@@ -462,13 +472,16 @@ function ComposeModal({ open, onClose, currentUser, onNavigate, onCreated, defau
                   }}>
                     {urls.map((url, i) => {
                       const isFirst = i === 0;
+                      const isVideo = mediaFiles[i]?.file?.type?.startsWith('video/') || isVideoMediaUrl(url);
                       const style = { width: '100%', objectFit: 'cover', display: 'block' };
                       if (count === 1) style.aspectRatio = '16/9';
                       else if (odd && isFirst) { style.gridColumn = '1 / -1'; style.aspectRatio = '16/9'; }
                       else style.aspectRatio = '1';
                       return (
                         <div key={i} style={{ position: 'relative' }}>
-                          <img src={url} alt="" style={style} />
+                          {isVideo
+                            ? <video src={url} controls preload="metadata" style={style} />
+                            : <img src={url} alt="" style={style} />}
                           <button onClick={() => removeMedia(i)} style={{
                             position: 'absolute', top: 4, right: 4,
                             background: 'rgba(0,0,0,0.6)', color: '#fff', border: 'none',

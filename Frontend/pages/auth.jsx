@@ -19,7 +19,7 @@ function LoginPage({ onNavigate }) {
     <>
       <div style={{
         minHeight: '100vh',
-        background: 'radial-gradient(circle at 20% 20%, var(--accent-subtle) 0%, transparent 38%), radial-gradient(circle at 80% 0%, var(--surface-2) 0%, transparent 42%), var(--bg)',
+        background: 'var(--bg)',
         display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24,
       }}>
         <div style={{ width: '100%', maxWidth: 520 }}>
@@ -38,7 +38,7 @@ function LoginPage({ onNavigate }) {
             </div>
           )}
 
-          <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 22, padding: 34 }}>
+          <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 16, padding: 34 }}>
             <h2 style={{ margin: '0 0 10px', fontSize: 29, fontWeight: 800 }}>Присоединяйтесь к обсуждению</h2>
             <p style={{ margin: '0 0 28px', color: 'var(--text-muted)', fontSize: 16, lineHeight: 1.65 }}>
               Войдите через Google, чтобы читать подписки, публиковать записи и подтверждать университетский статус.
@@ -136,7 +136,7 @@ function CompleteRegistrationPage({ onNavigate, onUserUpdated }) {
   return (
     <div style={{
       minHeight: '100vh',
-      background: 'radial-gradient(circle at 80% 20%, var(--accent-subtle) 0%, transparent 40%), radial-gradient(circle at 15% 85%, var(--surface-2) 0%, transparent 45%), var(--bg)',
+      background: 'var(--bg)',
       display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24,
     }}>
       <div style={{ width: '100%', maxWidth: 440 }}>
@@ -148,7 +148,7 @@ function CompleteRegistrationPage({ onNavigate, onUserUpdated }) {
           </p>
         </div>
 
-        <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 20, padding: 24, display: 'flex', flexDirection: 'column', gap: 16 }}>
+        <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 16, padding: 24, display: 'flex', flexDirection: 'column', gap: 16 }}>
           <Input
             label="Никнейм *"
             value={username}

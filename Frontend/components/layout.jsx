@@ -294,10 +294,38 @@ function BottomNav({ currentUser, onNavigate, currentPath, openCompose }) {
 
 function RightRail({ width, currentUser, onNavigate }) {
   const [unis, setUnis] = React.useState([]);
+  const [query, setQuery] = React.useState('');
+  const [result, setResult] = React.useState(null);
+  const [searchLoading, setSearchLoading] = React.useState(false);
+  const [searchError, setSearchError] = React.useState('');
 
   React.useEffect(() => {
     API.gql(API.Q.listUniversities).then(d => setUnis(d.listUniversities || [])).catch(() => {});
   }, [currentUser]);
+
+  React.useEffect(() => {
+    if (!query.trim()) {
+      setResult(null);
+      setSearchError('');
+    }
+  }, [query]);
+
+  const searchRightRail = async () => {
+    const q = query.trim().replace(/^@/, '');
+    if (!q) return;
+    setSearchLoading(true);
+    setSearchError('');
+    setResult(null);
+    try {
+      const d = await API.gql(API.Q.getUserByUsername, { username: q });
+      if (d.getUserByUsername) setResult(d.getUserByUsername);
+      else setSearchError('Пользователь не найден');
+    } catch {
+      setSearchError('Пользователь не найден');
+    } finally {
+      setSearchLoading(false);
+    }
+  };
 
   return (
     <aside style={{
@@ -311,8 +339,10 @@ function RightRail({ width, currentUser, onNavigate }) {
         <div style={{ position: 'relative' }}>
           <SearchIcon size={18} color="var(--text-muted)" style={{ position: 'absolute', left: 14, top: '50%', transform: 'translateY(-50%)' }} />
           <input
+            value={query}
             placeholder="Поиск"
-            onFocus={() => onNavigate('/explore')}
+            onChange={e => setQuery(e.target.value)}
+            onKeyDown={e => { if (e.key === 'Enter') searchRightRail(); }}
             style={{
               width: '100%', padding: '11px 14px 11px 44px', borderRadius: 9999,
               border: '1px solid transparent', background: 'var(--surface-2)',
@@ -320,6 +350,33 @@ function RightRail({ width, currentUser, onNavigate }) {
             }}
           />
         </div>
+        {(query.trim() || result || searchError) && (
+          <div style={{ marginTop: 8, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 14, overflow: 'hidden' }}>
+            {searchLoading ? (
+              <div style={{ padding: '12px 14px', color: 'var(--text-muted)', fontSize: 13 }}>Поиск...</div>
+            ) : result ? (
+              <button
+                onClick={() => onNavigate(API.profileUrl(result))}
+                className="um-side-nav"
+                style={{ display: 'flex', alignItems: 'center', gap: 10, width: '100%', padding: 12, border: 'none', background: 'transparent', cursor: 'pointer', textAlign: 'left', fontFamily: 'inherit' }}
+              >
+                <Avatar user={result} size={36} />
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontWeight: 700, fontSize: 14, color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {(result.name && result.surname) ? `${result.name} ${result.surname}` : result.name || result.username}
+                  </div>
+                  <div style={{ fontSize: 12.5, color: 'var(--text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>@{result.username}</div>
+                </div>
+              </button>
+            ) : searchError ? (
+              <div style={{ padding: '12px 14px', color: 'var(--text-muted)', fontSize: 13 }}>{searchError}</div>
+            ) : (
+              <button onClick={searchRightRail} style={{ width: '100%', padding: '10px 14px', border: 'none', background: 'transparent', color: 'var(--accent)', fontFamily: 'inherit', fontWeight: 700, cursor: 'pointer', textAlign: 'left' }}>
+                Найти @{query.trim().replace(/^@/, '')}
+              </button>
+            )}
+          </div>
+        )}
       </div>
 
 
@@ -736,15 +793,13 @@ function AppModals() {
             <p style={{ margin: 0, fontSize: 14, color: 'var(--text-muted)', lineHeight: 1.6 }}>
               Программа создаётся внутри выбранного факультета после одобрения администратором. Посты автора будут попадать в ленту университета, факультета и программы автоматически.
             </p>
-            {!programForm.facultyId && (
-              <select value={programForm.facultyId} onChange={e => setProgramForm(f => ({ ...f, facultyId: e.target.value }))} style={{
-                padding: '10px 12px', borderRadius: 10, border: '1px solid var(--border)',
-                background: 'var(--surface)', color: 'var(--text)', fontFamily: 'inherit',
-              }}>
-                <option value="">Выберите факультет *</option>
-                {faculties.map(f => <option key={f.id} value={f.id}>{f.name} ({f.shortName})</option>)}
-              </select>
-            )}
+            <select value={programForm.facultyId} onChange={e => setProgramForm(f => ({ ...f, facultyId: e.target.value }))} style={{
+              padding: '10px 12px', borderRadius: 10, border: '1px solid var(--border)',
+              background: 'var(--surface)', color: 'var(--text)', fontFamily: 'inherit',
+            }}>
+              <option value="">Выберите факультет *</option>
+              {faculties.map(f => <option key={f.id} value={f.id}>{f.name} ({f.shortName})</option>)}
+            </select>
             <Input label="Название программы *" value={programForm.name} onChange={e => setProgramForm(f => ({ ...f, name: e.target.value }))} placeholder="Программная инженерия" />
             <Input label="Короткое название *" value={programForm.shortName} onChange={e => setProgramForm(f => ({ ...f, shortName: e.target.value }))} placeholder="ПИ" />
             {error && <div style={{ color: 'var(--like)', fontSize: 13 }}>{error}</div>}

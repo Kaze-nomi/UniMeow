@@ -23,8 +23,11 @@ import java.util.Set;
 @RequiredArgsConstructor
 public class MinioService {
 
-	private static final Set<String> ALLOWED_CONTENT_TYPES = Set.of("image/svg+xml", "image/png", "image/jpeg",
+	private static final Set<String> IMAGE_CONTENT_TYPES = Set.of("image/svg+xml", "image/png", "image/jpeg",
 			"image/webp");
+
+	private static final Set<String> VIDEO_CONTENT_TYPES = Set.of("video/mp4", "video/webm", "video/quicktime",
+			"video/x-m4v", "video/ogg");
 
 	private final MinioClient minioClient;
 
@@ -53,7 +56,7 @@ public class MinioService {
 
 	public String upload(String bucket, String filename, String contentType, byte[] data) {
 		validateBucket(bucket);
-		validateContentType(contentType);
+		validateContentType(bucket, contentType);
 		validateSize(bucket, data.length);
 
 		String normalizedFileName = normalizeFilename(filename);
@@ -84,7 +87,7 @@ public class MinioService {
 	public PresignResult generatePresignedUploadUrl(String bucket, String filename, String contentType,
 			int expirySeconds) {
 		validateBucket(bucket);
-		validateContentType(contentType);
+		validateContentType(bucket, contentType);
 
 		String normalizedFileName = normalizeFilename(filename);
 		int effectiveExpiry = Math.max(60, Math.min(expirySeconds, 86400));
@@ -107,12 +110,14 @@ public class MinioService {
 		}
 	}
 
-	private void validateContentType(String contentType) {
+	private void validateContentType(String bucket, String contentType) {
 		if (contentType == null || contentType.isBlank()) {
 			throw new IllegalArgumentException("contentType is required");
 		}
 		String normalized = contentType.toLowerCase(Locale.ROOT).trim();
-		if (!ALLOWED_CONTENT_TYPES.contains(normalized)) {
+		boolean allowed = IMAGE_CONTENT_TYPES.contains(normalized)
+				|| ("post-media".equals(bucket) && VIDEO_CONTENT_TYPES.contains(normalized));
+		if (!allowed) {
 			throw new IllegalArgumentException("Unsupported contentType: " + contentType);
 		}
 	}

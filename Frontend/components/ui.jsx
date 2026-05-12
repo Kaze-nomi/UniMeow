@@ -180,6 +180,13 @@ function isEditedTimestamp(createdAt, updatedAt) {
   return updated - created > 1000;
 }
 
+function isVideoMediaUrl(url) {
+  if (!url || typeof url !== 'string') return false;
+  if (/^data:video\//i.test(url) || /^blob:/i.test(url)) return true;
+  const clean = url.split('?')[0].split('#')[0];
+  return /\.(mp4|webm|mov|m4v|ogv|ogg)$/i.test(clean);
+}
+
 function useTimeAgo(isoStr) {
   if (!isoStr) return '';
   const date = new Date(normalizeIsoDate(isoStr));
@@ -312,4 +319,5 @@ Object.assign(window, {
   ImageUploadField,
   normalizeIsoDate,
   isEditedTimestamp,
+  isVideoMediaUrl,
 });

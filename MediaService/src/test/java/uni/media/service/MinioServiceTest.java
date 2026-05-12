@@ -52,6 +52,22 @@ class MinioServiceTest {
 	}
 
 	@Test
+	void upload_accepts_video_for_post_media() throws Exception {
+		when(minioClient.putObject(any())).thenReturn(null);
+
+		String url = minioService.upload("post-media", "clip.mp4", "video/mp4", new byte[]{1, 2, 3});
+
+		assertThat(url).isEqualTo("http://localhost:9000/post-media/clip.mp4");
+		verify(minioClient).putObject(any());
+	}
+
+	@Test
+	void upload_rejects_video_for_avatar_bucket() {
+		assertThatThrownBy(() -> minioService.upload("user-avatars", "clip.mp4", "video/mp4", new byte[]{1}))
+				.isInstanceOf(IllegalArgumentException.class).hasMessageContaining("Unsupported contentType");
+	}
+
+	@Test
 	void upload_rejects_too_large_file() {
 		assertThatThrownBy(() -> minioService.upload("user-avatars", "a.png", "image/png", new byte[11]))
 				.isInstanceOf(IllegalArgumentException.class).hasMessageContaining("exceeds max size");
