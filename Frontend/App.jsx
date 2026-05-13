@@ -160,7 +160,7 @@ function App() {
     if (route === 'login') return <LoginPage onNavigate={navigate} />;
     if (route === 'complete-registration') return <CompleteRegistrationPage onNavigate={navigate} onUserUpdated={handleUserUpdated} />;
 
-    const universitySlug = route && !['feed', 'profile', 'post', 'settings', 'explore', 'notifications', 'about', 'admin', 'login', 'banned', 'complete-registration'].includes(route)
+    const universitySlug = route && !['feed', 'profile', 'post', 'settings', 'explore', 'notifications', 'about', 'privacy', 'consent', 'admin', 'login', 'banned', 'complete-registration'].includes(route)
       ? route
       : null;
 
@@ -180,6 +180,10 @@ function App() {
           <NotificationsPage currentUser={currentUser} onNavigate={navigate} />
         ) : route === 'about' ? (
           <AboutPage onNavigate={navigate} />
+        ) : route === 'privacy' ? (
+          <PrivacyPage onNavigate={navigate} />
+        ) : route === 'consent' ? (
+          <ConsentPage onNavigate={navigate} />
         ) : route === 'admin' && param === 'suggestions' ? (
           <AdminPage currentUser={currentUser} onNavigate={navigate} view="suggestions" />
         ) : route === 'admin' && param === 'universities' ? (
