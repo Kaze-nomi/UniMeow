@@ -197,7 +197,12 @@
       return { getUserPosts: { posts: posts.filter(p => p.authorId === variables.userId).map(withAuthor), total: posts.filter(p => p.authorId === variables.userId).length } };
     }
     if (query.includes('getPost')) return { getPost: withAuthor(byId(posts, variables.id)) };
-    if (query.includes('getComments')) return { getComments: { comments: comments.filter(c => c.postId === variables.postId), total: comments.filter(c => c.postId === variables.postId).length } };
+    if (query.includes('getComments')) {
+      const boost = 60 * 60 * 1000;
+      const postComments = comments.filter(c => c.postId === variables.postId)
+        .sort((a, b) => (Date.parse(b.createdAt) + (b.likesCount || 0) * boost) - (Date.parse(a.createdAt) + (a.likesCount || 0) * boost));
+      return { getComments: { comments: postComments, total: postComments.length } };
+    }
     if (query.includes('adminImprovementSuggestions')) return { adminImprovementSuggestions: suggestions };
     if (query.includes('adminUniversityProposals')) return { adminUniversityProposals: universityProposals };
     if (query.includes('adminFacultyProposals')) return { adminFacultyProposals: facultyProposals };
@@ -273,7 +278,11 @@
     if (query.includes('likePost') || query.includes('unlikePost')) {
       requireUser();
       const post = byId(posts, variables.postId);
-      if (post) post.likesCount = Math.max(0, post.likesCount + (query.includes('unlikePost') ? -1 : 1));
+      if (post) {
+        const delta = query.includes('unlikePost') ? -1 : 1;
+        post.likesCount = Math.max(0, post.likesCount + delta);
+        post.likedByMe = delta > 0;
+      }
       return { [query.includes('unlikePost') ? 'unlikePost' : 'likePost']: { success: true } };
     }
     if (query.includes('likeComment') || query.includes('unlikeComment')) {

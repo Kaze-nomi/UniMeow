@@ -154,6 +154,10 @@ function FeedPage({ currentUser, onNavigate, universitySlug, composeOpen, setCom
     setTab(t.id);
   };
 
+  const updatePostLikeState = React.useCallback((postId, patch) => {
+    setPosts(prev => prev.map(post => post.id === postId ? { ...post, ...patch } : post));
+  }, []);
+
   const currentUni = universities.find(u => u.id === universityId);
   const currentTitle = isNoUniversityScope ? 'Без ВУЗа' : currentUni ? currentUni.name : 'Главная';
   return (
@@ -279,7 +283,8 @@ function FeedPage({ currentUser, onNavigate, universitySlug, composeOpen, setCom
       ) : (
         <div>
           {posts.map(post => (
-            <PostCard key={post.id} post={post} onNavigate={onNavigate} currentUser={currentUser} />
+            <PostCard key={post.id} post={post} onNavigate={onNavigate} currentUser={currentUser}
+              onLike={updatePostLikeState} />
           ))}
           {hasMore && (
             <InfiniteSentinel

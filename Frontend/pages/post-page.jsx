@@ -33,6 +33,16 @@ function PostPage({ postId, currentUser, onNavigate }) {
     }).then(setAuthor).catch(() => {}).finally(() => setLoading(false));
   }, [postId]);
 
+  const refreshComments = React.useCallback(async () => {
+    const d = await API.gql(API.Q.getComments, { postId, size: 50 });
+    setComments(d.getComments.comments || []);
+  }, [postId]);
+
+  const handleCommentLikeChange = React.useCallback((commentId, likedByMe, likesCount) => {
+    setComments(cs => cs.map(c => c.id === commentId ? { ...c, likedByMe, likesCount } : c));
+    refreshComments().catch(() => {});
+  }, [refreshComments]);
+
   const handleLike = async () => {
     if (!currentUser) { onNavigate('/login'); return; }
     if (liking) return;
@@ -238,6 +248,7 @@ function PostPage({ postId, currentUser, onNavigate }) {
                 if (author?.username && !commentText.trim()) setCommentText('@' + author.username + ' ');
               }}
               onDelete={(id) => setComments(cs => cs.filter(x => x.id !== id && x.parentCommentId !== id))}
+              onLikeChange={handleCommentLikeChange}
               onUpdate={(id, content, updatedAt) => setComments(cs => cs.map(x => x.id === id ? { ...x, content, updatedAt: updatedAt || x.updatedAt } : x))} />
             {(repliesByParent[c.id] || []).map(reply => (
               <CommentItem key={reply.id} comment={reply} currentUser={currentUser} onNavigate={onNavigate} nested
@@ -246,6 +257,7 @@ function PostPage({ postId, currentUser, onNavigate }) {
                   if (author?.username && !commentText.trim()) setCommentText('@' + author.username + ' ');
                 }}
                 onDelete={(id) => setComments(cs => cs.filter(x => x.id !== id))}
+                onLikeChange={handleCommentLikeChange}
                 onUpdate={(id, content, updatedAt) => setComments(cs => cs.map(x => x.id === id ? { ...x, content, updatedAt: updatedAt || x.updatedAt } : x))} />
             ))}
           </React.Fragment>
@@ -284,7 +296,7 @@ function PostPage({ postId, currentUser, onNavigate }) {
   );
 }
 
-function CommentItem({ comment, currentUser, onNavigate, onDelete, onUpdate, onReply, nested = false }) {
+function CommentItem({ comment, currentUser, onNavigate, onDelete, onUpdate, onLikeChange, onReply, nested = false }) {
   const [author, setAuthor] = React.useState(null);
   const [liked, setLiked] = React.useState(comment.likedByMe);
   const [likes, setLikes] = React.useState(comment.likesCount);
@@ -300,25 +312,35 @@ function CommentItem({ comment, currentUser, onNavigate, onDelete, onUpdate, onR
   const isMe = currentUser?.id === comment.authorId;
 
   React.useEffect(() => { API.getCachedUser(comment.authorId).then(setAuthor); }, [comment.authorId]);
+  React.useEffect(() => {
+    if (typeof comment.likedByMe === 'boolean') setLiked(comment.likedByMe);
+    if (comment.likesCount !== undefined && comment.likesCount !== null) setLikes(comment.likesCount);
+  }, [comment.id, comment.likedByMe, comment.likesCount]);
+  React.useEffect(() => { setEditText(comment.content); }, [comment.id, comment.content]);
 
   const handleLike = async () => {
     if (!currentUser) { onNavigate('/login'); return; }
     if (liking) return;
     setLiking(true);
+    const wasLiked = liked;
+    const previousLikes = Number(likes || 0);
+    const nextLiked = !wasLiked;
+    const nextLikes = Math.max(0, previousLikes + (wasLiked ? -1 : 1));
+    setLiked(nextLiked);
+    setLikes(nextLikes);
     try {
-      if (liked) {
+      if (wasLiked) {
         await API.gql(API.M.unlikeComment, { commentId: comment.id });
-        setLiked(false);
-        setLikes(l => Math.max(0, Number(l || 0) - 1));
       } else {
         await API.gql(API.M.likeComment, { commentId: comment.id });
-        setLiked(true);
-        setLikes(l => Number(l || 0) + 1);
         setLikePulse(false);
         requestAnimationFrame(() => setLikePulse(true));
         setTimeout(() => setLikePulse(false), 380);
       }
+      onLikeChange && onLikeChange(comment.id, nextLiked, nextLikes);
     } catch (e) {
+      setLiked(wasLiked);
+      setLikes(previousLikes);
       if (e.isUnauth) onNavigate('/login');
     } finally { setLiking(false); }
   };

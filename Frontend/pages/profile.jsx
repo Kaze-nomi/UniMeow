@@ -85,6 +85,10 @@ function ProfilePage({ userId, currentUser, onNavigate, onUserUpdated }) {
     }
   };
 
+  const updatePostLikeState = React.useCallback((postId, patch) => {
+    setPosts(prev => prev.map(post => post.id === postId ? { ...post, ...patch } : post));
+  }, []);
+
   const handleBan = async () => {
     setBanDays('');
     setBanReason('Нарушение правил');
@@ -288,7 +292,8 @@ function ProfilePage({ userId, currentUser, onNavigate, onUserUpdated }) {
         <EmptyState icon={<EditIcon size={40} />} title="Нет записей" subtitle={isMe ? 'Напишите первую запись!' : undefined} />
       ) : (
         posts.map(post => (
-          <PostCard key={post.id} post={post} onNavigate={onNavigate} currentUser={currentUser} />
+          <PostCard key={post.id} post={post} onNavigate={onNavigate} currentUser={currentUser}
+            onLike={updatePostLikeState} />
         ))
       )}
 

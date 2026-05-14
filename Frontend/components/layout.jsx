@@ -53,15 +53,7 @@ function AppLayout({ children, currentUser, onNavigate, currentPath, openCompose
   );
 }
 
-function Sidebar({ currentUser, onNavigate, currentPath, collapsed, width, openCompose, onLogout }) {
-  const [accountMenuOpen, setAccountMenuOpen] = React.useState(false);
-  const accountMenuRef = React.useRef(null);
-  React.useEffect(() => {
-    if (!accountMenuOpen) return;
-    const h = (e) => { if (accountMenuRef.current && !accountMenuRef.current.contains(e.target)) setAccountMenuOpen(false); };
-    document.addEventListener('mousedown', h);
-    return () => document.removeEventListener('mousedown', h);
-  }, [accountMenuOpen]);
+function useUnreadNotificationsCount(currentUser) {
   const [unreadCount, setUnreadCount] = React.useState(0);
   React.useEffect(() => {
     if (!currentUser) { setUnreadCount(0); return; }
@@ -72,6 +64,19 @@ function Sidebar({ currentUser, onNavigate, currentPath, collapsed, width, openC
     window.addEventListener('um-notifications-marked-read', h);
     return () => { clearInterval(id); window.removeEventListener('um-notifications-marked-read', h); };
   }, [currentUser]);
+  return unreadCount;
+}
+
+function Sidebar({ currentUser, onNavigate, currentPath, collapsed, width, openCompose, onLogout }) {
+  const [accountMenuOpen, setAccountMenuOpen] = React.useState(false);
+  const accountMenuRef = React.useRef(null);
+  React.useEffect(() => {
+    if (!accountMenuOpen) return;
+    const h = (e) => { if (accountMenuRef.current && !accountMenuRef.current.contains(e.target)) setAccountMenuOpen(false); };
+    document.addEventListener('mousedown', h);
+    return () => document.removeEventListener('mousedown', h);
+  }, [accountMenuOpen]);
+  const unreadCount = useUnreadNotificationsCount(currentUser);
 
   const mainNav = [
     { path: '/feed', label: 'Главная', icon: HomeIcon },
@@ -245,10 +250,14 @@ function Sidebar({ currentUser, onNavigate, currentPath, collapsed, width, openC
 }
 
 function BottomNav({ currentUser, onNavigate, currentPath, openCompose }) {
+  const unreadCount = useUnreadNotificationsCount(currentUser);
   const items = [
     { path: '/feed', label: 'Главная', Icon: HomeIcon },
     { path: '/explore', label: 'Поиск', Icon: SearchIcon },
-    ...(currentUser ? [{ path: API.profileUrl(currentUser), label: 'Профиль', Icon: UserIcon }] : []),
+    ...(currentUser ? [
+      { path: '/notifications', label: 'Увед.', Icon: BellIcon, badge: unreadCount },
+      { path: API.profileUrl(currentUser), label: 'Профиль', Icon: UserIcon },
+    ] : []),
     { path: '/settings', label: 'Ещё', Icon: GearIcon },
   ];
   return (
@@ -268,10 +277,24 @@ function BottomNav({ currentUser, onNavigate, currentPath, openCompose }) {
               border: 'none', background: 'none',
               color: active ? 'var(--accent)' : 'var(--text-muted)',
               fontSize: 10, fontWeight: active ? 650 : 500, fontFamily: 'inherit',
-              cursor: 'pointer', padding: '8px 12px',
+              cursor: 'pointer', padding: '8px 4px',
+              flex: '1 1 0',
+              minWidth: 0,
             }}>
-              <item.Icon size={24} color={active ? 'var(--accent)' : 'var(--text-muted)'} filled={active} />
-              {item.label}
+              <span style={{ position: 'relative', display: 'inline-flex' }}>
+                <item.Icon size={24} color={active ? 'var(--accent)' : 'var(--text-muted)'} filled={active} />
+                {item.badge > 0 && (
+                  <span style={{
+                    position: 'absolute', top: -5, right: -8,
+                    background: 'var(--accent)', color: '#fff',
+                    borderRadius: 9999, fontSize: 9, fontWeight: 800,
+                    minWidth: 15, height: 15, padding: '0 3px',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    lineHeight: 1,
+                  }}>{item.badge > 99 ? '99+' : item.badge}</span>
+                )}
+              </span>
+              <span style={{ maxWidth: 58, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.label}</span>
             </button>
           );
         })}

@@ -45,7 +45,16 @@ function PostCard({ post, onNavigate, currentUser, onLike }) {
     if (post.author) { setAuthor(post.author); return; }
     API.getCachedUser(post.authorId).then(setAuthor);
   }, [post.authorId, post.author]);
-  React.useEffect(() => { setLiked(post.likedByMe); setLikes(post.likesCount); }, [post.likedByMe, post.likesCount]);
+  React.useEffect(() => {
+    if (typeof post.likedByMe === 'boolean') setLiked(post.likedByMe);
+    if (post.likesCount !== undefined && post.likesCount !== null) setLikes(post.likesCount);
+  }, [post.likedByMe, post.likesCount]);
+
+  const syncLikeState = (nextLiked, nextLikes) => {
+    setLiked(nextLiked);
+    setLikes(nextLikes);
+    onLike && onLike(post.id, { likedByMe: nextLiked, likesCount: nextLikes });
+  };
 
   const likeInFlight = React.useRef(false);
   const handleLike = async (e) => {
@@ -55,8 +64,10 @@ function PostCard({ post, onNavigate, currentUser, onLike }) {
     likeInFlight.current = true;
     const wasLiked = liked;
     const previousLikes = likes || 0;
-    setLiked(!wasLiked);
-    setLikes(Math.max(0, previousLikes + (wasLiked ? -1 : 1)));
+    const optimisticLiked = !wasLiked;
+    const optimisticLikes = Math.max(0, previousLikes + (wasLiked ? -1 : 1));
+    setLiked(optimisticLiked);
+    setLikes(optimisticLikes);
     try {
       if (wasLiked) {
         await API.gql(API.M.unlikePost, { postId: post.id });
@@ -69,14 +80,15 @@ function PostCard({ post, onNavigate, currentUser, onLike }) {
       try {
         const fresh = await API.gql(API.Q.getPost, { id: post.id });
         if (fresh?.getPost) {
-          setLiked(!!fresh.getPost.likedByMe);
-          setLikes(fresh.getPost.likesCount ?? 0);
+          syncLikeState(!!fresh.getPost.likedByMe, fresh.getPost.likesCount ?? optimisticLikes);
+        } else {
+          syncLikeState(optimisticLiked, optimisticLikes);
         }
-      } catch {}
-      onLike && onLike(post.id, !wasLiked);
+      } catch {
+        syncLikeState(optimisticLiked, optimisticLikes);
+      }
     } catch (err) {
-      setLiked(wasLiked);
-      setLikes(previousLikes);
+      syncLikeState(wasLiked, previousLikes);
       if (err.isUnauth) onNavigate('/login');
     } finally { likeInFlight.current = false; }
   };

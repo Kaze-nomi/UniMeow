@@ -6,8 +6,6 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.data.domain.PageImpl;
-import org.springframework.data.domain.PageRequest;
 import uni.post.entity.Comment;
 import uni.post.entity.CommentLike;
 import uni.post.entity.Post;
@@ -27,7 +25,6 @@ import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
@@ -68,6 +65,11 @@ class CommentServiceTest {
 		LocalDateTime now = LocalDateTime.now();
 		return Comment.builder().id(COMMENT_ID).postId(POST_ID).authorId(AUTHOR_ID).content("Nice post!").createdAt(now)
 				.updatedAt(now).build();
+	}
+
+	private Comment buildComment(UUID id, LocalDateTime createdAt, int likesCount) {
+		return Comment.builder().id(id).postId(POST_ID).authorId(AUTHOR_ID).content("Nice post!").likesCount(likesCount)
+				.createdAt(createdAt).updatedAt(createdAt).build();
 	}
 
 	@Test
@@ -163,8 +165,7 @@ class CommentServiceTest {
 	@Test
 	void get_comments_returns_page_of_comments() {
 		Comment comment = buildComment();
-		when(commentRepository.findByPostIdOrderByCreatedAtAsc(eq(POST_ID), any()))
-				.thenReturn(new PageImpl<>(List.of(comment)));
+		when(commentRepository.findByPostId(POST_ID)).thenReturn(List.of(comment));
 
 		var result = commentService.getComments(POST_ID, 0, 20, null);
 
@@ -174,26 +175,48 @@ class CommentServiceTest {
 
 	@Test
 	void get_comments_defaults_negative_page_to_zero() {
-		when(commentRepository.findByPostIdOrderByCreatedAtAsc(eq(POST_ID), any()))
-				.thenReturn(new PageImpl<>(List.of()));
+		Comment comment = buildComment();
+		when(commentRepository.findByPostId(POST_ID)).thenReturn(List.of(comment));
 
-		commentService.getComments(POST_ID, -1, 20, null);
+		var result = commentService.getComments(POST_ID, -1, 1, null);
 
-		ArgumentCaptor<PageRequest> captor = ArgumentCaptor.forClass(PageRequest.class);
-		verify(commentRepository).findByPostIdOrderByCreatedAtAsc(eq(POST_ID), captor.capture());
-		assertThat(captor.getValue().getPageNumber()).isZero();
+		assertThat(result.comments()).containsExactly(new CommentResult(comment, false));
 	}
 
 	@Test
 	void get_comments_defaults_zero_size_to_20() {
-		when(commentRepository.findByPostIdOrderByCreatedAtAsc(eq(POST_ID), any()))
-				.thenReturn(new PageImpl<>(List.of()));
+		Comment comment = buildComment();
+		when(commentRepository.findByPostId(POST_ID)).thenReturn(List.of(comment));
 
-		commentService.getComments(POST_ID, 0, 0, null);
+		var result = commentService.getComments(POST_ID, 0, 0, null);
 
-		ArgumentCaptor<PageRequest> captor = ArgumentCaptor.forClass(PageRequest.class);
-		verify(commentRepository).findByPostIdOrderByCreatedAtAsc(eq(POST_ID), captor.capture());
-		assertThat(captor.getValue().getPageSize()).isEqualTo(20);
+		assertThat(result.comments()).containsExactly(new CommentResult(comment, false));
+	}
+
+	@Test
+	void get_comments_orders_by_timestamp_plus_likes_boost() {
+		LocalDateTime base = LocalDateTime.of(2026, 1, 1, 12, 0);
+		Comment newer = buildComment(UUID.fromString("550e8400-e29b-41d4-a716-446655440011"), base, 0);
+		Comment boosted = buildComment(UUID.fromString("550e8400-e29b-41d4-a716-446655440012"), base.minusMinutes(30),
+				1);
+		when(commentRepository.findByPostId(POST_ID)).thenReturn(List.of(newer, boosted));
+
+		var result = commentService.getComments(POST_ID, 0, 20, null);
+
+		assertThat(result.comments()).extracting(r -> r.comment().getId()).containsExactly(boosted.getId(),
+				newer.getId());
+	}
+
+	@Test
+	void get_comments_applies_page_after_recommendation_ordering() {
+		LocalDateTime base = LocalDateTime.of(2026, 1, 1, 12, 0);
+		Comment first = buildComment(UUID.fromString("550e8400-e29b-41d4-a716-446655440021"), base, 0);
+		Comment second = buildComment(UUID.fromString("550e8400-e29b-41d4-a716-446655440022"), base.minusMinutes(1), 0);
+		when(commentRepository.findByPostId(POST_ID)).thenReturn(List.of(second, first));
+
+		var result = commentService.getComments(POST_ID, 1, 1, null);
+
+		assertThat(result.comments()).extracting(r -> r.comment().getId()).containsExactly(second.getId());
 	}
 
 	@Test

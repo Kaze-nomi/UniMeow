@@ -2,8 +2,7 @@ package uni.post.service;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.data.domain.Page;
-import org.springframework.data.domain.PageRequest;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import uni.post.entity.Comment;
@@ -21,6 +20,8 @@ import uni.post.repository.IdempotencyKeyRepository;
 import uni.post.repository.PostRepository;
 
 import java.time.LocalDateTime;
+import java.time.ZoneOffset;
+import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -33,6 +34,7 @@ public class CommentService {
 
 	private static final int DEFAULT_PAGE = 0;
 	private static final int DEFAULT_SIZE = 20;
+	private static final long DEFAULT_RECOMMENDATION_LIKE_BOOST_MS = 3_600_000L;
 
 	private final CommentRepository commentRepository;
 	private final CommentLikeRepository commentLikeRepository;
@@ -40,6 +42,13 @@ public class CommentService {
 	private final IdempotencyKeyRepository idempotencyKeyRepository;
 	private final OutboxService outboxService;
 	private final MentionResolver mentionResolver;
+
+	private long commentRecommendationLikeBoostMs = DEFAULT_RECOMMENDATION_LIKE_BOOST_MS;
+
+	@Value("${app.comments.recommendation-like-boost-ms:3600000}")
+	void setCommentRecommendationLikeBoostMs(long commentRecommendationLikeBoostMs) {
+		this.commentRecommendationLikeBoostMs = commentRecommendationLikeBoostMs;
+	}
 
 	@Transactional
 	public CommentResult addComment(UUID postId, UUID authorId, String content, UUID parentCommentId,
@@ -110,16 +119,22 @@ public class CommentService {
 		int resolvedPage = page >= 0 ? page : DEFAULT_PAGE;
 		int resolvedSize = size > 0 ? size : DEFAULT_SIZE;
 
-		Page<Comment> comments = commentRepository.findByPostIdOrderByCreatedAtAsc(postId,
-				PageRequest.of(resolvedPage, resolvedSize));
+		List<Comment> sortedComments = commentRepository.findByPostId(postId).stream()
+				.sorted(Comparator.comparingDouble(this::recommendationScore).reversed()
+						.thenComparing(Comment::getCreatedAt, Comparator.reverseOrder())
+						.thenComparing(c -> c.getId().toString(), Comparator.reverseOrder()))
+				.toList();
+		long offset = (long) resolvedPage * resolvedSize;
+		int fromIndex = offset >= sortedComments.size() ? sortedComments.size() : (int) offset;
+		int toIndex = Math.min(fromIndex + resolvedSize, sortedComments.size());
 
-		List<CommentResult> results = comments.getContent().stream().map(comment -> {
+		List<CommentResult> results = sortedComments.subList(fromIndex, toIndex).stream().map(comment -> {
 			boolean likedByMe = viewerId != null
 					&& commentLikeRepository.existsByCommentIdAndUserId(comment.getId(), viewerId);
 			return new CommentResult(comment, likedByMe);
 		}).toList();
 
-		return new CommentPageResult(results, comments.getTotalElements());
+		return new CommentPageResult(results, sortedComments.size());
 	}
 
 	@Transactional
@@ -202,5 +217,10 @@ public class CommentService {
 	private Comment findOrThrow(UUID commentId) {
 		return commentRepository.findById(commentId)
 				.orElseThrow(() -> new CommentNotFoundException("Comment not found: " + commentId));
+	}
+
+	private double recommendationScore(Comment comment) {
+		long createdAtMs = comment.getCreatedAt().toInstant(ZoneOffset.UTC).toEpochMilli();
+		return createdAtMs + (double) comment.getLikesCount() * commentRecommendationLikeBoostMs;
 	}
 }
