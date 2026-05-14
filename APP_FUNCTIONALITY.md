@@ -824,30 +824,77 @@ Kafka-события сохраняются в outbox-таблицах серв�
 
 ## 16. Мониторинг и метрики
 
-Каждый сервис (APIGateway, UserService, PostService, FeedService, MediaService) предоставляет:
+Сервисы приложения предоставляют actuator endpoints:
 
 - `GET /actuator/health` — статус сервиса (show-details: always).
 - `GET /actuator/prometheus` — метрики в формате Prometheus scrape.
 
+Prometheus собирает метрики каждые 15 секунд из внутренних docker-compose endpoints:
+
+| Prometheus job | Endpoint |
+|---|---|
+| `api-gateway` | `api-gateway:8080/actuator/prometheus` |
+| `user-service` | `user-service:9000/actuator/prometheus` |
+| `post-service` | `post-service:9001/actuator/prometheus` |
+| `feed-service` | `feed-service:9002/actuator/prometheus` |
+| `media-service` | `media-service:9003/actuator/prometheus` |
+| `notification-service` | `notification-service:9006/actuator/prometheus` |
+
 ### Стандартные метрики Spring Boot
 
-- **JVM:** `jvm_memory_used_bytes`, `jvm_gc_pause_seconds`, `jvm_threads_*`, `jvm_classes_loaded`
-- **HTTP:** `http_server_requests_seconds` (count/sum/max по uri, method, status) — APIGateway
-- **gRPC:** `grpc_server_calls_*`
-- **Kafka:** `kafka_producer_record_send_total`, `kafka_consumer_records_consumed_total`
-- **Redis:** `spring_data_redis_*` — FeedService
-- **DB:** `hikari_connections_*`, `jdbc_connections_*` — UserService, PostService
-- **System:** `process_cpu_usage`, `system_cpu_usage`, `process_uptime_seconds`
+Prometheus собирает стандартные Micrometer/Spring Boot метрики сервисов:
+
+- **Доступность targets:** `up`, `scrape_duration_seconds`, `scrape_samples_scraped`, `scrape_samples_post_metric_relabeling`.
+- **JVM:** `jvm_memory_used_bytes`, `jvm_memory_committed_bytes`, `jvm_memory_max_bytes`, `jvm_gc_pause_seconds`, `jvm_threads_*`, `jvm_classes_loaded_classes`, `jvm_classes_unloaded_classes`.
+- **HTTP:** `http_server_requests_seconds_*` с лейблами `uri`, `method`, `status`, `exception`.
+- **gRPC:** `grpc_server_calls_*` для серверных gRPC-вызовов.
+- **Kafka:** `kafka_producer_*`, `kafka_consumer_*`, `spring_kafka_listener_*` для producers, consumers и listener-контейнеров.
+- **Redis:** `spring_data_redis_*` и Redis client metrics для FeedService.
+- **PostgreSQL/HikariCP:** `hikaricp_*`, `jdbc_connections_*` для сервисов с базой данных.
+- **Процесс и система:** `process_cpu_usage`, `process_uptime_seconds`, `process_start_time_seconds`, `system_cpu_usage`, `system_load_average_1m`, `disk_free_bytes`, `disk_total_bytes`.
 
 ### Кастомные метрики платформы
 
-- `platform_users_total` — общее количество зарегистрированных пользователей (UserService).
-- `platform_posts_total` — общее количество постов на платформе (PostService).
+Платформенные метрики отражают текущее состояние доменных данных. Значения читаются из актуального состояния сервисных хранилищ при Prometheus scrape.
+
+**UserService:**
+
+- `platform_users_total` — количество зарегистрированных пользователей.
+- `platform_users_student_verified_total` — количество пользователей со студенческой верификацией.
+- `platform_users_employee_verified_total` — количество пользователей с верификацией сотрудника.
+- `platform_users_admin_total` — количество администраторов.
+- `platform_users_with_university_total` — количество пользователей с привязанным ВУЗом.
+- `platform_users_active_bans_total` — количество активных временных блокировок.
+- `platform_subscriptions_total` — количество активных подписок.
+- `platform_universities_total` — количество ВУЗов.
+- `platform_faculties_total` — количество факультетов.
+- `platform_programs_total` — количество образовательных программ.
+
+**PostService:**
+
+- `platform_posts_total` — количество постов.
+- `platform_posts_last_24h_total` — количество постов за последние 24 часа.
+- `platform_posts_with_university_total` — количество постов с привязкой к ВУЗу.
+- `platform_post_likes_total` — количество записей лайков постов.
+- `platform_post_like_count_total` — суммарное денормализованное количество лайков постов.
+- `platform_comments_total` — количество комментариев.
+- `platform_comments_last_24h_total` — количество комментариев за последние 24 часа.
+- `platform_comment_replies_total` — количество ответов на комментарии.
+- `platform_comment_likes_total` — количество записей лайков комментариев.
+- `platform_comment_like_count_total` — суммарное денормализованное количество лайков комментариев.
+
+**NotificationService:**
+
+- `platform_notifications_total` — количество сохранённых уведомлений.
+- `platform_notifications_unread_total` — количество непрочитанных уведомлений.
+- `platform_notification_processed_events_total` — количество обработанных Kafka-event IDs для дедупликации уведомлений.
 
 ### Инфраструктура мониторинга
 
-- **Prometheus** (`localhost:9700`) — scrape каждые 15s, retention 15 дней. Конфиг: `monitoring/prometheus.yml`.
-- **Grafana** (`localhost:3000`) — credentials из env `GRAFANA_USER`/`GRAFANA_PASSWORD` (default: `admin/admin`). Prometheus datasource подключён через provisioning: `monitoring/grafana/provisioning/datasources/`.
+- **Prometheus** (`localhost:9700`) — хранит time-series метрики сервисов. Конфиг: `Monitoring/prometheus.yml`.
+- **Grafana** (`localhost:3000`) — визуализация метрик. Credentials берутся из env `GRAFANA_USER`/`GRAFANA_PASSWORD` (default: `admin/admin`). Prometheus datasource подключён через provisioning: `Monitoring/grafana/provisioning/datasources/`.
+- **UniMeow Spring Overview** — dashboard технического состояния сервисов: availability, latency, HTTP/gRPC, JVM, Kafka, Redis, PostgreSQL/HikariCP, process/system metrics.
+- **UniMeow Platform Metrics** — dashboard продуктовых показателей: пользователи, верификация, подписки, ВУЗы/факультеты/программы, посты, комментарии, лайки, уведомления.
 
 ---
 
