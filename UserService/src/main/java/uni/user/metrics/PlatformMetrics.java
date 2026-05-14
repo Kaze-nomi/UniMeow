@@ -25,26 +25,26 @@ public class PlatformMetrics implements MeterBinder {
 
 	@Override
 	public void bindTo(MeterRegistry registry) {
-		Gauge.builder("platform_users_total", userRepository, UserRepository::count)
+		Gauge.builder("platform_users", userRepository, UserRepository::count)
 				.description("Total number of registered users on the platform").register(registry);
-		Gauge.builder("platform_users_student_verified_total", userRepository, UserRepository::countStudentVerified)
+		Gauge.builder("platform_users_student_verified", userRepository, UserRepository::countStudentVerified)
 				.description("Total number of student-verified users").register(registry);
-		Gauge.builder("platform_users_employee_verified_total", userRepository, UserRepository::countEmployeeVerified)
+		Gauge.builder("platform_users_employee_verified", userRepository, UserRepository::countEmployeeVerified)
 				.description("Total number of employee-verified users").register(registry);
-		Gauge.builder("platform_users_admin_total", userRepository, UserRepository::countAdmins)
+		Gauge.builder("platform_users_admin", userRepository, UserRepository::countAdmins)
 				.description("Total number of admin users").register(registry);
-		Gauge.builder("platform_users_with_university_total", userRepository, UserRepository::countWithUniversity)
+		Gauge.builder("platform_users_with_university", userRepository, UserRepository::countWithUniversity)
 				.description("Total number of users linked to a university").register(registry);
-		Gauge.builder("platform_users_active_bans_total", userRepository,
+		Gauge.builder("platform_users_active_bans", userRepository,
 				repository -> repository.countActiveBans(LocalDateTime.now()))
 				.description("Total number of currently active temporary bans").register(registry);
-		Gauge.builder("platform_subscriptions_total", subscriptionRepository, SubscriptionRepository::count)
+		Gauge.builder("platform_subscriptions", subscriptionRepository, SubscriptionRepository::count)
 				.description("Total number of active user subscriptions").register(registry);
-		Gauge.builder("platform_universities_total", universityRepository, UniversityRepository::count)
+		Gauge.builder("platform_universities", universityRepository, UniversityRepository::count)
 				.description("Total number of universities").register(registry);
-		Gauge.builder("platform_faculties_total", universityFacultyRepository, UniversityFacultyRepository::count)
+		Gauge.builder("platform_faculties", universityFacultyRepository, UniversityFacultyRepository::count)
 				.description("Total number of university faculties").register(registry);
-		Gauge.builder("platform_programs_total", universityProgramRepository, UniversityProgramRepository::count)
+		Gauge.builder("platform_programs", universityProgramRepository, UniversityProgramRepository::count)
 				.description("Total number of university programs").register(registry);
 	}
 }

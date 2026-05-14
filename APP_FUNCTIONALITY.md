@@ -833,6 +833,8 @@ Kafka-события сохраняются в outbox-таблицах серв�
 - `GET /actuator/health` — статус сервиса (show-details: always).
 - `GET /actuator/prometheus` — метрики в формате Prometheus scrape.
 
+В `APIGateway` служебные `/actuator/*` endpoints проходят через gateway-auth без пользовательской сессии, чтобы Docker healthcheck и Prometheus scrape не зависели от `ACCESS_TOKEN`.
+
 Prometheus собирает метрики каждые 15 секунд из внутренних docker-compose endpoints:
 
 | Prometheus job | Endpoint |
@@ -863,35 +865,35 @@ Prometheus собирает стандартные Micrometer/Spring Boot мет
 
 **UserService:**
 
-- `platform_users_total` — количество зарегистрированных пользователей.
-- `platform_users_student_verified_total` — количество пользователей со студенческой верификацией.
-- `platform_users_employee_verified_total` — количество пользователей с верификацией сотрудника.
-- `platform_users_admin_total` — количество администраторов.
-- `platform_users_with_university_total` — количество пользователей с привязанным ВУЗом.
-- `platform_users_active_bans_total` — количество активных временных блокировок.
-- `platform_subscriptions_total` — количество активных подписок.
-- `platform_universities_total` — количество ВУЗов.
-- `platform_faculties_total` — количество факультетов.
-- `platform_programs_total` — количество образовательных программ.
+- `platform_users` — количество зарегистрированных пользователей.
+- `platform_users_student_verified` — количество пользователей со студенческой верификацией.
+- `platform_users_employee_verified` — количество пользователей с верификацией сотрудника.
+- `platform_users_admin` — количество администраторов.
+- `platform_users_with_university` — количество пользователей с привязанным ВУЗом.
+- `platform_users_active_bans` — количество активных временных блокировок.
+- `platform_subscriptions` — количество активных подписок.
+- `platform_universities` — количество ВУЗов.
+- `platform_faculties` — количество факультетов.
+- `platform_programs` — количество образовательных программ.
 
 **PostService:**
 
-- `platform_posts_total` — количество постов.
-- `platform_posts_last_24h_total` — количество постов за последние 24 часа.
-- `platform_posts_with_university_total` — количество постов с привязкой к ВУЗу.
-- `platform_post_likes_total` — количество записей лайков постов.
-- `platform_post_like_count_total` — суммарное денормализованное количество лайков постов.
-- `platform_comments_total` — количество комментариев.
-- `platform_comments_last_24h_total` — количество комментариев за последние 24 часа.
-- `platform_comment_replies_total` — количество ответов на комментарии.
-- `platform_comment_likes_total` — количество записей лайков комментариев.
-- `platform_comment_like_count_total` — суммарное денормализованное количество лайков комментариев.
+- `platform_posts` — количество постов.
+- `platform_posts_last_24h` — количество постов за последние 24 часа.
+- `platform_posts_with_university` — количество постов с привязкой к ВУЗу.
+- `platform_post_likes` — количество записей лайков постов.
+- `platform_post_like_count` — суммарное денормализованное количество лайков постов.
+- `platform_comments` — количество комментариев.
+- `platform_comments_last_24h` — количество комментариев за последние 24 часа.
+- `platform_comment_replies` — количество ответов на комментарии.
+- `platform_comment_likes` — количество записей лайков комментариев.
+- `platform_comment_like_count` — суммарное денормализованное количество лайков комментариев.
 
 **NotificationService:**
 
-- `platform_notifications_total` — количество сохранённых уведомлений.
-- `platform_notifications_unread_total` — количество непрочитанных уведомлений.
-- `platform_notification_processed_events_total` — количество обработанных Kafka-event IDs для дедупликации уведомлений.
+- `platform_notifications` — количество сохранённых уведомлений.
+- `platform_notifications_unread` — количество непрочитанных уведомлений.
+- `platform_notification_processed_events` — количество обработанных Kafka-event IDs для дедупликации уведомлений.
 
 ### Инфраструктура мониторинга
 

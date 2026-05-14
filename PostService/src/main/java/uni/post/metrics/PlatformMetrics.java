@@ -23,29 +23,27 @@ public class PlatformMetrics implements MeterBinder {
 
 	@Override
 	public void bindTo(MeterRegistry registry) {
-		Gauge.builder("platform_posts_total", postRepository, PostRepository::count)
+		Gauge.builder("platform_posts", postRepository, PostRepository::count)
 				.description("Total number of posts on the platform").register(registry);
-		Gauge.builder("platform_posts_last_24h_total", postRepository,
+		Gauge.builder("platform_posts_last_24h", postRepository,
 				repository -> repository.countByCreatedAtAfter(LocalDateTime.now().minusDays(1)))
 				.description("Total number of posts created during the last 24 hours").register(registry);
-		Gauge.builder("platform_posts_with_university_total", postRepository,
-				PostRepository::countByUniversityIdIsNotNull)
+		Gauge.builder("platform_posts_with_university", postRepository, PostRepository::countByUniversityIdIsNotNull)
 				.description("Total number of posts linked to a university").register(registry);
-		Gauge.builder("platform_post_likes_total", postLikeRepository, PostLikeRepository::count)
+		Gauge.builder("platform_post_likes", postLikeRepository, PostLikeRepository::count)
 				.description("Total number of post like rows").register(registry);
-		Gauge.builder("platform_post_like_count_total", postRepository, PostRepository::sumLikesCount)
+		Gauge.builder("platform_post_like_count", postRepository, PostRepository::sumLikesCount)
 				.description("Total denormalized post like count").register(registry);
-		Gauge.builder("platform_comments_total", commentRepository, CommentRepository::count)
+		Gauge.builder("platform_comments", commentRepository, CommentRepository::count)
 				.description("Total number of comments on the platform").register(registry);
-		Gauge.builder("platform_comments_last_24h_total", commentRepository,
+		Gauge.builder("platform_comments_last_24h", commentRepository,
 				repository -> repository.countByCreatedAtAfter(LocalDateTime.now().minusDays(1)))
 				.description("Total number of comments created during the last 24 hours").register(registry);
-		Gauge.builder("platform_comment_replies_total", commentRepository,
-				CommentRepository::countByParentCommentIdIsNotNull).description("Total number of comment replies")
-				.register(registry);
-		Gauge.builder("platform_comment_likes_total", commentLikeRepository, CommentLikeRepository::count)
+		Gauge.builder("platform_comment_replies", commentRepository, CommentRepository::countByParentCommentIdIsNotNull)
+				.description("Total number of comment replies").register(registry);
+		Gauge.builder("platform_comment_likes", commentLikeRepository, CommentLikeRepository::count)
 				.description("Total number of comment like rows").register(registry);
-		Gauge.builder("platform_comment_like_count_total", commentRepository, CommentRepository::sumLikesCount)
+		Gauge.builder("platform_comment_like_count", commentRepository, CommentRepository::sumLikesCount)
 				.description("Total denormalized comment like count").register(registry);
 	}
 }

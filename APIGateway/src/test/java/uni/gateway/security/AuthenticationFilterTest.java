@@ -63,6 +63,12 @@ class AuthenticationFilterTest {
 	}
 
 	@Test
+	void actuator_prometheus_endpoint_is_accessible_without_token() {
+		client.get().uri("/actuator/prometheus").exchange().expectStatus()
+				.value(status -> org.assertj.core.api.Assertions.assertThat(status).isNotEqualTo(401));
+	}
+
+	@Test
 	void oauth2_endpoint_is_accessible_without_token() {
 		client.get().uri("/oauth2/authorization/google").exchange().expectStatus()
 				.value(status -> org.assertj.core.api.Assertions.assertThat(status).isNotEqualTo(401));

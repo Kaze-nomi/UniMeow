@@ -25,7 +25,7 @@ public class AuthenticationFilter implements WebFilter, Ordered {
 	private final JwtUtil jwtUtil;
 
 	// Публичные эндпоинты (GraphQL сам проверяет авторизацию на уровне резолверов)
-	private final List<String> openApiEndpoints = List.of("/oauth2/", "/login/", "/graphql", "/actuator/health",
+	private final List<String> openApiEndpoints = List.of("/oauth2/", "/login/", "/graphql", "/actuator/",
 			"/api/auth/refresh", "/api/auth/logout");
 
 	@Override

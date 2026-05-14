@@ -68,7 +68,7 @@
       },
       "targets": [
         {
-          "expr": "platform_users_total",
+          "expr": "platform_users",
           "legendFormat": "users",
           "refId": "A"
         }
@@ -124,7 +124,7 @@
       },
       "targets": [
         {
-          "expr": "platform_posts_total",
+          "expr": "platform_posts",
           "legendFormat": "posts",
           "refId": "A"
         }
@@ -180,7 +180,7 @@
       },
       "targets": [
         {
-          "expr": "platform_comments_total",
+          "expr": "platform_comments",
           "legendFormat": "comments",
           "refId": "A"
         }
@@ -236,7 +236,7 @@
       },
       "targets": [
         {
-          "expr": "platform_subscriptions_total",
+          "expr": "platform_subscriptions",
           "legendFormat": "subscriptions",
           "refId": "A"
         }
@@ -296,7 +296,7 @@
       },
       "targets": [
         {
-          "expr": "platform_notifications_unread_total",
+          "expr": "platform_notifications_unread",
           "legendFormat": "unread",
           "refId": "A"
         }
@@ -356,7 +356,7 @@
       },
       "targets": [
         {
-          "expr": "platform_users_active_bans_total",
+          "expr": "platform_users_active_bans",
           "legendFormat": "active bans",
           "refId": "A"
         }
@@ -415,22 +415,22 @@
       },
       "targets": [
         {
-          "expr": "platform_users_student_verified_total",
+          "expr": "platform_users_student_verified",
           "legendFormat": "student verified",
           "refId": "A"
         },
         {
-          "expr": "platform_users_employee_verified_total",
+          "expr": "platform_users_employee_verified",
           "legendFormat": "employee verified",
           "refId": "B"
         },
         {
-          "expr": "platform_users_with_university_total",
+          "expr": "platform_users_with_university",
           "legendFormat": "with university",
           "refId": "C"
         },
         {
-          "expr": "platform_users_admin_total",
+          "expr": "platform_users_admin",
           "legendFormat": "admins",
           "refId": "D"
         }
@@ -489,17 +489,17 @@
       },
       "targets": [
         {
-          "expr": "platform_universities_total",
+          "expr": "platform_universities",
           "legendFormat": "universities",
           "refId": "A"
         },
         {
-          "expr": "platform_faculties_total",
+          "expr": "platform_faculties",
           "legendFormat": "faculties",
           "refId": "B"
         },
         {
-          "expr": "platform_programs_total",
+          "expr": "platform_programs",
           "legendFormat": "programs",
           "refId": "C"
         }
@@ -558,22 +558,22 @@
       },
       "targets": [
         {
-          "expr": "platform_posts_last_24h_total",
+          "expr": "platform_posts_last_24h",
           "legendFormat": "posts last 24h",
           "refId": "A"
         },
         {
-          "expr": "platform_comments_last_24h_total",
+          "expr": "platform_comments_last_24h",
           "legendFormat": "comments last 24h",
           "refId": "B"
         },
         {
-          "expr": "platform_posts_with_university_total",
+          "expr": "platform_posts_with_university",
           "legendFormat": "university posts",
           "refId": "C"
         },
         {
-          "expr": "platform_comment_replies_total",
+          "expr": "platform_comment_replies",
           "legendFormat": "comment replies",
           "refId": "D"
         }
@@ -632,22 +632,22 @@
       },
       "targets": [
         {
-          "expr": "platform_post_likes_total",
+          "expr": "platform_post_likes",
           "legendFormat": "post like rows",
           "refId": "A"
         },
         {
-          "expr": "platform_post_like_count_total",
+          "expr": "platform_post_like_count",
           "legendFormat": "post like count",
           "refId": "B"
         },
         {
-          "expr": "platform_comment_likes_total",
+          "expr": "platform_comment_likes",
           "legendFormat": "comment like rows",
           "refId": "C"
         },
         {
-          "expr": "platform_comment_like_count_total",
+          "expr": "platform_comment_like_count",
           "legendFormat": "comment like count",
           "refId": "D"
         }
@@ -735,27 +735,27 @@
       },
       "targets": [
         {
-          "expr": "platform_users_total",
+          "expr": "platform_users",
           "legendFormat": "users",
           "refId": "A"
         },
         {
-          "expr": "platform_posts_total",
+          "expr": "platform_posts",
           "legendFormat": "posts",
           "refId": "B"
         },
         {
-          "expr": "platform_comments_total",
+          "expr": "platform_comments",
           "legendFormat": "comments",
           "refId": "C"
         },
         {
-          "expr": "platform_subscriptions_total",
+          "expr": "platform_subscriptions",
           "legendFormat": "subscriptions",
           "refId": "D"
         },
         {
-          "expr": "platform_notifications_total",
+          "expr": "platform_notifications",
           "legendFormat": "notifications",
           "refId": "E"
         }
@@ -843,22 +843,22 @@
       },
       "targets": [
         {
-          "expr": "platform_posts_last_24h_total",
+          "expr": "platform_posts_last_24h",
           "legendFormat": "posts last 24h",
           "refId": "A"
         },
         {
-          "expr": "platform_comments_last_24h_total",
+          "expr": "platform_comments_last_24h",
           "legendFormat": "comments last 24h",
           "refId": "B"
         },
         {
-          "expr": "platform_notifications_unread_total",
+          "expr": "platform_notifications_unread",
           "legendFormat": "unread notifications",
           "refId": "C"
         },
         {
-          "expr": "platform_notification_processed_events_total",
+          "expr": "platform_notification_processed_events",
           "legendFormat": "processed notification events",
           "refId": "D"
         }
