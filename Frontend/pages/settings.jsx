@@ -168,18 +168,20 @@ function SettingsPage({ currentUser, onNavigate, onAccountDeleted }) {
 function EditProfileModal({ open, onClose, currentUser, onUserUpdated }) {
   const STATUS_MAX_LENGTH = 80;
   const USERNAME_MAX_LENGTH = 30;
+  const NAME_MAX_LENGTH = 50;
   const [form, setForm] = React.useState({});
   const [loading, setLoading] = React.useState(false);
   const [error, setError] = React.useState('');
   const [faculties, setFaculties] = React.useState([]);
   const [programs, setPrograms] = React.useState([]);
+  const normalizeNameInput = (value) => (value || '').trim().slice(0, NAME_MAX_LENGTH);
 
   React.useEffect(() => {
     if (!open || !currentUser) return;
     setForm({
       username: currentUser.username || '',
-      name: currentUser.name || '',
-      surname: currentUser.surname || '',
+      name: normalizeNameInput(currentUser.name),
+      surname: normalizeNameInput(currentUser.surname),
       bio: currentUser.bio || '',
       status: currentUser.status || '',
       avatarUrl: currentUser.avatarUrl || '',
@@ -214,9 +216,10 @@ function EditProfileModal({ open, onClose, currentUser, onUserUpdated }) {
   if (!open) return null;
   const set = (k) => (e) => setForm(f => ({ ...f, [k]: e.target.value }));
   const setLimited = (k, maxLength) => (e) => setForm(f => ({ ...f, [k]: e.target.value.slice(0, maxLength) }));
+  const setNameField = (k) => (e) => setForm(f => ({ ...f, [k]: normalizeNameInput(e.target.value) }));
   const setUsername = (e) => setForm(f => ({
     ...f,
-    username: e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, '').slice(0, USERNAME_MAX_LENGTH),
+    username: e.target.value.trim().toLowerCase().replace(/[^a-z0-9_]/g, '').slice(0, USERNAME_MAX_LENGTH),
   }));
 
   const save = async () => {
@@ -227,15 +230,20 @@ function EditProfileModal({ open, onClose, currentUser, onUserUpdated }) {
         return;
       }
       const input = {};
+      const normalizedForm = {
+        ...form,
+        name: normalizeNameInput(form.name),
+        surname: normalizeNameInput(form.surname),
+      };
       ['username','name','surname','bio','status','avatarUrl','coverUrl'].forEach(k => {
-        if (form[k] !== undefined) input[k] = form[k];
+        if (normalizedForm[k] !== undefined) input[k] = normalizedForm[k];
       });
-      if (form.educationLevel !== undefined && form.educationLevel !== '') {
-        input.educationLevel = form.educationLevel;
+      if (normalizedForm.educationLevel !== undefined && normalizedForm.educationLevel !== '') {
+        input.educationLevel = normalizedForm.educationLevel;
       }
-      if (form.facultyId !== undefined) input.facultyId = form.facultyId;
-      if (form.programId !== undefined) input.programId = form.programId;
-      if (form.course !== undefined && form.course !== '') input.course = parseInt(form.course);
+      if (normalizedForm.facultyId !== undefined) input.facultyId = normalizedForm.facultyId;
+      if (normalizedForm.programId !== undefined) input.programId = normalizedForm.programId;
+      if (normalizedForm.course !== undefined && normalizedForm.course !== '') input.course = parseInt(normalizedForm.course);
       const d = await API.gql(API.M.updateProfile, { input });
       onUserUpdated && onUserUpdated(d.updateProfile);
       onClose();
@@ -257,8 +265,8 @@ function EditProfileModal({ open, onClose, currentUser, onUserUpdated }) {
           {error && <div style={{ padding: '10px 14px', background: 'var(--like-subtle)', color: 'var(--like)', borderRadius: 10, fontSize: 13 }}>{error}</div>}
           <Input label="Никнейм" value={form.username || ''} onChange={setUsername} maxLength={USERNAME_MAX_LENGTH} hint="3-30 символов: a-z, 0-9, _" />
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-            <Input label="Имя" value={form.name || ''} onChange={set('name')} />
-            <Input label="Фамилия" value={form.surname || ''} onChange={set('surname')} />
+            <Input label="Имя" value={form.name || ''} onChange={setNameField('name')} maxLength={NAME_MAX_LENGTH} hint={`${(form.name || '').length}/${NAME_MAX_LENGTH}`} />
+            <Input label="Фамилия" value={form.surname || ''} onChange={setNameField('surname')} maxLength={NAME_MAX_LENGTH} hint={`${(form.surname || '').length}/${NAME_MAX_LENGTH}`} />
           </div>
           <Input label="О себе" value={form.bio || ''} onChange={set('bio')} multiline rows={3} />
           <Input label="Статус" value={form.status || ''} onChange={setLimited('status', STATUS_MAX_LENGTH)} maxLength={STATUS_MAX_LENGTH} hint={`${(form.status || '').length}/${STATUS_MAX_LENGTH}`} />

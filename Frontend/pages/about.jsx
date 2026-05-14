@@ -37,7 +37,7 @@ function AboutPage({ onNavigate }) {
         </p>
         <div style={{ height: 1, background: 'var(--border)' }} />
         <section style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-          <h2 style={{ margin: 0, fontSize: 18, fontWeight: 800 }}>Документы</h2>
+          <h2 style={{ margin: 0, fontSize: 18, fontWeight: 800 }}>Условия использования</h2>
           <button onClick={() => onNavigate('/privacy')} className="um-side-nav" style={docLinkStyle}>
             Политика обработки персональных данных
           </button>

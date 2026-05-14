@@ -76,6 +76,11 @@ class UserServiceTest {
 				false, null, false, null, false, null, false, null, false, null, false, null);
 	}
 
+	private User updateSurname(String surname) {
+		return userService.update(USER_ID, false, null, false, null, true, surname, false, null, false, null, false,
+				null, false, null, false, null, false, null, false, null, false, null, false, null);
+	}
+
 	private User updateStatus(String status) {
 		return userService.update(USER_ID, false, null, false, null, false, null, true, status, false, null, false,
 				null, false, null, false, null, false, null, false, null, false, null, false, null);
@@ -276,6 +281,46 @@ class UserServiceTest {
 
 		assertThat(result.getName()).isEqualTo("Петя");
 		assertThat(result.getUsername()).isEqualTo("ivan_petrov");
+	}
+
+	@Test
+	void update_trims_name() {
+		User user = buildUser();
+		when(userRepository.findById(USER_ID)).thenReturn(Optional.of(user));
+		when(userRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+		User result = updateName("  Петя  ");
+
+		assertThat(result.getName()).isEqualTo("Петя");
+	}
+
+	@Test
+	void update_trims_surname() {
+		User user = buildUser();
+		when(userRepository.findById(USER_ID)).thenReturn(Optional.of(user));
+		when(userRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+		User result = updateSurname("  Иванов  ");
+
+		assertThat(result.getSurname()).isEqualTo("Иванов");
+	}
+
+	@Test
+	void update_throws_when_name_is_too_long() {
+		User user = buildUser();
+		when(userRepository.findById(USER_ID)).thenReturn(Optional.of(user));
+
+		assertThatThrownBy(() -> updateName("x".repeat(51))).isInstanceOf(IllegalArgumentException.class)
+				.hasMessageContaining("Name must be at most 50 characters");
+	}
+
+	@Test
+	void update_throws_when_surname_is_too_long() {
+		User user = buildUser();
+		when(userRepository.findById(USER_ID)).thenReturn(Optional.of(user));
+
+		assertThatThrownBy(() -> updateSurname("x".repeat(51))).isInstanceOf(IllegalArgumentException.class)
+				.hasMessageContaining("Surname must be at most 50 characters");
 	}
 
 	@Test

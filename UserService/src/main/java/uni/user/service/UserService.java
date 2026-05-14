@@ -31,6 +31,7 @@ import java.util.UUID;
 public class UserService {
 
 	private static final int MAX_STATUS_LENGTH = 80;
+	private static final int MAX_NAME_LENGTH = 50;
 	private static final String USERNAME_PATTERN = "^[a-z0-9_]{3,30}$";
 
 	private final UserRepository userRepository;
@@ -89,9 +90,9 @@ public class UserService {
 			user.setUsername(normalizedUsername);
 		}
 		if (hasName)
-			user.setName(name);
+			user.setName(normalizeProfileName(name, "Name"));
 		if (hasSurname)
-			user.setSurname(surname);
+			user.setSurname(normalizeProfileName(surname, "Surname"));
 		if (hasStatus)
 			user.setStatus(normalizeStatus(status));
 		if (hasAvatarUrl)
@@ -209,6 +210,17 @@ public class UserService {
 		String normalized = status.strip();
 		if (normalized.length() > MAX_STATUS_LENGTH) {
 			throw new IllegalArgumentException("Status must be at most " + MAX_STATUS_LENGTH + " characters");
+		}
+		return normalized;
+	}
+
+	private static String normalizeProfileName(String value, String fieldName) {
+		if (value == null) {
+			return null;
+		}
+		String normalized = value.strip();
+		if (normalized.length() > MAX_NAME_LENGTH) {
+			throw new IllegalArgumentException(fieldName + " must be at most " + MAX_NAME_LENGTH + " characters");
 		}
 		return normalized;
 	}

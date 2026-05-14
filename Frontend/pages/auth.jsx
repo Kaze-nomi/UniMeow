@@ -107,13 +107,15 @@ function LoginPage({ onNavigate }) {
 
 function CompleteRegistrationPage({ onNavigate, onUserUpdated }) {
   const USERNAME_MAX_LENGTH = 30;
+  const NAME_MAX_LENGTH = 50;
   const [username, setUsername] = React.useState('');
   const [name, setName] = React.useState('');
   const [surname, setSurname] = React.useState('');
   const [error, setError] = React.useState('');
   const [loading, setLoading] = React.useState(false);
 
-  const normalizeUsernameInput = (value) => value.toLowerCase().replace(/[^a-z0-9_]/g, '').slice(0, USERNAME_MAX_LENGTH);
+  const normalizeUsernameInput = (value) => value.trim().toLowerCase().replace(/[^a-z0-9_]/g, '').slice(0, USERNAME_MAX_LENGTH);
+  const normalizeNameInput = (value) => value.trim().slice(0, NAME_MAX_LENGTH);
   const validateUsername = (u) => /^[a-z0-9_]{3,30}$/.test(u);
 
   const submit = async () => {
@@ -123,8 +125,10 @@ function CompleteRegistrationPage({ onNavigate, onUserUpdated }) {
     }
     setLoading(true); setError('');
     try {
+      const trimmedName = normalizeNameInput(name);
+      const trimmedSurname = normalizeNameInput(surname);
       const data = await API.gql(API.M.updateProfile, {
-        input: { username, name: name || undefined, surname: surname || undefined }
+        input: { username, name: trimmedName || undefined, surname: trimmedSurname || undefined }
       });
       onUserUpdated && onUserUpdated(data.updateProfile);
       onNavigate('/');
@@ -159,8 +163,8 @@ function CompleteRegistrationPage({ onNavigate, onUserUpdated }) {
             autoFocus
           />
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-            <Input label="Имя" value={name} onChange={e => setName(e.target.value)} placeholder="Имя" />
-            <Input label="Фамилия" value={surname} onChange={e => setSurname(e.target.value)} placeholder="Фамилия" />
+            <Input label="Имя" value={name} onChange={e => setName(normalizeNameInput(e.target.value))} placeholder="Имя" maxLength={NAME_MAX_LENGTH} hint={`${name.length}/${NAME_MAX_LENGTH}`} />
+            <Input label="Фамилия" value={surname} onChange={e => setSurname(normalizeNameInput(e.target.value))} placeholder="Фамилия" maxLength={NAME_MAX_LENGTH} hint={`${surname.length}/${NAME_MAX_LENGTH}`} />
           </div>
 
           {error && <div style={{ padding: '10px 14px', background: 'oklch(0.97 0.05 15)', border: '1px solid oklch(0.85 0.1 15)', borderRadius: 8, color: 'oklch(0.45 0.22 15)', fontSize: 13 }}>{error}</div>}

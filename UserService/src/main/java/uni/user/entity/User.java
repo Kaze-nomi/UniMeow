@@ -35,9 +35,10 @@ public class User {
 	@Column(unique = true)
 	private String username;
 
-	@Column(nullable = false)
+	@Column(nullable = false, length = 50)
 	private String name;
 
+	@Column(length = 50)
 	private String surname;
 
 	@Column(unique = true)
