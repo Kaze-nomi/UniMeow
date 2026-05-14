@@ -22,6 +22,7 @@ function ProfilePage({ userId, currentUser, onNavigate, onUserUpdated }) {
   const [banOpen, setBanOpen] = React.useState(false);
   const [banDays, setBanDays] = React.useState('');
   const [banReason, setBanReason] = React.useState('Нарушение правил');
+  const [banError, setBanError] = React.useState('');
   const [banLoading, setBanLoading] = React.useState(false);
   const [grantAdminLoading, setGrantAdminLoading] = React.useState(false);
   const [subscriptionsOpen, setSubscriptionsOpen] = React.useState(false);
@@ -92,7 +93,18 @@ function ProfilePage({ userId, currentUser, onNavigate, onUserUpdated }) {
   const handleBan = async () => {
     setBanDays('');
     setBanReason('Нарушение правил');
+    setBanError('');
     setBanOpen(true);
+  };
+
+  const handleBanDaysChange = (event) => {
+    const next = event.target.value.trim();
+    if (!/^\d*$/.test(next)) {
+      setBanError('Введите целое число дней от 1 до 3650 или оставьте поле пустым для бессрочного бана.');
+      return;
+    }
+    setBanDays(next);
+    setBanError('');
   };
 
   const handleGrantAdmin = async (targetId) => {
@@ -111,12 +123,23 @@ function ProfilePage({ userId, currentUser, onNavigate, onUserUpdated }) {
 
   const submitBan = async () => {
     setBanLoading(true);
+    if (banError) {
+      setBanLoading(false);
+      return;
+    }
+    setBanError('');
     const reason = banReason.trim();
     const days = banDays.trim();
     const input = { targetUserId: user.id, reason };
     let bannedUntil = null;
-    if (days && !Number.isNaN(Number(days)) && Number(days) > 0) {
-      const until = new Date(Date.now() + Number(days) * 24 * 60 * 60 * 1000);
+    if (days) {
+      const daysNumber = Number(days);
+      if (!/^[1-9]\d*$/.test(days) || !Number.isSafeInteger(daysNumber) || daysNumber > 3650) {
+        setBanError('Введите целое число дней от 1 до 3650 или оставьте поле пустым для бессрочного бана.');
+        setBanLoading(false);
+        return;
+      }
+      const until = new Date(Date.now() + daysNumber * 24 * 60 * 60 * 1000);
       bannedUntil = until.toISOString().slice(0, 19);
       input.bannedUntil = bannedUntil;
     }
@@ -130,6 +153,8 @@ function ProfilePage({ userId, currentUser, onNavigate, onUserUpdated }) {
         setError('Пользователь не найден');
       }
       setBanOpen(false);
+    } catch (e) {
+      setBanError(API.userMessage ? API.userMessage(e.message) : e.message);
     } finally {
       setBanLoading(false);
     }
@@ -340,8 +365,14 @@ function ProfilePage({ userId, currentUser, onNavigate, onUserUpdated }) {
             label="Срок бана в днях"
             type="number"
             value={banDays}
-            onChange={e => setBanDays(e.target.value)}
+            onChange={handleBanDaysChange}
             placeholder="Например, 7"
+            min="1"
+            max="3650"
+            step="1"
+            inputMode="numeric"
+            pattern="[0-9]*"
+            error={banError}
           />
           <Input
             label="Причина"

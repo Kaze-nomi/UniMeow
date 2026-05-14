@@ -72,6 +72,6 @@ class MailServiceTest {
 
 		assertThatThrownBy(() -> mailService.sendVerificationCode("student@spbu.ru", "iivanov", "000000"))
 				.isInstanceOf(MailDeliveryException.class).hasMessageContaining("Почтовый сервис временно недоступен")
-				.hasMessageContaining("Попробуйте позже").hasCauseInstanceOf(RuntimeException.class);
+				.hasMessageContaining("Попробуйте ещё раз").hasCauseInstanceOf(RuntimeException.class);
 	}
 }

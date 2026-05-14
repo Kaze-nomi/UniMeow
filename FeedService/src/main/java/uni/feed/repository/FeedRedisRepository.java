@@ -149,6 +149,10 @@ public class FeedRedisRepository {
 		trim(authorFeedKey(authorId), maxSize);
 	}
 
+	public void trimUserFeed(String userId, long maxSize) {
+		trim(userFeedKey(userId), maxSize);
+	}
+
 	public void trimPopularFeed(long maxSize) {
 		trim(popularFeedKey(), maxSize);
 	}

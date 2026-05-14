@@ -31,6 +31,9 @@ class FeedEventServiceTest {
 	@BeforeEach
 	void setUp() {
 		ReflectionTestUtils.setField(feedEventService, "objectMapper", new ObjectMapper());
+		ReflectionTestUtils.setField(feedEventService, "authorWindowSize", 1000L);
+		ReflectionTestUtils.setField(feedEventService, "userWindowSize", 1000L);
+		ReflectionTestUtils.setField(feedEventService, "uniWindowSize", 5000L);
 		ReflectionTestUtils.setField(feedEventService, "popularWindowSize", 1000L);
 		ReflectionTestUtils.setField(feedEventService, "trendingLikeBoostMs", 1L);
 	}
@@ -173,6 +176,7 @@ class FeedEventServiceTest {
 
 		followers.forEach(
 				followerId -> verify(redisRepository).addPostToUserFeed(eq(followerId), eq(POST_ID), anyDouble()));
+		followers.forEach(followerId -> verify(redisRepository).trimUserFeed(followerId, 1000L));
 	}
 
 	@Test
@@ -334,6 +338,7 @@ class FeedEventServiceTest {
 
 		verify(redisRepository).addFollowingRelation(SUBSCRIBER_ID, TARGET_USER_ID);
 		latestPosts.forEach((postId, score) -> verify(redisRepository).addPostToUserFeed(SUBSCRIBER_ID, postId, score));
+		verify(redisRepository).trimUserFeed(SUBSCRIBER_ID, 1000L);
 	}
 
 	@Test

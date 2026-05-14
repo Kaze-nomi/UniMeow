@@ -568,6 +568,27 @@ class UserServiceTest {
 	}
 
 	@Test
+	void ban_user_rejects_non_future_temporary_ban() {
+		UUID moderatorId = UUID.fromString("11111111-1111-1111-1111-111111111111");
+		User moderator = buildUser();
+		moderator.setId(moderatorId);
+		moderator.setAdmin(true);
+
+		User target = buildUser();
+		target.setId(TARGET_ID);
+		target.setUsername("target_user");
+
+		when(userRepository.findById(moderatorId)).thenReturn(Optional.of(moderator));
+		when(userRepository.findById(TARGET_ID)).thenReturn(Optional.of(target));
+
+		assertThatThrownBy(() -> userService.banUser(moderatorId, TARGET_ID, LocalDateTime.now().minusDays(1), "Ban"))
+				.isInstanceOf(IllegalArgumentException.class).hasMessageContaining("future");
+
+		verify(userRepository, never()).save(target);
+		verify(outboxService, never()).enqueueUserEvent(any(), any(), any(), any());
+	}
+
+	@Test
 	void ban_user_denies_kazenomi_target() {
 		UUID moderatorId = UUID.fromString("11111111-1111-1111-1111-111111111111");
 		User moderator = buildUser();

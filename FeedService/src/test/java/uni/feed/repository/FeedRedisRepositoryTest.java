@@ -88,6 +88,16 @@ class FeedRedisRepositoryTest {
 	}
 
 	@Test
+	void trimUserFeed_removes_excess_posts() {
+		when(redis.opsForZSet()).thenReturn(zSetOps);
+		when(zSetOps.zCard("feed:user:user-123")).thenReturn(1200L);
+
+		feedRedisRepository.trimUserFeed("user-123", 1000);
+
+		verify(zSetOps).removeRange("feed:user:user-123", 0, 199);
+	}
+
+	@Test
 	void findFollowers_returns_set_of_followers() {
 		when(redis.opsForSet()).thenReturn(setOps);
 		when(setOps.members("feed:followers:author-123")).thenReturn(Set.of("follower-1", "follower-2"));

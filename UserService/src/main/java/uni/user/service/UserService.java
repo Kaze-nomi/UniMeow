@@ -314,6 +314,9 @@ public class UserService {
 		boolean permanentBan = bannedUntil == null;
 		String normalizedReason = reason == null || reason.isBlank() ? null : reason.trim();
 		LocalDateTime now = LocalDateTime.now();
+		if (!permanentBan && !bannedUntil.isAfter(now)) {
+			throw new IllegalArgumentException("Ban expiration must be in the future");
+		}
 
 		if (permanentBan) {
 			bannedGoogleAccountRepository

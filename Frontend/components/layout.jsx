@@ -477,12 +477,22 @@ function UniBadge({ uni, size = 36 }) {
 }
 
 function ThemeToggle() {
-  const [dark, setDark] = React.useState(document.documentElement.dataset.theme === 'dark');
+  const [dark, setDark] = React.useState(() => (window.UM_THEME?.getResolvedTheme?.()
+    || document.documentElement.dataset.theme) === 'dark');
+  React.useEffect(() => {
+    const h = (event) => setDark((event.detail?.theme || window.UM_THEME?.getResolvedTheme?.()) === 'dark');
+    window.addEventListener('um-theme-change', h);
+    return () => window.removeEventListener('um-theme-change', h);
+  }, []);
   const toggle = () => {
     const next = !dark;
     setDark(next);
-    document.documentElement.dataset.theme = next ? 'dark' : 'light';
-    localStorage.setItem('um-theme', next ? 'dark' : 'light');
+    if (window.UM_THEME?.apply) {
+      window.UM_THEME.apply(next ? 'dark' : 'light');
+    } else {
+      document.documentElement.dataset.theme = next ? 'dark' : 'light';
+      localStorage.setItem('um-theme', next ? 'dark' : 'light');
+    }
   };
   return (
     <button onClick={toggle} title="Сменить тему" style={{

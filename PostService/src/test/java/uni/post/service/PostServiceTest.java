@@ -373,6 +373,31 @@ class PostServiceTest {
 	}
 
 	@Test
+	void delete_all_content_by_author_emits_unlike_for_foreign_liked_posts() {
+		UUID foreignPostId = UUID.fromString("550e8400-e29b-41d4-a716-446655440099");
+		Post foreignPost = buildPost();
+		foreignPost.setId(foreignPostId);
+		foreignPost.setAuthorId(VIEWER_ID);
+		foreignPost.setLikesCount(3);
+
+		when(likeRepository.findPostIdsByUserId(AUTHOR_ID)).thenReturn(List.of(foreignPostId));
+		when(commentLikeRepository.findCommentIdsByUserId(AUTHOR_ID)).thenReturn(List.of());
+		when(commentRepository.findByAuthorId(AUTHOR_ID)).thenReturn(List.of());
+		when(postRepository.findByAuthorId(AUTHOR_ID)).thenReturn(List.of());
+		when(postRepository.findById(foreignPostId)).thenReturn(Optional.of(foreignPost));
+
+		postService.deleteAllContentByAuthor(AUTHOR_ID);
+
+		assertThat(foreignPost.getLikesCount()).isEqualTo(2);
+		verify(postRepository).save(foreignPost);
+		ArgumentCaptor<Map<String, Object>> payloadCaptor = ArgumentCaptor.forClass(Map.class);
+		verify(outboxService).enqueuePostEvent(eq("POST_UNLIKED"), eq(VIEWER_ID.toString()),
+				eq(foreignPostId.toString()), payloadCaptor.capture());
+		assertThat(payloadCaptor.getValue()).containsEntry("postId", foreignPostId.toString())
+				.containsEntry("userId", AUTHOR_ID.toString()).containsEntry("likesCount", 2);
+	}
+
+	@Test
 	void like_post_saves_like_and_increments_counter() {
 		Post post = buildPost();
 		when(postRepository.findById(POST_ID)).thenReturn(Optional.of(post));

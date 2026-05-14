@@ -36,6 +36,9 @@
     if (/comment not found/i.test(text)) return 'Комментарий не найден';
     if (/username.*(3-30|contain only|empty)|юзернейм/i.test(text)) return 'Юзернейм: 3-30 символов, только a-z, 0-9, _';
     if (/username.*(taken|already|exists)|already.*username/i.test(text)) return 'Этот никнейм уже занят';
+    if (/ban.*(future|expiration)|invalid ban expiration|bannedUntil/i.test(text)) {
+      return 'Срок бана должен быть положительным и заканчиваться в будущем';
+    }
     if (/content.*(blank|empty|required)|must not be blank|must not be empty/i.test(text)) return 'Добавьте текст записи';
     if (/too large|payload|max.*size/i.test(text)) return 'Файл слишком большой';
     if (/upload failed/i.test(text)) return 'Не удалось загрузить файл';

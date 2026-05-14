@@ -220,6 +220,7 @@ public class PostService {
 			if (post != null) {
 				post.setLikesCount(Math.max(0, post.getLikesCount() - 1));
 				postRepository.save(post);
+				enqueuePostUnlikeEvent(post, authorId);
 				decrementedPostLikes++;
 			}
 		}
@@ -334,6 +335,18 @@ public class PostService {
 		post.setLikesCount(Math.max(0, post.getLikesCount() - 1));
 		postRepository.save(post);
 
+		Map<String, Object> payload = new LinkedHashMap<>();
+		payload.put("postId", post.getId().toString());
+		payload.put("authorId", post.getAuthorId().toString());
+		payload.put("userId", userId.toString());
+		payload.put("likesCount", post.getLikesCount());
+		payload.put("createdAtMs", post.getCreatedAt().toInstant(java.time.ZoneOffset.UTC).toEpochMilli());
+		appendFeedScopePayload(payload, post);
+
+		outboxService.enqueuePostEvent("POST_UNLIKED", post.getAuthorId().toString(), post.getId().toString(), payload);
+	}
+
+	private void enqueuePostUnlikeEvent(Post post, UUID userId) {
 		Map<String, Object> payload = new LinkedHashMap<>();
 		payload.put("postId", post.getId().toString());
 		payload.put("authorId", post.getAuthorId().toString());

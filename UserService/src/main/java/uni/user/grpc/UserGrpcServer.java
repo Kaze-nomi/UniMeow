@@ -11,6 +11,7 @@ import uni.user.service.*;
 
 import java.util.UUID;
 import java.time.LocalDateTime;
+import java.time.format.DateTimeParseException;
 
 @GrpcService
 @RequiredArgsConstructor
@@ -359,9 +360,7 @@ public class UserGrpcServer extends UserServiceGrpc.UserServiceImplBase {
 	@Override
 	public void banUser(BanUserRequest req, StreamObserver<ModerationResponse> obs) {
 		try {
-			LocalDateTime bannedUntil = req.hasBannedUntil() && !req.getBannedUntil().isBlank()
-					? LocalDateTime.parse(req.getBannedUntil())
-					: null;
+			LocalDateTime bannedUntil = parseBannedUntil(req);
 			userService.banUser(UUID.fromString(req.getModeratorId()), UUID.fromString(req.getTargetUserId()),
 					bannedUntil, req.hasReason() ? req.getReason() : null);
 			obs.onNext(ModerationResponse.newBuilder().setSuccess(true).build());
@@ -372,6 +371,17 @@ public class UserGrpcServer extends UserServiceGrpc.UserServiceImplBase {
 			obs.onError(Status.INVALID_ARGUMENT.withDescription(e.getMessage()).asRuntimeException());
 		} catch (Exception e) {
 			obs.onError(Status.INTERNAL.withDescription(e.getMessage()).asRuntimeException());
+		}
+	}
+
+	private static LocalDateTime parseBannedUntil(BanUserRequest req) {
+		if (!req.hasBannedUntil() || req.getBannedUntil().isBlank()) {
+			return null;
+		}
+		try {
+			return LocalDateTime.parse(req.getBannedUntil());
+		} catch (DateTimeParseException e) {
+			throw new IllegalArgumentException("Invalid ban expiration date", e);
 		}
 	}
 

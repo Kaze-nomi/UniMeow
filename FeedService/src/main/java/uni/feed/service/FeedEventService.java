@@ -28,6 +28,9 @@ public class FeedEventService {
 	@Value("${app.feed.author-window-size:1000}")
 	private long authorWindowSize;
 
+	@Value("${app.feed.user-window-size:1000}")
+	private long userWindowSize;
+
 	@Value("${app.feed.uni-window-size:5000}")
 	private long uniWindowSize;
 
@@ -106,6 +109,7 @@ public class FeedEventService {
 		Set<String> followers = redisRepository.findFollowers(authorId);
 		for (String followerId : followers) {
 			redisRepository.addPostToUserFeed(followerId, postId, score);
+			redisRepository.trimUserFeed(followerId, userWindowSize);
 		}
 	}
 
@@ -209,6 +213,7 @@ public class FeedEventService {
 		for (Map.Entry<String, Double> entry : latestPosts.entrySet()) {
 			redisRepository.addPostToUserFeed(subscriberId, entry.getKey(), entry.getValue());
 		}
+		redisRepository.trimUserFeed(subscriberId, userWindowSize);
 	}
 
 	private void onUserUnfollowed(EventEnvelope event) {

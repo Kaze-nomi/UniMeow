@@ -96,9 +96,37 @@
   </style>
   <script>
     (function() {
-      const saved = localStorage.getItem('um-theme');
-      const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-      document.documentElement.dataset.theme = saved || (prefersDark ? 'dark' : 'light');
+      const media = window.matchMedia('(prefers-color-scheme: dark)');
+      const normalize = (value) => value === 'light' || value === 'dark' || value === 'system'
+        ? value
+        : 'system';
+      const preference = () => normalize(localStorage.getItem('um-theme'));
+      const resolve = (value) => normalize(value) === 'system'
+        ? (media.matches ? 'dark' : 'light')
+        : normalize(value);
+      const apply = (value, persist) => {
+        const nextPreference = normalize(value);
+        if (persist) localStorage.setItem('um-theme', nextPreference);
+        const nextTheme = resolve(nextPreference);
+        document.documentElement.dataset.theme = nextTheme;
+        document.documentElement.dataset.themePreference = nextPreference;
+        window.dispatchEvent(new CustomEvent('um-theme-change', {
+          detail: { preference: nextPreference, theme: nextTheme },
+        }));
+      };
+
+      window.UM_THEME = {
+        apply: (value) => apply(value, true),
+        getPreference: preference,
+        getResolvedTheme: () => document.documentElement.dataset.theme || resolve(preference()),
+      };
+      apply(preference(), false);
+
+      const onSystemThemeChange = () => {
+        if (preference() === 'system') apply('system', false);
+      };
+      if (media.addEventListener) media.addEventListener('change', onSystemThemeChange);
+      else if (media.addListener) media.addListener(onSystemThemeChange);
     })();
   </script>
   <!-- Yandex.Metrika counter -->

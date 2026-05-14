@@ -3,7 +3,7 @@
 
 
 function SettingsPage({ currentUser, onNavigate, onAccountDeleted }) {
-  const [theme, setTheme] = React.useState(document.documentElement.dataset.theme || 'light');
+  const [theme, setTheme] = React.useState(() => window.UM_THEME?.getPreference?.() || 'system');
   const [deleteLoading, setDeleteLoading] = React.useState(false);
   const [deleteError, setDeleteError] = React.useState('');
   const [deleteConfirmOpen, setDeleteConfirmOpen] = React.useState(false);
@@ -13,11 +13,20 @@ function SettingsPage({ currentUser, onNavigate, onAccountDeleted }) {
     window.addEventListener('resize', h);
     return () => window.removeEventListener('resize', h);
   }, []);
+  React.useEffect(() => {
+    const h = (event) => setTheme(event.detail?.preference || window.UM_THEME?.getPreference?.() || 'system');
+    window.addEventListener('um-theme-change', h);
+    return () => window.removeEventListener('um-theme-change', h);
+  }, []);
   const openModal = (type) => window.dispatchEvent(new CustomEvent('open-modal', { detail: type }));
   const apply = (t) => {
     setTheme(t);
-    document.documentElement.dataset.theme = t;
-    localStorage.setItem('um-theme', t);
+    if (window.UM_THEME?.apply) {
+      window.UM_THEME.apply(t);
+    } else {
+      document.documentElement.dataset.theme = t === 'system' ? 'light' : t;
+      localStorage.setItem('um-theme', t);
+    }
   };
 
   const ThemeOption = ({ value, label, preview }) => {
@@ -84,6 +93,7 @@ function SettingsPage({ currentUser, onNavigate, onAccountDeleted }) {
         <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
           <ThemeOption value="light" label="Светлая" preview={{ bg: '#ffffff', surface: '#f7f9f9', border: '#eff3f4', text: '#0f1419', muted: '#536471' }} />
           <ThemeOption value="dark"  label="Тёмная"     preview={{ bg: '#15202b', surface: '#1e2732', border: '#38444d', text: '#f7f9f9', muted: '#8b98a5' }} />
+          <ThemeOption value="system" label="Как в системе" preview={{ bg: 'linear-gradient(90deg, #ffffff 0 50%, #15202b 50% 100%)', surface: '#f7f9f9', border: '#8b98a5', text: '#0f1419', muted: '#536471' }} />
         </div>
       </div>
 
@@ -487,7 +497,7 @@ function VerifyModal({ open, onClose, currentUser, onUserUpdated }) {
 function formatVerificationError(e) {
   const message = e?.message || '';
   if (/mail service|почтовый сервис|smtp|mail delivery|unavailable/i.test(message)) {
-    return 'Почтовый сервис временно недоступен. Попробуйте позже.';
+    return 'Почтовый сервис временно недоступен. Попробуйте ещё раз позже.';
   }
   if (/unknown.?domain|not a registered university domain|domain .*registered/i.test(message)) {
     return 'Домен почты не зарегистрирован как университетский. Проверьте адрес или отправьте заявку на добавление ВУЗа.';
