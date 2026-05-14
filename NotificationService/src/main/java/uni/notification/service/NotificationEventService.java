@@ -71,7 +71,12 @@ public class NotificationEventService {
 	private static final long DEDUP_WINDOW_DAYS = 30;
 
 	private static boolean isDedupableType(String type) {
-		return "LIKE_POST".equals(type) || "LIKE_COMMENT".equals(type) || "FOLLOW".equals(type);
+		return switch (type) {
+			case "LIKE_POST", "LIKE_COMMENT", "FOLLOW", "MENTION_IN_POST", "MENTION_IN_COMMENT", "COMMENT_ON_POST",
+					"REPLY_TO_COMMENT", "ADMIN_GRANTED", "BANNED" ->
+				true;
+			default -> false;
+		};
 	}
 
 	private void addNotificationForSave(Notification notification, LocalDateTime dedupWindow,
@@ -250,7 +255,7 @@ public class NotificationEventService {
 		List<String> result = new ArrayList<>();
 		for (JsonNode item : node.get(field)) {
 			String val = item.asText(null);
-			if (val != null && !val.isBlank())
+			if (val != null && !val.isBlank() && !result.contains(val))
 				result.add(val);
 		}
 		return result;
