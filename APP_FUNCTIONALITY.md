@@ -573,6 +573,8 @@ query {
 | `user-banners` | Обложки/баннеры профилей |
 | `post-media` | Медиафайлы постов |
 
+Поддерживаемые изображения: SVG, PNG, JPEG, WEBP, GIF. GIF-файлы загружаются без сжатия, чтобы сохранялась анимация. Для `post-media` также поддерживаются MP4, WEBM, MOV, M4V, OGG/OGV.
+
 **Потребители:**
 
 - `APIGateway` принимает `POST /api/upload?bucket=...`, передает файл в `MediaService`, возвращает публичный MinIO URL.

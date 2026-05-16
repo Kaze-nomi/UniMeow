@@ -24,7 +24,7 @@ import java.util.Set;
 public class MinioService {
 
 	private static final Set<String> IMAGE_CONTENT_TYPES = Set.of("image/svg+xml", "image/png", "image/jpeg",
-			"image/webp");
+			"image/webp", "image/gif");
 
 	private static final Set<String> VIDEO_CONTENT_TYPES = Set.of("video/mp4", "video/webm", "video/quicktime",
 			"video/x-m4v", "video/ogg");

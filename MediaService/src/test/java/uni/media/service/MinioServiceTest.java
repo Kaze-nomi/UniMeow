@@ -62,6 +62,16 @@ class MinioServiceTest {
 	}
 
 	@Test
+	void upload_accepts_gif_image() throws Exception {
+		when(minioClient.putObject(any())).thenReturn(null);
+
+		String url = minioService.upload("post-media", "reaction.gif", "image/gif", new byte[]{1, 2, 3});
+
+		assertThat(url).isEqualTo("http://localhost:9000/post-media/reaction.gif");
+		verify(minioClient).putObject(any());
+	}
+
+	@Test
 	void upload_rejects_video_for_avatar_bucket() {
 		assertThatThrownBy(() -> minioService.upload("user-avatars", "clip.mp4", "video/mp4", new byte[]{1}))
 				.isInstanceOf(IllegalArgumentException.class).hasMessageContaining("Unsupported contentType");
