@@ -199,9 +199,19 @@
     if (query.includes('getPost')) return { getPost: withAuthor(byId(posts, variables.id)) };
     if (query.includes('getComments')) {
       const boost = 60 * 60 * 1000;
-      const postComments = comments.filter(c => c.postId === variables.postId)
+      const postComments = comments.filter(c => c.postId === variables.postId);
+      const roots = postComments.filter(c => !c.parentCommentId)
         .sort((a, b) => (Date.parse(b.createdAt) + (b.likesCount || 0) * boost) - (Date.parse(a.createdAt) + (a.likesCount || 0) * boost));
-      return { getComments: { comments: postComments, total: postComments.length } };
+      const repliesByParent = postComments.reduce((acc, c) => {
+        if (c.parentCommentId) (acc[c.parentCommentId] ||= []).push(c);
+        return acc;
+      }, {});
+      Object.values(repliesByParent).forEach(replies => replies.sort((a, b) => Date.parse(a.createdAt) - Date.parse(b.createdAt)));
+      const orderedComments = roots.flatMap(comment => [comment, ...(repliesByParent[comment.id] || [])]);
+      Object.entries(repliesByParent).forEach(([parentId, replies]) => {
+        if (!roots.some(comment => String(comment.id) === String(parentId))) orderedComments.push(...replies);
+      });
+      return { getComments: { comments: orderedComments, total: postComments.length } };
     }
     if (query.includes('adminImprovementSuggestions')) return { adminImprovementSuggestions: suggestions };
     if (query.includes('adminUniversityProposals')) return { adminUniversityProposals: universityProposals };

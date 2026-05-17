@@ -21,11 +21,15 @@ import uni.post.repository.PostRepository;
 
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
+import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 @Slf4j
 @Service
@@ -119,11 +123,7 @@ public class CommentService {
 		int resolvedPage = page >= 0 ? page : DEFAULT_PAGE;
 		int resolvedSize = size > 0 ? size : DEFAULT_SIZE;
 
-		List<Comment> sortedComments = commentRepository.findByPostId(postId).stream()
-				.sorted(Comparator.comparingDouble(this::recommendationScore).reversed()
-						.thenComparing(Comment::getCreatedAt, Comparator.reverseOrder())
-						.thenComparing(c -> c.getId().toString(), Comparator.reverseOrder()))
-				.toList();
+		List<Comment> sortedComments = sortCommentsForDisplay(commentRepository.findByPostId(postId));
 		long offset = (long) resolvedPage * resolvedSize;
 		int fromIndex = offset >= sortedComments.size() ? sortedComments.size() : (int) offset;
 		int toIndex = Math.min(fromIndex + resolvedSize, sortedComments.size());
@@ -135,6 +135,37 @@ public class CommentService {
 		}).toList();
 
 		return new CommentPageResult(results, sortedComments.size());
+	}
+
+	private List<Comment> sortCommentsForDisplay(List<Comment> comments) {
+		Map<UUID, List<Comment>> repliesByParent = new HashMap<>();
+		List<Comment> rootComments = new ArrayList<>();
+
+		for (Comment comment : comments) {
+			if (comment.getParentCommentId() == null) {
+				rootComments.add(comment);
+			} else {
+				repliesByParent.computeIfAbsent(comment.getParentCommentId(), ignored -> new ArrayList<>())
+						.add(comment);
+			}
+		}
+
+		rootComments.sort(Comparator.comparingDouble(this::recommendationScore).reversed()
+				.thenComparing(Comment::getCreatedAt, Comparator.reverseOrder())
+				.thenComparing(c -> c.getId().toString(), Comparator.reverseOrder()));
+		repliesByParent.values().forEach(replies -> replies
+				.sort(Comparator.comparing(Comment::getCreatedAt).thenComparing(c -> c.getId().toString())));
+
+		List<Comment> sortedComments = new ArrayList<>(comments.size());
+		for (Comment root : rootComments) {
+			sortedComments.add(root);
+			sortedComments.addAll(repliesByParent.getOrDefault(root.getId(), List.of()));
+		}
+
+		Set<UUID> rootCommentIds = rootComments.stream().map(Comment::getId).collect(Collectors.toSet());
+		repliesByParent.entrySet().stream().filter(entry -> !rootCommentIds.contains(entry.getKey()))
+				.sorted(Map.Entry.comparingByKey()).forEach(entry -> sortedComments.addAll(entry.getValue()));
+		return sortedComments;
 	}
 
 	@Transactional

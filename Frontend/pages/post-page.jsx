@@ -11,6 +11,7 @@ function PostPage({ postId, currentUser, onNavigate }) {
   const [likePulse, setLikePulse] = React.useState(false);
   const [commentText, setCommentText] = React.useState('');
   const [replyTo, setReplyTo] = React.useState(null);
+  const [replyMention, setReplyMention] = React.useState('');
   const [commenting, setCommenting] = React.useState(false);
   const [editModal, setEditModal] = React.useState(false);
   const [editContent, setEditContent] = React.useState('');
@@ -75,6 +76,43 @@ function PostPage({ postId, currentUser, onNavigate }) {
     } finally { setLiking(false); }
   };
 
+  const replyPrefix = (username) => username ? `@${username} ` : '';
+  const escapeRegExp = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const removeReplyMention = (value, username) => {
+    if (!username) return value;
+    return value.replace(new RegExp(`^@${escapeRegExp(username)}\\s*`), '');
+  };
+  const hasReplyMention = (value, username) => {
+    if (!username) return false;
+    return new RegExp(`^@${escapeRegExp(username)}(?:\\s|$)`).test(value);
+  };
+  const removeLeadingMention = (value) => value.replace(/^@\S+\s*/, '');
+
+  const handleReply = (parentComment, author) => {
+    const nextMention = author?.username || '';
+    const nextPrefix = replyPrefix(nextMention);
+
+    setReplyTo(parentComment);
+    setReplyMention(nextMention);
+    setCommentText(value => {
+      if (!nextPrefix) return value;
+      if (!value.trim()) return nextPrefix;
+      if (hasReplyMention(value, replyMention)) {
+        return nextPrefix + removeReplyMention(value, replyMention);
+      }
+      if (/^@\S+\s*/.test(value)) {
+        return nextPrefix + removeLeadingMention(value);
+      }
+      return nextPrefix + value;
+    });
+  };
+
+  const clearReply = () => {
+    setReplyTo(null);
+    setReplyMention('');
+    setCommentText(value => removeReplyMention(value, replyMention));
+  };
+
   const handleComment = async () => {
     if (!commentText.trim() || !currentUser) return;
     setCommenting(true);
@@ -85,6 +123,7 @@ function PostPage({ postId, currentUser, onNavigate }) {
       setPost(p => p ? { ...p, commentsCount: (p.commentsCount || 0) + 1 } : p);
       setCommentText('');
       setReplyTo(null);
+      setReplyMention('');
     } catch (e) { if (e.isUnauth) onNavigate('/login'); } finally { setCommenting(false); }
   };
 
@@ -125,6 +164,13 @@ function PostPage({ postId, currentUser, onNavigate }) {
     if (c.parentCommentId) (acc[c.parentCommentId] ||= []).push(c);
     return acc;
   }, {});
+  Object.values(repliesByParent).forEach(replies => {
+    replies.sort((a, b) => {
+      const byCreatedAt = new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
+      if (byCreatedAt !== 0) return byCreatedAt;
+      return String(a.id).localeCompare(String(b.id));
+    });
+  });
 
   if (loading) return <div style={{ display: 'flex', justifyContent: 'center', padding: 64 }}><Spinner size={36} /></div>;
   if (!post) return <EmptyState icon={<SearchIcon size={40} color="var(--text-muted)" />} title="Запись не найдена" />;
@@ -212,7 +258,7 @@ function PostPage({ postId, currentUser, onNavigate }) {
               {replyTo && (
                 <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'center', color: 'var(--text-muted)', fontSize: 13 }}>
                   <span>Ответ на комментарий</span>
-                  <button onClick={() => setReplyTo(null)} style={{ background: 'none', border: 'none', color: 'var(--accent)', cursor: 'pointer', fontFamily: 'inherit', fontSize: 13 }}>Сбросить</button>
+                  <button onClick={clearReply} style={{ background: 'none', border: 'none', color: 'var(--accent)', cursor: 'pointer', fontFamily: 'inherit', fontSize: 13 }}>Сбросить</button>
                 </div>
               )}
                   <textarea value={commentText} onChange={e => { setCommentText(e.target.value.slice(0, 500)); const t = e.target; t.style.height = 'auto'; t.style.height = Math.max(72, t.scrollHeight) + 'px'; }}
@@ -243,19 +289,13 @@ function PostPage({ postId, currentUser, onNavigate }) {
         {topComments.map(c => (
           <React.Fragment key={c.id}>
             <CommentItem comment={c} currentUser={currentUser} onNavigate={onNavigate}
-              onReply={(author) => {
-                setReplyTo(c);
-                if (author?.username && !commentText.trim()) setCommentText('@' + author.username + ' ');
-              }}
+              onReply={(author) => handleReply(c, author)}
               onDelete={(id) => setComments(cs => cs.filter(x => x.id !== id && x.parentCommentId !== id))}
               onLikeChange={handleCommentLikeChange}
               onUpdate={(id, content, updatedAt) => setComments(cs => cs.map(x => x.id === id ? { ...x, content, updatedAt: updatedAt || x.updatedAt } : x))} />
             {(repliesByParent[c.id] || []).map(reply => (
               <CommentItem key={reply.id} comment={reply} currentUser={currentUser} onNavigate={onNavigate} nested
-                onReply={(author) => {
-                  setReplyTo(c);
-                  if (author?.username && !commentText.trim()) setCommentText('@' + author.username + ' ');
-                }}
+                onReply={(author) => handleReply(c, author)}
                 onDelete={(id) => setComments(cs => cs.filter(x => x.id !== id))}
                 onLikeChange={handleCommentLikeChange}
                 onUpdate={(id, content, updatedAt) => setComments(cs => cs.map(x => x.id === id ? { ...x, content, updatedAt: updatedAt || x.updatedAt } : x))} />

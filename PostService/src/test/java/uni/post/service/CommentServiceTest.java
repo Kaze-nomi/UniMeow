@@ -72,6 +72,12 @@ class CommentServiceTest {
 				.createdAt(createdAt).updatedAt(createdAt).build();
 	}
 
+	private Comment buildReply(UUID id, UUID parentCommentId, LocalDateTime createdAt, int likesCount) {
+		Comment reply = buildComment(id, createdAt, likesCount);
+		reply.setParentCommentId(parentCommentId);
+		return reply;
+	}
+
 	@Test
 	void add_comment_saves_and_returns_comment() {
 		Comment comment = buildComment();
@@ -205,6 +211,22 @@ class CommentServiceTest {
 
 		assertThat(result.comments()).extracting(r -> r.comment().getId()).containsExactly(boosted.getId(),
 				newer.getId());
+	}
+
+	@Test
+	void get_comments_orders_replies_chronologically_after_parent() {
+		LocalDateTime base = LocalDateTime.of(2026, 1, 1, 12, 0);
+		Comment parent = buildComment(UUID.fromString("550e8400-e29b-41d4-a716-446655440031"), base, 0);
+		Comment newerReply = buildReply(UUID.fromString("550e8400-e29b-41d4-a716-446655440032"), parent.getId(),
+				base.plusMinutes(2), 0);
+		Comment boostedOlderReply = buildReply(UUID.fromString("550e8400-e29b-41d4-a716-446655440033"), parent.getId(),
+				base.plusMinutes(1), 5);
+		when(commentRepository.findByPostId(POST_ID)).thenReturn(List.of(newerReply, boostedOlderReply, parent));
+
+		var result = commentService.getComments(POST_ID, 0, 20, null);
+
+		assertThat(result.comments()).extracting(r -> r.comment().getId()).containsExactly(parent.getId(),
+				boostedOlderReply.getId(), newerReply.getId());
 	}
 
 	@Test
