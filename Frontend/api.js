@@ -4,14 +4,123 @@
   const GQL = BASE + '/graphql';
 
   let _refreshing = null;
+  const REFRESH_LOCK_KEY = 'um-refresh-lock';
+  const REFRESH_RESULT_KEY = 'um-refresh-result';
+  const REFRESH_LOCK_TTL_MS = 15000;
+  const REFRESH_WAIT_MS = 17000;
+  const RECENT_REFRESH_GRACE_MS = 5000;
+  const TAB_ID = (typeof crypto !== 'undefined' && crypto.randomUUID)
+    ? crypto.randomUUID()
+    : 'tab-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2);
+  let _lastRefreshSuccessAt = 0;
 
   async function tryRefresh() {
+    if (hasRecentRefresh()) return true;
     if (_refreshing) return _refreshing;
-    _refreshing = Promise.race([
-      fetch(BASE + '/api/auth/refresh', { method: 'POST', credentials: 'include' }).then(r => r.ok).catch(() => false),
-      new Promise(resolve => setTimeout(() => resolve(false), 5000)),
-    ]).finally(() => { _refreshing = null; });
+    _refreshing = refreshWithLock().finally(() => { _refreshing = null; });
     return _refreshing;
+  }
+
+  function readJson(key) {
+    try {
+      const raw = localStorage.getItem(key);
+      return raw ? JSON.parse(raw) : null;
+    } catch {
+      return null;
+    }
+  }
+
+  function writeJson(key, value) {
+    try {
+      localStorage.setItem(key, JSON.stringify(value));
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  function removeIfOwned(key, owner) {
+    try {
+      const current = readJson(key);
+      if (!current || current.owner === owner) localStorage.removeItem(key);
+    } catch {}
+  }
+
+  function acquireRefreshLock(owner) {
+    const now = Date.now();
+    const current = readJson(REFRESH_LOCK_KEY);
+    if (current?.expiresAt > now && current.owner !== owner) return false;
+
+    const lock = { owner, expiresAt: now + REFRESH_LOCK_TTL_MS };
+    if (!writeJson(REFRESH_LOCK_KEY, lock)) return true;
+    return readJson(REFRESH_LOCK_KEY)?.owner === owner;
+  }
+
+  function publishRefreshResult(owner, ok) {
+    if (ok) _lastRefreshSuccessAt = Date.now();
+    writeJson(REFRESH_RESULT_KEY, { owner, ok, at: Date.now() });
+  }
+
+  function hasRecentRefresh() {
+    const now = Date.now();
+    if (now - _lastRefreshSuccessAt <= RECENT_REFRESH_GRACE_MS) return true;
+
+    const result = readJson(REFRESH_RESULT_KEY);
+    return result?.ok === true && now - result.at <= RECENT_REFRESH_GRACE_MS;
+  }
+
+  function sleep(ms) {
+    return new Promise(resolve => setTimeout(resolve, ms));
+  }
+
+  async function waitForPeerRefresh(startedAt) {
+    const deadline = startedAt + REFRESH_WAIT_MS;
+    while (Date.now() < deadline) {
+      const result = readJson(REFRESH_RESULT_KEY);
+      if (result?.at >= startedAt) return result.ok === true;
+
+      const lock = readJson(REFRESH_LOCK_KEY);
+      if (!lock || lock.expiresAt <= Date.now()) return null;
+
+      await sleep(100);
+    }
+    return false;
+  }
+
+  async function requestRefresh() {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), REFRESH_LOCK_TTL_MS);
+    try {
+      const response = await fetch(BASE + '/api/auth/refresh', {
+        method: 'POST',
+        credentials: 'include',
+        signal: controller.signal,
+      });
+      return response.ok;
+    } catch {
+      return false;
+    } finally {
+      clearTimeout(timeout);
+    }
+  }
+
+  async function refreshWithLock() {
+    const startedAt = Date.now();
+    const owner = TAB_ID + '-' + startedAt.toString(36);
+
+    while (Date.now() - startedAt < REFRESH_WAIT_MS) {
+      if (acquireRefreshLock(owner)) {
+        const ok = await requestRefresh();
+        publishRefreshResult(owner, ok);
+        removeIfOwned(REFRESH_LOCK_KEY, owner);
+        return ok;
+      }
+
+      const peerResult = await waitForPeerRefresh(startedAt);
+      if (peerResult !== null) return peerResult;
+    }
+
+    return false;
   }
 
   const TRANSPORT_ERROR_RE = /end-of-stream|stream closed|connection closed|rst_stream|http2 exception|mid-frame|goaway|deadline.exceeded|upstream/i;
