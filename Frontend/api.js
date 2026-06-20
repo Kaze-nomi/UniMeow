@@ -9,13 +9,16 @@
   const REFRESH_LOCK_TTL_MS = 15000;
   const REFRESH_WAIT_MS = 17000;
   const RECENT_REFRESH_GRACE_MS = 5000;
+  const REFRESH_OK = 'ok';
+  const REFRESH_UNAUTHORIZED = 'unauthorized';
+  const REFRESH_TRANSIENT = 'transient';
   const TAB_ID = (typeof crypto !== 'undefined' && crypto.randomUUID)
     ? crypto.randomUUID()
     : 'tab-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2);
   let _lastRefreshSuccessAt = 0;
 
   async function tryRefresh() {
-    if (hasRecentRefresh()) return true;
+    if (hasRecentRefresh()) return REFRESH_OK;
     if (_refreshing) return _refreshing;
     _refreshing = refreshWithLock().finally(() => { _refreshing = null; });
     return _refreshing;
@@ -57,8 +60,8 @@
   }
 
   function publishRefreshResult(owner, ok) {
-    if (ok) _lastRefreshSuccessAt = Date.now();
-    writeJson(REFRESH_RESULT_KEY, { owner, ok, at: Date.now() });
+    if (ok === REFRESH_OK) _lastRefreshSuccessAt = Date.now();
+    writeJson(REFRESH_RESULT_KEY, { owner, ok: ok === REFRESH_OK, status: ok, at: Date.now() });
   }
 
   function hasRecentRefresh() {
@@ -77,14 +80,14 @@
     const deadline = startedAt + REFRESH_WAIT_MS;
     while (Date.now() < deadline) {
       const result = readJson(REFRESH_RESULT_KEY);
-      if (result?.at >= startedAt) return result.ok === true;
+      if (result?.at >= startedAt) return result.status || (result.ok === true ? REFRESH_OK : REFRESH_UNAUTHORIZED);
 
       const lock = readJson(REFRESH_LOCK_KEY);
       if (!lock || lock.expiresAt <= Date.now()) return null;
 
       await sleep(100);
     }
-    return false;
+    return REFRESH_TRANSIENT;
   }
 
   async function requestRefresh() {
@@ -96,9 +99,11 @@
         credentials: 'include',
         signal: controller.signal,
       });
-      return response.ok;
+      if (response.ok) return REFRESH_OK;
+      if (response.status === 401) return REFRESH_UNAUTHORIZED;
+      return REFRESH_TRANSIENT;
     } catch {
-      return false;
+      return REFRESH_TRANSIENT;
     } finally {
       clearTimeout(timeout);
     }
@@ -120,7 +125,7 @@
       if (peerResult !== null) return peerResult;
     }
 
-    return false;
+    return REFRESH_TRANSIENT;
   }
 
   const TRANSPORT_ERROR_RE = /end-of-stream|stream closed|connection closed|rst_stream|http2 exception|mid-frame|goaway|deadline.exceeded|upstream/i;
@@ -209,8 +214,11 @@
 
     if (resp.status === 401) {
       if (_authRetry) {
-        const ok = await tryRefresh();
-        if (ok) return gql(query, variables, false, _transportRetries);
+        const refresh = await tryRefresh();
+        if (refresh === REFRESH_OK) return gql(query, variables, false, _transportRetries);
+        if (refresh === REFRESH_TRANSIENT) {
+          throw new Error(userMessage('network'));
+        }
       }
       window.__authFailed && window.__authFailed();
       const err = new Error(userMessage('UNAUTHORIZED')); err.isUnauth = true; throw err;
@@ -226,8 +234,11 @@
         /unauth/i.test(e.message)
       );
       if (isUnauth && _authRetry) {
-        const ok = await tryRefresh();
-        if (ok) return gql(query, variables, false, _transportRetries);
+        const refresh = await tryRefresh();
+        if (refresh === REFRESH_OK) return gql(query, variables, false, _transportRetries);
+        if (refresh === REFRESH_TRANSIENT) {
+          throw new Error(userMessage('network'));
+        }
         window.__authFailed && window.__authFailed();
         const err = new Error(userMessage('UNAUTHORIZED')); err.isUnauth = true; throw err;
       }
@@ -376,9 +387,11 @@
 
     let { resp, data } = await doUpload();
     if (resp.status === 401) {
-      const ok = await tryRefresh();
-      if (ok) {
+      const refresh = await tryRefresh();
+      if (refresh === REFRESH_OK) {
         ({ resp, data } = await doUpload());
+      } else if (refresh === REFRESH_TRANSIENT) {
+        throw new Error(userMessage('network'));
       }
     }
     if (resp.status === 403 && /заблок|banned|blocked/i.test(data.error || '')) {

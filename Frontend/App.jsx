@@ -200,7 +200,7 @@ function App() {
       {renderPage()}
       <ComposeModal open={composeOpen && !currentUser?.isBanned} onClose={() => setComposeOpen(false)} currentUser={currentUser} onNavigate={navigate} onCreated={(newPost) => { if (newPost) window.dispatchEvent(new CustomEvent('um-post-created', { detail: newPost })); }} />
       <MockUserPicker onUserChange={handleUserUpdated} />
-      <AppModals />
+      <AppModals currentUser={currentUser} />
     </>
   );
 }

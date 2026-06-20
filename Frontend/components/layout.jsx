@@ -610,7 +610,7 @@ function TwitterModal({ open, onClose, title, width = 520, children }) {
 }
 
 
-function AppModals() {
+function AppModals({ currentUser }) {
   const [modal, setModal] = React.useState(null);
   const [modalPayload, setModalPayload] = React.useState(null);
   const [uniForm, setUniForm] = React.useState({
@@ -620,7 +620,7 @@ function AppModals() {
     universityId: '', facultyName: '', shortName: ''
   });
   const [programForm, setProgramForm] = React.useState({
-    facultyId: '', name: '', shortName: ''
+    universityId: '', facultyId: '', name: '', shortName: ''
   });
   const [universities, setUniversities] = React.useState([]);
   const [faculties, setFaculties] = React.useState([]);
@@ -635,25 +635,64 @@ function AppModals() {
       if (detail && typeof detail === 'object') {
         setModal(detail.type);
         setModalPayload(detail);
-        if (detail.facultyId) setProgramForm(f => ({ ...f, facultyId: detail.facultyId }));
+        if (detail.type === 'add-program') {
+          setProgramForm(f => ({
+            ...f,
+            universityId: detail.universityId || currentUser?.university?.id || '',
+            facultyId: detail.facultyId || currentUser?.faculty?.id || '',
+          }));
+        }
       } else {
         setModal(detail);
         setModalPayload(null);
+        if (detail === 'add-program') {
+          setProgramForm(f => ({
+            ...f,
+            universityId: currentUser?.university?.id || '',
+            facultyId: currentUser?.faculty?.id || '',
+          }));
+        }
       }
     };
     window.addEventListener('open-modal', h);
     return () => window.removeEventListener('open-modal', h);
-  }, []);
+  }, [currentUser?.university?.id, currentUser?.faculty?.id]);
   React.useEffect(() => {
     if (modal !== 'add-faculty' && modal !== 'add-program') return;
     API.gql(API.Q.listUniversities).then(d => setUniversities(d.listUniversities || [])).catch(() => setUniversities([]));
   }, [modal]);
   React.useEffect(() => {
     if (modal !== 'add-program') return;
-    const universityId = modalPayload?.universityId || universities[0]?.id;
+    const universityId = modalPayload?.universityId || currentUser?.university?.id || '';
     if (!universityId) return;
-    API.gql(API.Q.listFaculties, { universityId }).then(d => setFaculties(d.listFaculties || [])).catch(() => setFaculties([]));
-  }, [modal, modalPayload, universities]);
+    setProgramForm(f => f.universityId ? f : ({
+      ...f,
+      universityId,
+      facultyId: modalPayload?.facultyId || currentUser?.faculty?.id || f.facultyId,
+    }));
+  }, [modal, modalPayload, currentUser?.university?.id, currentUser?.faculty?.id]);
+  React.useEffect(() => {
+    if (modal !== 'add-program') return;
+    if (!programForm.universityId) {
+      setFaculties([]);
+      setProgramForm(f => f.facultyId ? ({ ...f, facultyId: '' }) : f);
+      return;
+    }
+    let cancelled = false;
+    API.gql(API.Q.listFaculties, { universityId: programForm.universityId })
+      .then(d => {
+        if (cancelled) return;
+        const nextFaculties = d.listFaculties || [];
+        setFaculties(nextFaculties);
+        setProgramForm(f => nextFaculties.some(faculty => faculty.id === f.facultyId) ? f : ({ ...f, facultyId: '' }));
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setFaculties([]);
+        setProgramForm(f => f.facultyId ? ({ ...f, facultyId: '' }) : f);
+      });
+    return () => { cancelled = true; };
+  }, [modal, programForm.universityId]);
 
   const close = () => { setModal(null); setModalPayload(null); setSubmitted(false); setError(''); setLoading(false); };
   const submitUniversity = async () => {
@@ -826,10 +865,17 @@ function AppModals() {
             <p style={{ margin: 0, fontSize: 14, color: 'var(--text-muted)', lineHeight: 1.6 }}>
               Программа создаётся внутри выбранного факультета после одобрения администратором. Посты автора будут попадать в ленту университета, факультета и программы автоматически.
             </p>
-            <select value={programForm.facultyId} onChange={e => setProgramForm(f => ({ ...f, facultyId: e.target.value }))} style={{
+            <select value={programForm.universityId} onChange={e => setProgramForm(f => ({ ...f, universityId: e.target.value, facultyId: '' }))} style={{
               padding: '10px 12px', borderRadius: 10, border: '1px solid var(--border)',
               background: 'var(--surface)', color: 'var(--text)', fontFamily: 'inherit',
             }}>
+              <option value="">Выберите университет *</option>
+              {universities.map(u => <option key={u.id} value={u.id}>{u.name} ({u.shortName})</option>)}
+            </select>
+            <select value={programForm.facultyId} onChange={e => setProgramForm(f => ({ ...f, facultyId: e.target.value }))} style={{
+              padding: '10px 12px', borderRadius: 10, border: '1px solid var(--border)',
+              background: 'var(--surface)', color: 'var(--text)', fontFamily: 'inherit',
+            }} disabled={!programForm.universityId}>
               <option value="">Выберите факультет *</option>
               {faculties.map(f => <option key={f.id} value={f.id}>{f.name} ({f.shortName})</option>)}
             </select>
