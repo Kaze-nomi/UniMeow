@@ -1,0 +1,59 @@
+name: Deploy
+on:
+  workflow_dispatch:
+    inputs:
+      release_id:
+        description: 'Published release ID, for example v1.0.0'
+        required: true
+        type: string
+permissions:
+  contents: read
+  packages: read
+concurrency:
+  group: production-release-lifecycle
+  cancel-in-progress: false
+jobs:
+  deploy:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    environment: production
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - name: Download and validate the selected published release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_ID: ${{ inputs.release_id }}
+        run: |
+          python3 -c 'import os,sys; sys.path.insert(0,"ops"); from release import RELEASE_ID; assert RELEASE_ID.fullmatch(os.environ["RELEASE_ID"])'
+          mkdir -p bundle
+          gh release download "$RELEASE_ID" --repo "$GITHUB_REPOSITORY" --dir bundle --pattern runtime.tar.gz --pattern release.json --pattern SHA256SUMS --pattern release.env
+          (cd bundle && sha256sum -c SHA256SUMS)
+          python3 -c 'import json,sys; sys.path.insert(0,"ops"); from release import validate; validate(json.load(open("bundle/release.json")))'
+      - name: Configure pinned SSH identity
+        env:
+          SSH_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+          KNOWN_HOSTS: ${{ secrets.SSH_KNOWN_HOSTS }}
+        run: |
+          install -d -m 700 ~/.ssh
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/id_ed25519
+          printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/id_ed25519 ~/.ssh/known_hosts
+      - name: Install and deploy without rebuilding
+        env:
+          RELEASE_ID: ${{ inputs.release_id }}
+          SSH_HOST: ${{ vars.SSH_HOST }}
+          SSH_USER: ${{ vars.SSH_USER }}
+          SSH_PORT: ${{ vars.SSH_PORT }}
+          GHCR_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          [[ "$SSH_HOST" =~ ^[a-zA-Z0-9.-]+$ && "$SSH_USER" =~ ^[a-z_][a-z0-9_-]*$ && "$SSH_PORT" =~ ^[0-9]+$ ]]
+          SSH=(ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -p "$SSH_PORT")
+          printf '%s' "$GHCR_TOKEN" | "${SSH[@]}" "$SSH_USER@$SSH_HOST" 'sudo /usr/local/sbin/unimeow-registry-login'
+          "${SSH[@]}" "$SSH_USER@$SSH_HOST" "mkdir -p /srv/unimeow/incoming/$RELEASE_ID"
+          scp -o BatchMode=yes -o StrictHostKeyChecking=yes -P "$SSH_PORT" bundle/* "$SSH_USER@$SSH_HOST:/srv/unimeow/incoming/$RELEASE_ID/"
+          "${SSH[@]}" "$SSH_USER@$SSH_HOST" "sudo /usr/local/sbin/unimeow-deploy $RELEASE_ID"
+      - name: Verify public readiness
+        env:
+          PUBLIC_URL: ${{ vars.PUBLIC_URL }}
+        run: curl --fail --silent --show-error --retry 3 "$PUBLIC_URL/actuator/health"

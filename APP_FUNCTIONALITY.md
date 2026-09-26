@@ -352,22 +352,32 @@ GraphQL-запросы ленты: `trendingFeed` (рекомендации с t
 | `ADMIN_GRANTED` | Пользователю выданы права администратора |
 | `USER_BANNED` | Пользователь заблокирован |
 
+User/Post используют общий publisher из модуля `outbox`: 16 постоянных шардов определяются по `(topic, event_key)` независимо от числа реплик. Короткая PostgreSQL-транзакция выдаёт владельцу lease и уникальный token; стабильный Kafka `transactional.id` на шард вытесняет старого producer. Владение повторно проверяется после `initTransactions`, перед отправками и commit; fenced producer освобождает попытку и не переинициализируется со старым token. Обращения к Kafka выполняются вне транзакции БД, число workers и размер batch ограничены.
+
+Триггер БД сериализует вставки одного ключа и задаёт монотонный `created_at`; изменяющие счётчики операции также блокируют общий ключ до чтения состояния. `eventSeq` в payload не добавлен. Публикация остаётся at-least-once: сбой после Kafka commit до отметки `published_at` повторяет исходный `eventId`. Защиту эффекта от повторов обеспечивают постоянные receipts в Redis у Feed и транзакционный inbox PostgreSQL у Notification; consumers используют `read_committed`. Ошибка публикации оставляет batch в outbox и задерживает этот шард до повторной попытки, сохраняя порядок.
+
 **FeedService** (`FeedKafkaConsumer` → `FeedEventService`) слушает оба топика и обновляет Redis sorted sets:
 
 - `POST_CREATED` — добавляет пост в university/faculty/program feeds или «Без вуза», author feed, trending feed и во все personal feeds подписчиков автора.
 - `POST_DELETED` — удаляет пост из всех feeds.
 - `POST_LIKED` / `POST_UNLIKED` — пересчитывает trending score поста.
 - `USER_FOLLOWED` — backfill последних 100 постов автора в personal feed подписчика.
-- `USER_UNFOLLOWED` — удаляет последние 500 постов автора из personal feed подписчика.
+- `USER_UNFOLLOWED` — удаляет посты автора из personal feed подписчика по индексу доставленных постов; при переходе со старой версии дополнительно проверяет ленту автора.
 - `USER_DELETED` — убирает подписки, связанные с аккаунтом, и чистит Redis-следы пользователя.
 - `USER_PERMANENT_BANNED` — убирает подписки, связанные с аккаунтом, и чистит Redis-следы пользователя.
 
-Дедупликация: каждый Kafka-event помечается в Redis на 7 дней (`feed:processed:event:{eventId}`).
+`FeedProjectionRepository` атомарно назначает событию номер первой обработки в `feed:receipt:{eventId}`. Незавершённая обработка при повторе получает тот же номер. Ограниченные Lua-операции обновляют фиксированные проекции и защищают рейтинг и подписки от возврата к более старому состоянию. Создание хронологических лент выполняется независимо от обновления рейтинга: более новый лайк не отменяет незавершённое создание. Рассылка подписчикам выполняется через SCAN и отдельные атомарные шаги; после прерывания проход можно начать заново. Завершение события записывается только после всех шагов.
+
+Удалённые посты и пользователи получают постоянные метки удаления. Проверка меток и текущей подписки выполняется внутри операции добавления в ленту, поэтому параллельные события из `post-events` и `user-events` не возвращают удалённый контент. Номер первой обработки защищает повторы уже виденных событий; порядок впервые полученных разных событий одного ключа обеспечивает Kafka и последовательность публикации источника. Общего порядка между топиками нет.
+
+Новые записи дедупликации, версии и метки удаления не имеют TTL. Это требует сохранения Redis volume, запрета вытеснения ключей и контроля роста памяти. Старый семидневный маркер `feed:processed:event:{eventId}`, обнаруженный при повторе, переносится в постоянную запись. Уже истёкшие до обновления маркеры восстановить невозможно; произвольно старый replay прежнего потока не получает автоматически новую гарантию дедупликации.
 
 **PostService** слушает `user-events`:
 
 - `USER_DELETED` — удаляет посты, комментарии, лайки и связанные счётчики пользователя; для чужих постов с удалёнными лайками пользователя публикует `POST_UNLIKED` с актуальным `likesCount`.
 - `USER_PERMANENT_BANNED` — удаляет посты, комментарии, лайки и связанные счётчики пользователя; для чужих постов с удалёнными лайками пользователя публикует `POST_UNLIKED` с актуальным `likesCount`.
+
+Удаление содержимого и исходящие outbox-события находятся в одной PostgreSQL-транзакции. Удаления одного пользователя сериализуются advisory lock; затронутые посты блокируются в едином порядке, совместимом с обычными изменениями лайков и комментариев. Повтор после commit видит уже удалённые строки и не создаёт повторных исходящих событий. Отдельная таблица inbox для этого идемпотентного эффекта не нужна.
 
 **NotificationService** слушает `post-events` и `user-events`:
 
@@ -384,10 +394,10 @@ GraphQL-запросы ленты: `trendingFeed` (рекомендации с t
 
 | Источник | DLQ topic | Когда используется |
 |---|---|---|
-| `UserService` outbox publisher | `user-events.dlq` | Ошибка публикации события `user-events` в Kafka |
-| `PostService` outbox publisher | `post-events.dlq` | Ошибка публикации события `post-events` в Kafka |
-| `FeedService` Kafka consumer | `feed-events.dlq` | Ошибка обработки события из `post-events` или `user-events` |
-| `NotificationService` Kafka consumer | `notification-events.dlq` | Ошибка обработки события из `post-events` или `user-events` |
+| `FeedService` Kafka consumer | `feed-events.dlq` | Невалидный формат события или обязательных полей |
+| `NotificationService` Kafka consumer | `notification-events.dlq` | Невалидный формат события или обязательных полей |
+
+Feed/Notification подтверждают offset после сохранённого результата либо после подтверждённой отправки исходного payload и метаданных ошибки в DLQ. Недоступность Redis/PostgreSQL/Kafka и прочие операционные ошибки повторяются с паузой без подтверждения offset и без автоматического переноса частично выполненной работы в DLQ. PostService также сохраняет проблемное сообщение для повторной обработки. Публикация в DLQ сама может повториться при сбое до подтверждения offset; для возврата исправленного события нужно сохранить исходный `eventId`. Все consumers читают Kafka с `read_committed`.
 
 Gateway получает список post IDs из `FeedService` по gRPC, затем заполняет посты через `PostService`.
 
@@ -395,7 +405,7 @@ Gateway получает список post IDs из `FeedService` по gRPC, з�
 
 ### Redis persistence
 
-Redis сконфигурирован с AOF (Append-Only File) + `appendfsync everysec`. Данные сохраняются на диск каждую секунду; при рестарте контейнера ленты восстанавливаются из `redis_data` volume.
+Для подтверждения Kafka-события после сохранения Redis-эффекта используются AOF, `appendfsync always` и `maxmemory-policy noeviction`. При рестарте проекции и постоянные записи дедупликации восстанавливаются из `redis_data` volume. Потеря этого volume теряет и защиту от повторов; восстановление должно использовать согласованный backup Redis и Kafka.
 
 ---
 
@@ -539,9 +549,9 @@ query {
 ### NotificationService
 
 - Слушает топики `post-events` и `user-events`.
-- При `USER_DELETED` и `USER_PERMANENT_BANNED` удаляет уведомления, где аккаунт был получателем, актором или user-сущностью.
-- Дедупликация Kafka-событий: таблица `processed_events` с eventId.
-- Дедупликация уведомлений по содержанию: для типов `LIKE_POST`, `LIKE_COMMENT`, `FOLLOW` при создании ищется существующее уведомление с тем же `(userId, actorId, type, entityId)` за последние 30 дней. Если найдено — обновляются `createdAt` и `isRead = false` (поднимает уведомление наверх и делает непрочитанным), новой записи не создаётся. Это защищает от спам-сценариев «поставил/снял лайк/подписку много раз». Для `COMMENT_ON_POST`, `REPLY_TO_COMMENT`, `MENTION_*` и других типов с уникальным контентом дедупликация не применяется — каждое событие уникально.
+- При `USER_DELETED` и `USER_PERMANENT_BANNED` удаляет уведомления, где аккаунт был получателем, актором или user-сущностью, и сохраняет постоянную метку в `notification_deleted_users`. Создание уведомлений и удаление пользователя берут одинаковые транзакционные блокировки участников в стабильном порядке. Позднее событие из другого топика не может заново создать уведомление с удалённым получателем или актором.
+- Дедупликация Kafka-событий: транзакционная вставка `eventId` в `processed_events` через `INSERT ... ON CONFLICT DO NOTHING` до эффекта. Одновременный дубль ждёт решения первой транзакции; ошибка откатывает и claim, и уведомления. Записи inbox сохраняются бессрочно, включая период после удаления старого уведомления.
+- Объединение уведомлений: для `LIKE_POST`, `LIKE_COMMENT`, `FOLLOW`, `MENTION_IN_POST`, `MENTION_IN_COMMENT`, `COMMENT_ON_POST`, `REPLY_TO_COMMENT`, `ADMIN_GRANTED`, `BANNED` ищется запись с тем же `(userId, actorId, type, entityId)` за последние 30 дней. Если она найдена, обновляются `createdAt` и `isRead = false`. Advisory lock бизнес-группы защищает и первый insert, когда строки ещё нет. Несколько групп блокируются в стабильном порядке. Разные комментарии имеют разные `entityId` и остаются отдельными уведомлениями.
 - Self-уведомления отфильтровываются на этапе создания: `actorId.equals(authorId)` для лайков, `parentAuthorId.equals(authorId)` для ответов, `mentionedUserId.equals(authorId)` для упоминаний, `subscriberId.equals(targetUserId)` для подписки. Пользователь не получает уведомлений о собственных действиях, даже если технически API позволяет лайкнуть свой пост или ответить на свой комментарий.
 - TTL: уведомления старше 90 дней удаляются по расписанию (каждую ночь в 3:00).
 - gRPC сервер: `GetNotifications`, `MarkAllRead`, `GetUnreadCount`.
@@ -765,8 +775,6 @@ markAllNotificationsRead: Boolean!
 | `UserService` | `user-events` | `PostService` | Очистка контента при удалении аккаунта и бессрочной блокировке |
 | `PostService` | `post-events` | `FeedService` | Создание/удаление постов, пересчёт рейтинга при лайках |
 | `PostService` | `post-events` | `NotificationService` | Лайки, комментарии, ответы, упоминания |
-| `UserService` | `user-events.dlq` | — | Ошибки публикации `user-events` |
-| `PostService` | `post-events.dlq` | — | Ошибки публикации `post-events` |
 | `FeedService` | `feed-events.dlq` | — | Ошибки обработки событий ленты |
 | `NotificationService` | `notification-events.dlq` | — | Ошибки обработки событий уведомлений |
 
@@ -971,7 +979,7 @@ Prometheus собирает стандартные Micrometer/Spring Boot мет
 
 ## 19. Миграции базы данных
 
-### UserService (V1–V9)
+### UserService (V1–V11)
 
 | Версия | Содержимое |
 |---|---|
@@ -984,8 +992,10 @@ Prometheus собирает стандартные Micrometer/Spring Boot мет
 | V7 | `faculty_proposals` |
 | V8 | `program_proposals` |
 | V9 | `idempotency_keys` |
+| V10 | `banned_google_accounts` |
+| V11 | `outbox_shard_owners`, `outbox_key_clocks`, функция назначения 16 шардов, индекс непубликованных событий и триггер порядка вставок |
 
-### PostService (V1–V6)
+### PostService (V1–V7)
 
 | Версия | Содержимое |
 |---|---|
@@ -995,13 +1005,15 @@ Prometheus собирает стандартные Micrometer/Spring Boot мет
 | V4 | `comment_likes` |
 | V5 | `outbox_events` |
 | V6 | `idempotency_keys` |
+| V7 | `outbox_shard_owners`, `outbox_key_clocks`, функция назначения 16 шардов, индекс непубликованных событий и триггер порядка вставок |
 
-### NotificationService (V1–V2)
+### NotificationService (V1–V3)
 
 | Версия | Содержимое |
 |---|---|
 | V1 | `notifications` (user_id, actor_id, type, entity_id, entity_type, parent_entity_id, is_read, created_at) |
 | V2 | `processed_events` (event_id, processed_at) |
+| V3 | `notification_deleted_users` — постоянные метки удаления для защиты от поздних событий другого топика |
 
 ---
 

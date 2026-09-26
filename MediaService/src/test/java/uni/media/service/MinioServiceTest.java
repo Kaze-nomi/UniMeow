@@ -103,4 +103,28 @@ class MinioServiceTest {
 
 		verify(minioClient, times(4)).setBucketPolicy(any());
 	}
+
+	@Test
+	void ensureBuckets_accepts_bucket_created_by_another_replica() throws Exception {
+		var error = org.mockito.Mockito.mock(io.minio.messages.ErrorResponse.class);
+		when(error.code()).thenReturn("BucketAlreadyOwnedByYou");
+		var conflict = new io.minio.errors.ErrorResponseException(error, null, "concurrent creation");
+		org.mockito.Mockito.doThrow(conflict).when(minioClient).makeBucket(any());
+
+		minioService.ensureBuckets();
+
+		verify(minioClient, times(4)).setBucketPolicy(any());
+	}
+
+	@Test
+	void ensureBuckets_does_not_hide_permission_or_foreign_bucket_errors() throws Exception {
+		var error = org.mockito.Mockito.mock(io.minio.messages.ErrorResponse.class);
+		when(error.code()).thenReturn("AccessDenied");
+		var denied = new io.minio.errors.ErrorResponseException(error, null, "denied");
+		org.mockito.Mockito.doThrow(denied).when(minioClient).makeBucket(any());
+
+		assertThatThrownBy(() -> minioService.ensureBuckets()).isInstanceOf(IllegalStateException.class)
+				.hasCause(denied);
+		org.mockito.Mockito.verify(minioClient, org.mockito.Mockito.never()).setBucketPolicy(any());
+	}
 }

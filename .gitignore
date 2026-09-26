@@ -35,6 +35,13 @@ build
 .DS_Store
 
 .env
+.env.prod
+.env.*.local
+.agent-private/
+ADENT_TASK_CONTINUATION.md
+AGENT_TASK_CONTINUATION.md
+__pycache__/
+*.pyc
 
 xNotes
 

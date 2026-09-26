@@ -1,7 +1,12 @@
 server:
+  shutdown: graceful
   port: 9003
 
 spring:
+  main:
+    banner-mode: 'off'
+  lifecycle:
+    timeout-per-shutdown-phase: 35s
   application:
     name: media-service
 
@@ -19,6 +24,7 @@ app:
 
 grpc:
   server:
+    shutdown-grace-period: 30s
     port: 9093
     permit-keep-alive-without-calls: true
     permit-keep-alive-time: 20s
@@ -28,6 +34,8 @@ eureka:
     serviceUrl:
       defaultZone: ${EUREKA_CLIENT_SERVICEURL_DEFAULTZONE:http://localhost:8761/eureka/}
   instance:
+    instance-id: ${spring.application.name}:${HOSTNAME:${random.uuid}}
+    prefer-ip-address: true
     lease-renewal-interval-in-seconds: 5
     lease-expiration-duration-in-seconds: 15
 
@@ -38,8 +46,18 @@ management:
         include: health,info,prometheus,metrics
   endpoint:
     health:
-      show-details: always
+      show-details: never
+      probes:
+        enabled: true
   metrics:
     export:
       prometheus:
         enabled: true
+
+logging:
+  structured:
+    format:
+      console: ecs
+    json:
+      add:
+        instance: ${HOSTNAME:${spring.application.name}}
