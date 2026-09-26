@@ -1,11 +1,6 @@
 FROM node:20-alpine AS build
 WORKDIR /app
 
-ARG VITE_API_BASE=http://localhost:8081
-ENV VITE_API_BASE=$VITE_API_BASE
-ARG MINIO_PUBLIC_URL=http://localhost:9000
-ENV MINIO_PUBLIC_URL=$MINIO_PUBLIC_URL
-
 COPY Frontend/package.json Frontend/yarn.lock ./
 RUN yarn install
 
@@ -13,6 +8,8 @@ COPY Frontend/ ./
 RUN yarn build
 
 FROM nginx:1.27-alpine
+RUN apk add --no-cache jq
+COPY --chmod=755 Frontend/docker-entrypoint.d/20-runtime-config.sh /docker-entrypoint.d/
 COPY Frontend/nginx.conf /etc/nginx/conf.d/default.conf
 COPY --from=build /app/dist /usr/share/nginx/html
 COPY Frontend/logo.png /usr/share/nginx/html/logo.png

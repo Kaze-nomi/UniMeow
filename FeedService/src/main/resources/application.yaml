@@ -1,7 +1,10 @@
 server:
+  shutdown: graceful
   port: 9002
 
 spring:
+  lifecycle:
+    timeout-per-shutdown-phase: 30s
   application:
     name: feed-service
   data:
@@ -75,3 +78,11 @@ management:
     export:
       prometheus:
         enabled: true
+
+logging:
+  structured:
+    format:
+      console: logstash
+    json:
+      add:
+        service: ${spring.application.name}

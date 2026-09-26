@@ -1,4 +1,5 @@
 server:
+  shutdown: graceful
   port: 8080
   forward-headers-strategy: framework
 
@@ -13,8 +14,12 @@ app:
     user-read-deadline-ms: ${APP_GRPC_USER_READ_DEADLINE_MS:2000}
 
 spring:
+  lifecycle:
+    timeout-per-shutdown-phase: 30s
   application:
     name: api-gateway
+  session:
+    timeout: 10m
   codec:
     max-in-memory-size: 12MB
   webflux:
@@ -109,3 +114,11 @@ management:
     export:
       prometheus:
         enabled: true
+
+logging:
+  structured:
+    format:
+      console: logstash
+    json:
+      add:
+        service: ${spring.application.name}

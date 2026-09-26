@@ -1,7 +1,10 @@
 server:
+  shutdown: graceful
   port: 9003
 
 spring:
+  lifecycle:
+    timeout-per-shutdown-phase: 30s
   application:
     name: media-service
 
@@ -43,3 +46,11 @@ management:
     export:
       prometheus:
         enabled: true
+
+logging:
+  structured:
+    format:
+      console: logstash
+    json:
+      add:
+        service: ${spring.application.name}
