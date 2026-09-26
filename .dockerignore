@@ -27,6 +27,7 @@ Thumbs.db
 .env*
 **/.env*
 AGENT_TASK.md
+AGENT_TASK_CONTINUATION.md
 ADENT_TASK_CONTINUATION.md
 *PLAN.md
 ОТЧЕТ.md

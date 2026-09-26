@@ -6,13 +6,25 @@
     path: /var/backups/unimeow
     prefix: unimeow-backup-
   register: backup_work
-- name: Back up and verify all three databases
+- name: Back up and verify PostgreSQL, Redis and MinIO
   block:
     - name: Read the existing PostgreSQL containers
       community.docker.docker_container_info:
         name: "uni-postgres-{{ item }}"
       loop: [user, post, notification]
       register: backup_sources
+      no_log: true
+    - name: Read the original Redis and MinIO containers
+      community.docker.docker_container_info:
+        name: "uni-{{ item }}"
+      loop: [redis, minio]
+      register: backup_stores
+      no_log: true
+    - name: Preserve the MinIO credentials for the isolated check
+      ansible.builtin.set_fact:
+        backup_minio_env:
+          MINIO_ROOT_USER: "{{ backup_stores.results[1].container.Config.Env | select('match', '^MINIO_ROOT_USER=') | first | regex_replace('^MINIO_ROOT_USER=', '') }}"
+          MINIO_ROOT_PASSWORD: "{{ backup_stores.results[1].container.Config.Env | select('match', '^MINIO_ROOT_PASSWORD=') | first | regex_replace('^MINIO_ROOT_PASSWORD=', '') }}"
       no_log: true
     - name: Check that the temporary container name is unused
       community.docker.docker_container_info:
@@ -33,9 +45,22 @@
       ansible.builtin.command:
         argv: [docker, cp, "uni-postgres-{{ item }}:/tmp/{{ backup_work.path | basename }}.dump", "{{ backup_work.path }}/{{ item }}.dump"]
       loop: [user, post, notification]
-    - name: Package the three databases together
+    - name: Flush Redis into its existing data directory
+      community.docker.docker_container_exec:
+        container: "{{ backup_stores.results[0].container.Id }}"
+        argv: [redis-cli, SAVE]
+      register: backup_redis_save
+      failed_when: backup_redis_save.rc != 0 or backup_redis_save.stdout != 'OK'
+    - name: Stop only the original Redis and MinIO for a consistent copy
       ansible.builtin.command:
-        argv: [tar, -czf, "{{ backup_work.path }}/latest.tar.gz", -C, "{{ backup_work.path }}", user.dump, post.dump, notification.dump]
+        argv: "{{ ['docker', 'stop', '--time', '60'] + (backup_stores.results | map(attribute='container.Id') | list) }}"
+    - name: Copy complete data directories including AOF and MinIO metadata
+      ansible.builtin.command:
+        argv: [docker, cp, -a, "uni-{{ item }}:/data/.", "{{ backup_work.path }}/{{ item }}"]
+      loop: [redis, minio]
+    - name: Package the five stores in one archive
+      ansible.builtin.command:
+        argv: [tar, --numeric-owner, -czf, "{{ backup_work.path }}/latest.tar.gz", -C, "{{ backup_work.path }}", user.dump, post.dump, notification.dump, redis, minio]
     - ansible.builtin.file:
         path: "{{ backup_work.path }}/latest.tar.gz"
         mode: '0600'
@@ -72,6 +97,78 @@
       loop: [user, post, notification]
       register: backup_restore
       failed_when: backup_restore.rc != 0
+      no_log: true
+    - name: Extract the verified archive for the other restore checks
+      ansible.builtin.command:
+        argv: [tar, --numeric-owner, -xzf, "{{ backup_work.path }}/latest.tar.gz", -C, "{{ backup_work.path }}"]
+    - name: Create isolated Redis with the original image and AOF settings
+      community.docker.docker_container:
+        name: "{{ backup_work.path | basename }}-redis"
+        image: "{{ backup_stores.results[0].container.Image }}"
+        pull: never
+        network_mode: none
+        tmpfs: [/data]
+        working_dir: /tmp/restore
+        command: "{{ backup_stores.results[0].container.Config.Cmd + ['--dir', '/tmp/restore'] }}"
+        state: present
+      register: backup_redis
+    - name: Create isolated MinIO with the original image
+      community.docker.docker_container:
+        name: "{{ backup_work.path | basename }}-minio"
+        image: "{{ backup_stores.results[1].container.Image }}"
+        pull: never
+        network_mode: none
+        tmpfs: [/data]
+        env: "{{ backup_minio_env }}"
+        command: [server, /tmp/restore]
+        state: present
+      register: backup_minio
+      no_log: true
+    - name: Copy the restored files into the temporary containers
+      ansible.builtin.command:
+        argv: [docker, cp, -a, "{{ backup_work.path }}/{{ item }}/.", "{{ backup_work.path | basename }}-{{ item }}:/tmp/restore"]
+      loop: [redis, minio]
+    - name: Start the two isolated stores
+      ansible.builtin.command:
+        argv: [docker, start, "{{ backup_redis.container.Id }}", "{{ backup_minio.container.Id }}"]
+    - name: Verify Redis loaded the restored RDB and AOF
+      community.docker.docker_container_exec:
+        container: "{{ backup_redis.container.Id }}"
+        argv: [redis-cli, PING]
+      register: backup_redis_ready
+      until: backup_redis_ready.rc | default(1) == 0 and backup_redis_ready.stdout | default('') == 'PONG'
+      retries: 30
+      delay: 2
+    - name: Check the Redis RDB checksum
+      community.docker.docker_container_exec:
+        container: "{{ backup_redis.container.Id }}"
+        argv: [redis-check-rdb, /tmp/restore/dump.rdb]
+      register: backup_rdb
+      failed_when: backup_rdb.rc != 0
+    - name: Verify MinIO metadata and read a restored object
+      module_defaults:
+        community.docker.docker_container_exec:
+          container: "{{ backup_minio.container.Id }}"
+          env:
+            MC_HOST_backup: "http://{{ backup_minio_env.MINIO_ROOT_USER | urlencode | replace('/', '%2F') }}:{{ backup_minio_env.MINIO_ROOT_PASSWORD | urlencode | replace('/', '%2F') }}@127.0.0.1:9000"
+      no_log: true
+      block:
+        - community.docker.docker_container_exec:
+            argv: [mc, ready, backup]
+            timeout: 120
+          register: backup_minio_ready
+          failed_when: backup_minio_ready.rc != 0
+        - community.docker.docker_container_exec:
+            argv: [mc, --json, ls, --recursive, backup]
+          register: backup_objects
+          failed_when: backup_objects.rc != 0
+        - ansible.builtin.set_fact:
+            backup_object_paths: "{{ backup_objects.stdout_lines | map('from_json') | selectattr('type', 'equalto', 'file') | map(attribute='key') | list }}"
+        - community.docker.docker_container_exec:
+            argv: [mc, cp, "backup/{{ backup_object_paths | first }}", /tmp/verified-object]
+          register: backup_object_read
+          failed_when: backup_object_read.rc != 0
+          when: backup_object_paths | length > 0
     - name: Flush the verified archive before publication
       ansible.builtin.command:
         argv: [sync, -f, "{{ backup_work.path }}/latest.tar.gz"]
@@ -83,12 +180,14 @@
         argv: [sync, -f, /var/backups/unimeow]
 
   always:
-    - name: Remove only the created restore container
+    - name: Remove only the created restore containers
       community.docker.docker_container:
-        name: "{{ backup_check.container.Id }}"
+        name: "{{ item.container.Id }}"
         state: absent
         keep_volumes: true
-      when: backup_check.container.Id is defined
+      loop: "{{ [backup_check | default({}), backup_redis | default({}), backup_minio | default({})] }}"
+      when: item.container.Id is defined
+      no_log: true
     - name: Remove only this run's temporary dump files
       community.docker.docker_container_exec:
         container: "uni-postgres-{{ item }}"
@@ -96,3 +195,8 @@
       loop: [user, post, notification]
     - name: Remove this run's candidate directory
       ansible.builtin.file: {path: "{{ backup_work.path }}", state: absent}
+    - name: Restart the same original Redis and MinIO containers
+      ansible.builtin.command:
+        argv: [docker, start, "{{ item.container.Id }}"]
+      loop: "{{ backup_stores.results | default([]) | selectattr('container', 'defined') | rejectattr('container', 'none') | list }}"
+      no_log: true

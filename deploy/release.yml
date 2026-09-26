@@ -24,6 +24,13 @@
       ansible.builtin.assert:
         that: version is match('^v[0-9]+\.[0-9]+\.[0-9]+$')
 
+    - name: Install the Docker module dependency
+      ansible.builtin.apt:
+        name: python3-requests
+        state: present
+        update_cache: true
+        cache_valid_time: 86400
+
     - name: Create private backup directory
       ansible.builtin.file:
         path: "{{ backup_dir }}"
@@ -57,9 +64,20 @@
       register: current_readiness
       failed_when: false
 
+    - name: Check each Java service before replacing its backup
+      community.docker.docker_container_info:
+        name: "{{ item }}"
+      loop: [uni-eureka, uni-media-service, uni-user-service, uni-post-service, uni-feed-service, uni-notification-service, uni-api-gateway]
+      register: current_services
+      no_log: true
+
     - name: Decide whether the running installation can replace its backup
       ansible.builtin.set_fact:
-        make_backup: "{{ applications | difference(running.stdout_lines) | length == 0 and current_readiness.status == 200 and (current_readiness.json | default({})).get('status') == 'UP' }}"
+        make_backup: >-
+          {{ applications | difference(running.stdout_lines) | length == 0
+             and current_readiness.status == 200
+             and (current_readiness.json | default({})).get('status') == 'UP'
+             and current_services.results | map(attribute='container.State.Health.Status', default='missing') | unique | list == ['healthy'] }}
 
     - name: Check for the last verified backup
       ansible.builtin.stat:
