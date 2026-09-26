@@ -22,6 +22,7 @@ import urllib.request
 import uuid
 
 from release import SERVICES
+import drain
 import smoke
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -34,7 +35,7 @@ INFRA_DEFAULTS = {
     'POSTGRES_IMAGE': 'postgres@sha256:4e6e670bb069649261c9c18031f0aded7bb249a5b6664ddec29c013a89310d50',
     'REDIS_IMAGE': 'redis@sha256:6ab0b6e7381779332f97b8ca76193e45b0756f38d4c0dcda72dbb3c32061ab99',
     'KAFKA_IMAGE': 'apache/kafka@sha256:3f7b939115cd4872e9cee9369d80bd69712fde55f9902f46d793f64848dedc75',
-    'MINIO_IMAGE': 'minio/minio@sha256:14cea493d9a34af32f524e538b8346cf79f3321eff8e708c1e2960462bd8936e',
+    'MINIO_IMAGE': 'ghcr.io/coollabsio/minio:RELEASE.2025-10-15T17-29-55Z@sha256:4f75fd76598afa23919555d1363e1fb13c632d9bcd4ce8edcf21d3cca2ed0579',
 }
 
 
@@ -75,7 +76,9 @@ def wait(check, label, seconds=180):
 def local_daemon_only():
     context = os.environ.get('DOCKER_CONTEXT') or run('docker', 'context', 'show', capture=True).stdout.strip()
     data = json_output('docker', 'context', 'inspect', context)[0]
-    host = os.environ.get('DOCKER_HOST') or data['Endpoints']['docker']['Host']
+    # Docker gives an explicit context precedence over DOCKER_HOST.
+    host = (data['Endpoints']['docker']['Host'] if os.environ.get('DOCKER_CONTEXT')
+            else os.environ.get('DOCKER_HOST') or data['Endpoints']['docker']['Host'])
     if not host.startswith(('unix://', 'npipe://', 'tcp://127.0.0.1:', 'tcp://localhost:')):
         raise RuntimeError('Verification requires a local Docker daemon; remote contexts are refused')
 
@@ -207,15 +210,17 @@ def registry(port, service, expected):
 
 
 def probe_routing(base):
+    query = ('query{listUniversities{id} trendingFeed(size:1){posts{id}} '
+             'getUserPosts(userId:"00000000-0000-0000-0000-000000000000",size:1){posts{id}}}')
     request = urllib.request.Request(base.rstrip('/') + '/graphql',
-        data=json.dumps({'query': 'query{listUniversities{id} trendingFeed(size:1){posts{id}}}'}).encode(),
+        data=json.dumps({'query': query}).encode(),
         headers={'Content-Type': 'application/json'})
     with urllib.request.urlopen(request, timeout=15) as response:
         result = json.load(response)
     if result.get('errors'):
         raise RuntimeError('Anonymous routing probe failed')
     data = result.get('data', {})
-    return 'listUniversities' in data and 'trendingFeed' in data
+    return all(field in data for field in ('listUniversities', 'trendingFeed', 'getUserPosts'))
 
 
 def verify_images(project, config):
@@ -254,7 +259,8 @@ def media_roundtrip(project, ports):
                 headers={'Content-Type': 'multipart/form-data; boundary=' + boundary, 'Cookie': 'ACCESS_TOKEN=' + token})
             with urllib.request.urlopen(request, timeout=30) as response:
                 url = json.load(response)['url']
-            if not url.startswith(f'http://127.0.0.1:{ports["minio"]}/post-media/{user}/'):
+            # MediaService normalizes the upload's user/object separator to '-'.
+            if not url.startswith(f'http://127.0.0.1:{ports["minio"]}/post-media/{user}-'):
                 raise RuntimeError('Media returned an unexpected public URL')
             with urllib.request.urlopen(url, timeout=15) as response:
                 if response.read() != payload:
@@ -370,6 +376,7 @@ def verify(release_env, output):
         smoke_scenario(project, ports)
         verify_images(project, config)
         report['sigkill'] = 'PostService replaced from the same immutable image; event flow recovered'
+        report['drain'] = drain.drain(project, timeout_seconds=300)
         report['json_logs'] = {}
         for service in sorted(JAVA):
             container = running(project, service)[0]

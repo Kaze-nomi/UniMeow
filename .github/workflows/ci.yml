@@ -47,4 +47,4 @@ jobs:
         working-directory: Frontend
         run: yarn install --frozen-lockfile && yarn test && yarn build
       - name: Backup, release validation and deployment state tests
-        run: python3 -m unittest discover -s ops/tests -v
+        run: sudo python3 -m unittest discover -s ops/tests -v

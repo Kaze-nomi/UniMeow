@@ -120,14 +120,6 @@ jobs:
           RELEASE_ID: ${{ inputs.release_id }}
           OWNER: ${{ github.repository_owner }}
         run: python3 ops/release.py --release-id "$RELEASE_ID" --commit "$GITHUB_SHA" --build-id "$GITHUB_RUN_ID" --owner "$OWNER"
-      - name: Preserve and mirror the exact baseline MinIO image
-        env:
-          GH_TOKEN: ${{ github.token }}
-          OWNER: ${{ github.repository_owner }}
-        run: |
-          mkdir -p baseline-infrastructure
-          gh release download baseline-20260926 --repo "$GITHUB_REPOSITORY" --dir baseline-infrastructure --pattern minio-image.tar --pattern baseline.json
-          python3 ops/mirror_minio.py baseline-infrastructure "ghcr.io/${OWNER,,}/unimeow-minio:baseline-20260926" >> "$GITHUB_ENV"
       - name: Verify the exact published images on synthetic data
         run: python3 ops/verify_release.py --release-env release-output/release.env
       - name: Publish manifest and launch bundle
@@ -135,5 +127,5 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           RELEASE_ID: ${{ inputs.release_id }}
         run: |
-          printf 'Verified linux/amd64 release for commit %s.\n\nEight application images are fixed by digest. The launch bundle contains migration commands and compatibility metadata. Production is updated only through the separate Deploy workflow.\n' "$GITHUB_SHA" > release-notes.txt
+          printf 'Production версия %s\n' "${RELEASE_ID#v}" > release-notes.txt
           gh release create "$RELEASE_ID" --target "$GITHUB_SHA" --title "$RELEASE_ID" --notes-file release-notes.txt release-output/release.json release-output/release.env release-output/runtime.tar.gz release-output/SHA256SUMS

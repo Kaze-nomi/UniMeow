@@ -15,6 +15,8 @@ SERVICES = {
 }
 RELEASE_ID = re.compile(r'^v[0-9]+\.[0-9]+\.[0-9]+(?:-[a-zA-Z0-9][a-zA-Z0-9.-]{0,40})?$')
 IMAGE = re.compile(r'^ghcr\.io/[a-z0-9-]+/unimeow-[a-z-]+@sha256:[0-9a-f]{64}$')
+APPROVED_MINIO_IMAGE = ('ghcr.io/coollabsio/minio:RELEASE.2025-10-15T17-29-55Z@'
+                        'sha256:4f75fd76598afa23919555d1363e1fb13c632d9bcd4ce8edcf21d3cca2ed0579')
 
 
 def validate(manifest):
@@ -31,6 +33,8 @@ def validate(manifest):
             raise ValueError('Image reference must match its service and exact GHCR digest')
     if manifest.get('migration_services') != ['user-migrate','post-migrate','notification-migrate']:
         raise ValueError('Release must contain exactly the three approved migration services')
+    if manifest.get('infrastructure_images') != {'minio': APPROVED_MINIO_IMAGE}:
+        raise ValueError('Only the explicitly approved immutable MinIO infrastructure image is permitted')
     return manifest
 
 
@@ -49,12 +53,14 @@ def make_release(root, output, release_id, commit, build_id, digest_dir, owner):
         images[service]=f'ghcr.io/{owner.lower()}/unimeow-{service}@{value}'
     manifest=validate({'format':1,'release_id':release_id,'commit':commit,
         'build_id':build_id,'architecture':'linux/amd64','images':images,
+        'infrastructure_images':{'minio':APPROVED_MINIO_IMAGE},
         'migration_services':['user-migrate','post-migrate','notification-migrate'],
         'compatibility':{
             'schema':'Additive migrations. Applied historical migrations are unchanged.',
             'publisher_cutover':'Stop every old publisher before starting this release.',
             'rollback':'One replica per old publisher; preserve read_committed. Rehearse old image against expanded schema before rollback.',
             'data_restore':'Never automatically restore data after opening traffic. Preserve all stores as one consistent set.',
+            'minio':'Only the declared MinIO image may replace existing infrastructure, after a complete backup and restored-data compatibility rehearsal.',
             'configuration':'Private server config preserves JWT/OAuth, cookies, public URLs, existing project and external volumes.'}})
     (output/'release.json').write_text(json.dumps(manifest,indent=2)+'\n')
     (output/'release.env').write_text(''.join(f'{s.upper().replace("-","_")}_IMAGE={v}\n' for s,v in images.items()))

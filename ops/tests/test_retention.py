@@ -13,6 +13,7 @@ sys.path.insert(0, str(Path(__file__).parents[1]))
 spec = importlib.util.spec_from_file_location('retention', Path(__file__).parents[1] / 'retention.py')
 retention = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(retention)
+from release import APPROVED_MINIO_IMAGE
 
 
 def digest(value):
@@ -51,6 +52,7 @@ class FakeGitHub:
             images[service] = f'ghcr.io/kaze-nomi/{package}@{image_digest}'
             self.add_image(package, image_digest, [tag])
         manifest = {'format': 1, 'release_id': tag, 'commit': 'a' * 40, 'architecture': 'linux/amd64',
+                    'infrastructure_images': {'minio': APPROVED_MINIO_IMAGE},
                     'migration_services': ['user-migrate', 'post-migrate', 'notification-migrate'], 'images': images}
         files = {'release.json': json.dumps(manifest).encode(), 'runtime.tar.gz': b'synthetic-runtime-bundle',
                  'release.env': ''.join(f'{s.upper().replace("-", "_")}_IMAGE={i}\n' for s, i in images.items()).encode()}
@@ -62,6 +64,13 @@ class FakeGitHub:
             self.next_id += 1
             self.assets[number].append({'id': self.next_id, 'name': name, 'state': 'uploaded', 'size': len(data)})
             self.files[self.next_id] = data
+
+    def add_baseline(self, tag='v1.0.0'):
+        self.rows.append({'id': 9000, 'tag_name': tag, 'draft': False,
+                          'published_at': '2026-09-26T00:00:00Z', 'updated_at': '2026-09-26T00:00:00Z'})
+        self.assets[9000] = [{'id': 9001, 'name': 'baseline.json', 'state': 'uploaded', 'size': 2},
+                             {'id': 9002, 'name': 'minio-image.tar', 'state': 'uploaded', 'size': 1}]
+        self.files[9001], self.files[9002] = b'{}', b'x'
 
     def add_image(self, package, image_digest, tags, children=None):
         self.next_id += 1
@@ -139,6 +148,57 @@ class RetentionTests(unittest.TestCase):
     def test_baseline_only_has_no_registry_dependency(self):
         plan = retention.plan_retention(FakeGitHub(0), state('baseline-20260926', None))
         self.assertEqual(plan['retained_releases'], ['baseline-20260926'])
+
+    def test_public_semver_baseline_is_exact_identity_not_an_eight_image_release(self):
+        api = FakeGitHub(0)
+        api.add_baseline()
+        api.assets[9000] = []  # The public baseline is intentionally a text-only release.
+        value = {**state('v1.0.0', None), 'baseline_release': 'v1.0.0'}
+        with patch.object(api, 'release_assets', wraps=api.release_assets) as assets:
+            plan = retention.plan_retention(api, value)
+        assets.assert_not_called()
+        self.assertEqual(plan['retained_releases'], ['v1.0.0'])
+        self.assertEqual(plan['release_assets'], {})
+        self.assertEqual(plan['delete_package_versions'], [])
+        self.assertEqual(plan['delete_releases'], [])
+        self.assertEqual(plan['release_inventory'][0]['tag'], 'v1.0.0')
+
+    def test_public_baseline_does_not_consume_a_slot_in_newest_five_managed_releases(self):
+        api = FakeGitHub()
+        api.add_baseline()
+        plan = retention.plan_retention(api, {**state(), 'baseline_release': 'v1.0.0'})
+        self.assertEqual(plan['retained_releases'], ['v1.0.0', 'v1.0.2', 'v1.0.4', 'v1.0.5', 'v1.0.6', 'v1.0.7', 'v1.0.8'])
+        self.assertEqual({r['tag'] for r in plan['delete_releases']}, {'v1.0.1', 'v1.0.3'})
+        self.assertEqual(len(plan['delete_package_versions']), 16)
+
+    def test_other_semver_metadata_only_release_is_not_misclassified_as_baseline(self):
+        api = FakeGitHub()
+        api.add_baseline('v2.0.0')
+        with self.assertRaisesRegex(ValueError, 'incomplete: v2.0.0'):
+            retention.plan_retention(api, {**state(), 'baseline_release': 'v1.0.0'})
+        self.assertEqual(api.deleted, [])
+
+    def test_public_baseline_alias_protects_shared_package_version(self):
+        api = FakeGitHub()
+        api.add_baseline()
+        package = 'unimeow-frontend'
+        api.package_versions[package][0]['metadata']['container']['tags'].append('v1.0.0')
+        plan = retention.plan_retention(api, {**state(), 'baseline_release': 'v1.0.0'})
+        self.assertNotIn(digest(package + '-v1.0.1'), [r['digest'] for r in plan['delete_package_versions']])
+
+    def test_baseline_public_identity_change_during_apply_stops_remaining_deletions(self):
+        api = FakeGitHub()
+        api.add_baseline()
+        value = {**state(), 'baseline_release': 'v1.0.0'}
+        plan = retention.plan_retention(api, value)
+        original_delete = api.delete_release
+        def delete_then_rename(release_id):
+            original_delete(release_id)
+            next(r for r in api.rows if r['id'] == 9000)['tag_name'] = 'v0.0.0'
+        with tempfile.TemporaryDirectory() as directory, patch.object(api, 'delete_release', side_effect=delete_then_rename):
+            with self.assertRaisesRegex(ValueError, 'publication changed'):
+                retention.apply_plan(api, plan, lambda: value, plan['plan_sha256'], Path(directory) / 'log.jsonl')
+        self.assertEqual(len(api.deleted), 1)
 
     def test_shared_digest_survives_obsolete_release_removal(self):
         api = FakeGitHub()

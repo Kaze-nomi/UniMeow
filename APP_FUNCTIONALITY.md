@@ -352,6 +352,10 @@ GraphQL-запросы ленты: `trendingFeed` (рекомендации с t
 | `ADMIN_GRANTED` | Пользователю выданы права администратора |
 | `USER_BANNED` | Пользователь заблокирован |
 
+User/Post используют общий publisher из модуля `outbox`: 16 постоянных шардов определяются по `(topic, event_key)` независимо от числа реплик. Короткая PostgreSQL-транзакция выдаёт владельцу lease и уникальный token; стабильный Kafka `transactional.id` на шард вытесняет старого producer. Владение повторно проверяется после `initTransactions`, перед отправками и commit; fenced producer освобождает попытку и не переинициализируется со старым token. Обращения к Kafka выполняются вне транзакции БД, число workers и размер batch ограничены.
+
+Триггер БД сериализует вставки одного ключа и задаёт монотонный `created_at`; изменяющие счётчики операции также блокируют общий ключ до чтения состояния. `eventSeq` в payload не добавлен. Публикация остаётся at-least-once: сбой после Kafka commit до отметки `published_at` повторяет исходный `eventId`. Защиту эффекта от повторов обеспечивают постоянные receipts в Redis у Feed и транзакционный inbox PostgreSQL у Notification; consumers используют `read_committed`. Ошибка публикации оставляет batch в outbox и задерживает этот шард до повторной попытки, сохраняя порядок.
+
 **FeedService** (`FeedKafkaConsumer` → `FeedEventService`) слушает оба топика и обновляет Redis sorted sets:
 
 - `POST_CREATED` — добавляет пост в university/faculty/program feeds или «Без вуза», author feed, trending feed и во все personal feeds подписчиков автора.
@@ -390,8 +394,6 @@ GraphQL-запросы ленты: `trendingFeed` (рекомендации с t
 
 | Источник | DLQ topic | Когда используется |
 |---|---|---|
-| `UserService` outbox publisher | `user-events.dlq` | Ошибка публикации события `user-events` в Kafka |
-| `PostService` outbox publisher | `post-events.dlq` | Ошибка публикации события `post-events` в Kafka |
 | `FeedService` Kafka consumer | `feed-events.dlq` | Невалидный формат события или обязательных полей |
 | `NotificationService` Kafka consumer | `notification-events.dlq` | Невалидный формат события или обязательных полей |
 
@@ -773,8 +775,6 @@ markAllNotificationsRead: Boolean!
 | `UserService` | `user-events` | `PostService` | Очистка контента при удалении аккаунта и бессрочной блокировке |
 | `PostService` | `post-events` | `FeedService` | Создание/удаление постов, пересчёт рейтинга при лайках |
 | `PostService` | `post-events` | `NotificationService` | Лайки, комментарии, ответы, упоминания |
-| `UserService` | `user-events.dlq` | — | Ошибки публикации `user-events` |
-| `PostService` | `post-events.dlq` | — | Ошибки публикации `post-events` |
 | `FeedService` | `feed-events.dlq` | — | Ошибки обработки событий ленты |
 | `NotificationService` | `notification-events.dlq` | — | Ошибки обработки событий уведомлений |
 
@@ -979,7 +979,7 @@ Prometheus собирает стандартные Micrometer/Spring Boot мет
 
 ## 19. Миграции базы данных
 
-### UserService (V1–V9)
+### UserService (V1–V11)
 
 | Версия | Содержимое |
 |---|---|
@@ -992,8 +992,10 @@ Prometheus собирает стандартные Micrometer/Spring Boot мет
 | V7 | `faculty_proposals` |
 | V8 | `program_proposals` |
 | V9 | `idempotency_keys` |
+| V10 | `banned_google_accounts` |
+| V11 | `outbox_shard_owners`, `outbox_key_clocks`, функция назначения 16 шардов, индекс непубликованных событий и триггер порядка вставок |
 
-### PostService (V1–V6)
+### PostService (V1–V7)
 
 | Версия | Содержимое |
 |---|---|
@@ -1003,8 +1005,9 @@ Prometheus собирает стандартные Micrometer/Spring Boot мет
 | V4 | `comment_likes` |
 | V5 | `outbox_events` |
 | V6 | `idempotency_keys` |
+| V7 | `outbox_shard_owners`, `outbox_key_clocks`, функция назначения 16 шардов, индекс непубликованных событий и триггер порядка вставок |
 
-### NotificationService (V1–V2)
+### NotificationService (V1–V3)
 
 | Версия | Содержимое |
 |---|---|

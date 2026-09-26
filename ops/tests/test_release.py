@@ -10,6 +10,7 @@ spec.loader.exec_module(release)
 class ReleaseValidationTests(unittest.TestCase):
     def valid(self):
         return {'release_id':'v1.2.3','commit':'a'*40,'architecture':'linux/amd64','migration_services':['user-migrate','post-migrate','notification-migrate'],
+            'infrastructure_images':{'minio':release.APPROVED_MINIO_IMAGE},
             'images':{s:f'ghcr.io/kaze-nomi/unimeow-{s}@sha256:'+('b'*64) for s in release.SERVICES}}
 
     def test_full_release(self):
@@ -25,3 +26,12 @@ class ReleaseValidationTests(unittest.TestCase):
         with self.assertRaises(ValueError):release.validate(m)
         m=self.valid();m['images']['frontend']='ghcr.io/kaze-nomi/unimeow-frontend:latest'
         with self.assertRaises(ValueError):release.validate(m)
+
+    def test_only_exact_approved_minio_image_is_allowed(self):
+        for infra in [None,{}, {'redis':release.APPROVED_MINIO_IMAGE},
+                      {'minio':'ghcr.io/coollabsio/minio:latest'},
+                      {'minio':release.APPROVED_MINIO_IMAGE.replace('sha256:4','sha256:5',1)},
+                      {'minio':release.APPROVED_MINIO_IMAGE,'redis':'redis:latest'}]:
+            m=self.valid();m['infrastructure_images']=infra
+            with self.subTest(infra=infra),self.assertRaisesRegex(ValueError,'approved immutable MinIO'):
+                release.validate(m)

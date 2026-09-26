@@ -21,7 +21,10 @@ import urllib.request
 
 from release import SERVICES, RELEASE_ID, validate
 
-BASELINE_ID = re.compile(r'baseline-[A-Za-z0-9][A-Za-z0-9._-]{0,120}')
+# This validates an explicitly supplied identity; matching a semver tag alone
+# never classifies a GitHub release as the preserved baseline.
+BASELINE_ID = re.compile(r'(?:baseline-[A-Za-z0-9][A-Za-z0-9._-]{0,120}|'
+                         + RELEASE_ID.pattern.removeprefix('^').removesuffix('$') + r')')
 DIGEST = re.compile(r'sha256:[0-9a-f]{64}')
 REPOSITORY = re.compile(r'[A-Za-z0-9-]+/[A-Za-z0-9_.-]+')
 ASSETS = {'release.json', 'release.env', 'runtime.tar.gz', 'SHA256SUMS'}
@@ -218,11 +221,11 @@ def identifier(value):
     return value
 
 
-def release_inventory(rows):
+def release_inventory(rows, baseline=None):
     result = []
     for row in rows:
         tag = row.get('tag_name')
-        if isinstance(tag, str) and RELEASE_ID.fullmatch(tag):
+        if isinstance(tag, str) and (RELEASE_ID.fullmatch(tag) or tag == baseline):
             result.append({'id': identifier(row.get('id')), 'tag': tag, 'draft': row.get('draft'),
                            'published_at': row.get('published_at'), 'updated_at': row.get('updated_at')})
     return sorted(result, key=lambda r: (r['tag'], r['id']))
@@ -332,7 +335,11 @@ class Graph:
 def plan_retention(client, state, now=None):
     protection = protected_state(state, client.repository, now)
     rows = client.releases()
-    managed = [r for r in rows if isinstance(r.get('tag_name'), str) and RELEASE_ID.fullmatch(r['tag_name'])]
+    # The exact protected baseline is a public metadata record whose assets are
+    # baseline.json/archived infrastructure, not an eight-image runtime bundle.
+    # Every other semver release still requires the full normal validation.
+    managed = [r for r in rows if isinstance(r.get('tag_name'), str)
+               and r['tag_name'] != protection['baseline_release'] and RELEASE_ID.fullmatch(r['tag_name'])]
     if len({r['tag_name'] for r in managed}) != len(managed):
         raise ValueError('Duplicate managed release tags')
     if any(r.get('draft') is not False or not r.get('published_at') for r in managed):
@@ -382,8 +389,8 @@ def plan_retention(client, state, now=None):
         'delete_package_versions': sorted(removals, key=lambda r: (r['package'], r['id'])),
         'protected_manifest_nodes': sorted([list(node) for node in protected_nodes]),
         'release_assets': {r['tag']: r['assets_sha256'] for r in releases},
-        'release_inventory': release_inventory(rows), 'package_inventory': inventories,
-        'baseline_policy': 'Always preserved locally; never managed or removed by this program',
+        'release_inventory': release_inventory(rows, protection['baseline_release']), 'package_inventory': inventories,
+        'baseline_policy': 'Exact protected baseline identity preserved locally and publicly; never removed by this program',
         'tag_policy': 'Git tags and shared retained digest aliases are preserved',
     }
     result['plan_sha256'] = checksum(canonical(result))
@@ -405,17 +412,24 @@ def apply_plan(client, plan, state_provider, confirm_plan, journal_path):
     journal_path = Path(journal_path)
     journal_path.parent.mkdir(parents=True, exist_ok=True)
     with journal_path.open('x', encoding='utf-8') as journal:
+        journal_path.chmod(0o600)
         def record(event, **fields):
             journal.write(json.dumps({'at': datetime.now(timezone.utc).isoformat(), 'event': event, **fields}) + '\n')
             journal.flush()
             os.fsync(journal.fileno())
 
         record('reviewed_plan', plan=plan)
+        if os.name == 'posix':
+            directory = os.open(journal_path.parent, os.O_RDONLY)
+            try:
+                os.fsync(directory)
+            finally:
+                os.close(directory)
 
         def unchanged():
             if protected_state(state_provider(), client.repository) != plan['protection']:
                 raise ValueError('Server protection changed during retention; stopped')
-            if release_inventory(client.releases()) != expected_releases:
+            if release_inventory(client.releases(), plan['protection']['baseline_release']) != expected_releases:
                 raise ValueError('Release publication changed during retention; stopped')
             for package, expected in expected_versions.items():
                 if version_inventory(client.versions(package)) != expected:
