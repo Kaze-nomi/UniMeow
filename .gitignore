@@ -34,7 +34,8 @@ build
 ### Mac OS ###
 .DS_Store
 
-.env
+.env*
+!.env.dev
 
 xNotes
 
@@ -42,8 +43,6 @@ xNotes
 Frontend/dist/
 Frontend/node_modules/
 .agent-private/
-.env.dev.local
-.env.production
 __pycache__/
 *.pyc
 AGENT_TASK.md

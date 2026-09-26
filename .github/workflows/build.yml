@@ -56,7 +56,7 @@ jobs:
         run: |
           set -euo pipefail
           for service in $SERVICES; do
-            docker compose --env-file .env.dev -f docker-compose.yml build "$service"
+            docker compose --env-file .env.dev -f docker-compose.dev.yaml build "$service"
           done
       - name: Test Java services
         run: |
@@ -90,7 +90,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          tar -czf unimeow.tar.gz docker-compose.yml \
+          tar -czf unimeow.tar.gz docker-compose.prod.yaml \
             UserService/src/main/resources/db/migration \
             PostService/src/main/resources/db/migration \
             NotificationService/src/main/resources/db/migration

@@ -75,13 +75,15 @@ UniMeow — университетская социальная сеть с по
 
 ### Конфигурация окружения (env)
 
-Один `docker-compose.yml` использует выбранный файл окружения: `.env.dev` для разработки, приватный `.env.production` на сервере или локальный `.env`. Запуск для разработки: `docker compose --env-file .env.dev up -d --build`. Frontend читает публичные адреса из `/runtime-config.json`, который создаётся при запуске контейнера; пересборка при смене адресов не требуется.
+Для разработки используются `docker-compose.dev.yaml` и сохранённый в репозитории `.env.dev` с тестовыми значениями. После последовательной сборки образов по инструкции в [README.md](README.md) стек запускается командой `docker compose -f docker-compose.dev.yaml --env-file .env.dev up -d`. На сервере Release использует `docker-compose.prod.yaml` и приватный `.env.prod`; production Compose запускает готовые образы без сборки.
+
+GitHub собирает образы без production-секретов. Серверный Compose читает `.env.prod` во время запуска и передаёт настройки контейнерам; файл остаётся на сервере и не включается в образы или архив выпуска. Frontend читает публичные адреса из `/runtime-config.json`, который создаётся при запуске контейнера; пересборка при смене адресов не требуется.
 
 Временная OAuth-сессия Gateway хранится в общем Redis через Spring Session и истекает через 10 минут. Gateway проверяет JWT каждого запроса, не хранит авторизацию в памяти экземпляра и инвалидирует общую WebSession при logout. Refresh tokens, как и раньше, находятся в UserService.
 
 Базовые env-переменные для переключения окружения:
 
-- `APP_PUBLIC_URL` — публичный URL фронтенда / gateway (предполагается единый домен, обратный прокси раздаёт frontend и API). Из этой переменной в `docker-compose.yml` производятся:
+- `APP_PUBLIC_URL` — публичный URL фронтенда / gateway (предполагается единый домен, обратный прокси раздаёт frontend и API). Из этой переменной в Compose-файлах производятся:
   - `APP_FRONTEND_URL` для UserService — используется в email-ссылках (`MailService.frontendUrl`).
   - `APP_SECURITY_OAUTH2_SUCCESS_REDIRECT` для APIGateway — куда редиректить браузер после успешной Google OAuth2 авторизации.
   - Базовый URL API frontend, если не указан `FRONTEND_API_BASE`. Для локального запуска `FRONTEND_API_BASE=http://localhost:8081`, поскольку frontend слушает другой порт.
@@ -798,7 +800,7 @@ Kafka-события сохраняются в outbox-таблицах серв�
 
 ## 15. Docker / local окружение
 
-`docker-compose.yml` поднимает все сервисы и инфраструктуру.
+`docker-compose.dev.yaml` поднимает локальные сервисы и инфраструктуру с `.env.dev`. `docker-compose.prod.yaml` описывает серверное окружение с приватным `.env.prod` и использует готовые образы приложения из GHCR. Сборка выполняется в GitHub, установка опубликованной версии — отдельным ручным workflow Release через Ansible.
 
 Одноразовый контейнер `migrations` запускает готовый Flyway для трёх PostgreSQL-баз и завершает работу. UserService, PostService и NotificationService ждут его успешного завершения; внутри этих приложений Flyway отключён. Release запускает ту же операцию отдельно перед обновлением приложений.
 

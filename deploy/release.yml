@@ -5,15 +5,15 @@
   vars:
     project_dir: /root/UniMeow
     backup_dir: /var/backups/unimeow
-    selected_compose: "{{ lookup('ansible.builtin.file', '../release-artifact/docker-compose.yml') | from_yaml }}"
+    selected_compose: "{{ lookup('ansible.builtin.file', '../release-artifact/docker-compose.prod.yaml') | from_yaml }}"
     applications: [eureka-server, media-service, user-service, post-service, feed-service, notification-service, api-gateway, frontend]
     infrastructure: [postgres-user, postgres-post, postgres-notification, redis, minio, kafka, prometheus, grafana]
   module_defaults:
     community.docker.docker_compose_v2:
       project_src: /root/UniMeow
       project_name: unimeow
-      files: [docker-compose.yml]
-      env_files: [.env.production]
+      files: [docker-compose.prod.yaml]
+      env_files: [.env.prod]
       build: never
       pull: never
       dependencies: false
@@ -37,18 +37,9 @@
         state: directory
         mode: '0700'
 
-    - name: Keep the existing production environment
-      ansible.builtin.copy:
-        src: "{{ project_dir }}/.env"
-        dest: "{{ project_dir }}/.env.production"
-        remote_src: true
-        force: false
-        mode: '0600'
-      no_log: true
-
     - name: Read running services
       ansible.builtin.command:
-        argv: [docker, compose, --project-name, unimeow, --env-file, .env.production, ps, --services, --status, running]
+        argv: [docker, compose, --project-name, unimeow, --file, docker-compose.prod.yaml, --env-file, .env.prod, ps, --services, --status, running]
         chdir: "{{ project_dir }}"
       register: running
       changed_when: false
@@ -115,7 +106,22 @@
         remote_src: true
         force: "{{ make_backup }}"
         mode: '0600'
-      loop: [docker-compose.yml, .env.production]
+      loop: [docker-compose.prod.yaml, .env.prod]
+
+    - name: Save current migration files for code rollback
+      ansible.builtin.command:
+        argv: [tar, -czf, "{{ backup_dir }}/migrations.next.tar.gz", -C, "{{ project_dir }}", UserService/src/main/resources/db/migration, PostService/src/main/resources/db/migration, NotificationService/src/main/resources/db/migration]
+      when: make_backup
+
+    - name: Preserve the complete migration archive
+      ansible.builtin.command:
+        argv: [mv, -fT, --, "{{ backup_dir }}/migrations.next.tar.gz", "{{ backup_dir }}/migrations.previous.tar.gz"]
+      when: make_backup
+
+    - name: Require a readable migration archive before changing files
+      ansible.builtin.command:
+        argv: [tar, -tzf, "{{ backup_dir }}/migrations.previous.tar.gz"]
+      changed_when: false
 
     - name: Back up and update
       block:
@@ -130,13 +136,13 @@
 
         - name: Install the selected Compose file
           ansible.builtin.copy:
-            src: ../release-artifact/docker-compose.yml
-            dest: "{{ project_dir }}/docker-compose.yml"
+            src: ../release-artifact/docker-compose.prod.yaml
+            dest: "{{ project_dir }}/docker-compose.prod.yaml"
             mode: '0644'
 
         - name: Select the application version
           ansible.builtin.lineinfile:
-            path: "{{ project_dir }}/.env.production"
+            path: "{{ project_dir }}/.env.prod"
             regexp: '^VERSION='
             line: "VERSION={{ version }}"
             mode: '0600'
@@ -158,8 +164,8 @@
           community.docker.docker_compose_v2_run:
             project_src: "{{ project_dir }}"
             project_name: unimeow
-            files: [docker-compose.yml]
-            env_files: [.env.production]
+            files: [docker-compose.prod.yaml]
+            env_files: [.env.prod]
             service: migrations
             no_deps: true
             cleanup: true
@@ -186,7 +192,19 @@
             dest: "{{ project_dir }}/{{ item }}"
             remote_src: true
             mode: '0600'
-          loop: [docker-compose.yml, .env.production]
+          loop: [docker-compose.prod.yaml, .env.prod]
+
+        - name: Remove migration files from the unsuccessful release
+          ansible.builtin.file:
+            path: "{{ project_dir }}/{{ item }}/src/main/resources/db/migration"
+            state: absent
+          loop: [UserService, PostService, NotificationService]
+
+        - name: Restore the previous migration files
+          ansible.builtin.unarchive:
+            src: "{{ backup_dir }}/migrations.previous.tar.gz"
+            dest: "{{ project_dir }}"
+            remote_src: true
 
         - name: Start the previous applications
           community.docker.docker_compose_v2:

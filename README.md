@@ -44,30 +44,30 @@
 
 ## Локальный запуск
 
-Нужен Docker Compose. Для разработки есть `.env.dev` с тестовыми значениями. Образы собираются по одному, чтобы несколько Gradle-процессов не занимали память одновременно. Команды ниже — для Bash, в том числе Git Bash на Windows:
+Нужен Docker Compose. Для разработки используются `docker-compose.dev.yaml` и сохранённый в репозитории `.env.dev` с тестовыми значениями. Образы собираются по одному, чтобы несколько Gradle-процессов не занимали память одновременно. Команды ниже — для Bash, в том числе Git Bash на Windows:
 
 ```sh
 for service in eureka-server media-service user-service post-service feed-service notification-service api-gateway frontend; do
-  docker compose --env-file .env.dev build "$service" || exit 1
+  docker compose -f docker-compose.dev.yaml --env-file .env.dev build "$service" || exit 1
 done
-docker compose --env-file .env.dev up -d
+docker compose -f docker-compose.dev.yaml --env-file .env.dev up -d
 ```
 
-Frontend: http://localhost:5173, API: http://localhost:8081. Для настоящего Google OAuth нужны свои `GOOGLE_CLIENT_ID` и `GOOGLE_CLIENT_SECRET`. Личные значения можно хранить в игнорируемом `.env` и передавать `--env-file .env`.
+Frontend: http://localhost:5173, API: http://localhost:8081. Для настоящего Google OAuth передайте свои `GOOGLE_CLIENT_ID` и `GOOGLE_CLIENT_SECRET` через окружение процесса.
 
-Для всех окружений используется один `docker-compose.yml`. На сервере секреты находятся в `.env.production`; при первом запуске Ansible копирует туда существующий `.env`. Публичные адреса frontend читает при запуске контейнера, поэтому смена адреса не требует пересборки образа.
+На сервере используются `docker-compose.prod.yaml` и приватный `.env.prod`. Production Compose запускает готовые образы из GHCR; секций сборки в нём нет. Публичные адреса frontend читает при запуске контейнера, поэтому смена адреса не требует пересборки образа.
 
-GitHub собирает образы без production-секретов. Во время Release серверный Compose читает `.env.production` и передаёт настройки контейнерам при запуске. Этот файл не загружается в GitHub и не включается в образы; следующий релиз сохраняет его значения, меняя только `VERSION`.
+GitHub собирает образы без production-секретов: настройки подключения нужны приложениям при запуске, а не при сборке. Во время Release Ansible вызывает серверный Compose с `-f docker-compose.prod.yaml --env-file .env.prod`, и тот передаёт настройки контейнерам. `.env.prod` не загружается в GitHub и не включается в образы; следующий релиз сохраняет его значения, меняя только `VERSION`.
 
 MinIO закреплён как `ghcr.io/coollabsio/minio:RELEASE.2025-10-15T17-29-55Z`: это готовая [community-сборка из исходников MinIO](https://github.com/coollabsio/minio). Прежний образ `minio/minio` недоступен для скачивания; новый тег проверен настоящим `docker pull`.
 
 ## Сборка и выпуск
 
-**Build** собирает восемь образов приложения, запускает существующие Java-тесты и после успеха публикует образы в GHCR и небольшой архив `unimeow.tar.gz` в GitHub Releases. Архив содержит Compose и SQL-миграции. Для PR выполняются только сборка и тесты. Версии имеют вид `v1.0.1`; при ручном запуске Build можно указать версию, иначе используется `v1.0.<номер запуска>`. Опубликованную версию нельзя перезаписать.
+**Build** собирает восемь образов приложения, запускает существующие Java-тесты и после успеха публикует образы в GHCR и небольшой архив `unimeow.tar.gz` в GitHub Releases. Архив содержит `docker-compose.prod.yaml` и SQL-миграции. Для PR выполняются только сборка и тесты. Версии имеют вид `v1.0.1`; при ручном запуске Build можно указать версию, иначе используется `v1.0.<номер запуска>`. Опубликованную версию нельзя перезаписать.
 
 Чтобы установить выпуск: **GitHub → Actions → Release → Run workflow → version**. Публикация сборки сама по себе сервер не обновляет.
 
-Release запускает [Ansible](deploy/release.yml). Это готовый инструмент, который подключается по SSH и выполняет перечисленные в YAML шаги: скачивает образы, останавливает приложения, проверяет бэкап БД, запускает Flyway и последовательно поднимает сервисы. Сборка Java на сервере не выполняется. Для первоначальной настройки нужны environment `production`, secrets `SSH_PRIVATE_KEY`, `SSH_KNOWN_HOSTS` и variables `SSH_HOST`, `SSH_USER`, `SSH_PORT`.
+Release запускает [Ansible](deploy/release.yml). Это готовый инструмент, который подключается по SSH и выполняет перечисленные в YAML шаги: скачивает образы, останавливает приложения, проверяет бэкап PostgreSQL, Redis и MinIO, запускает Flyway и последовательно поднимает сервисы через `docker-compose.prod.yaml`. Образы на сервере не собираются. Для первоначальной настройки нужны environment `production`, secrets `SSH_PRIVATE_KEY`, `SSH_KNOWN_HOSTS` и variables `SSH_HOST`, `SSH_USER`, `SSH_PORT`.
 
 ## Возврат версии и бэкап
 
