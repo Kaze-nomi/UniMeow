@@ -1,0 +1,180 @@
+- name: Release UniMeow
+  hosts: all
+  become: true
+  gather_facts: false
+  vars:
+    project_dir: /root/UniMeow
+    backup_dir: /var/backups/unimeow
+    selected_compose: "{{ lookup('ansible.builtin.file', '../release-artifact/docker-compose.yml') | from_yaml }}"
+    applications: [eureka-server, media-service, user-service, post-service, feed-service, notification-service, api-gateway, frontend]
+    infrastructure: [postgres-user, postgres-post, postgres-notification, redis, minio, kafka, prometheus, grafana]
+  module_defaults:
+    community.docker.docker_compose_v2:
+      project_src: /root/UniMeow
+      project_name: unimeow
+      files: [docker-compose.yml]
+      env_files: [.env.production]
+      build: never
+      pull: never
+      dependencies: false
+      wait: true
+      wait_timeout: 1200
+  tasks:
+    - name: Check version
+      ansible.builtin.assert:
+        that: version is match('^v[0-9]+\.[0-9]+\.[0-9]+$')
+
+    - name: Create private backup directory
+      ansible.builtin.file:
+        path: "{{ backup_dir }}"
+        state: directory
+        mode: '0700'
+
+    - name: Keep the existing production environment
+      ansible.builtin.copy:
+        src: "{{ project_dir }}/.env"
+        dest: "{{ project_dir }}/.env.production"
+        remote_src: true
+        force: false
+        mode: '0600'
+      no_log: true
+
+    - name: Read running services
+      ansible.builtin.command:
+        argv: [docker, compose, --project-name, unimeow, --env-file, .env.production, ps, --services, --status, running]
+        chdir: "{{ project_dir }}"
+      register: running
+      changed_when: false
+
+    - name: Require the existing infrastructure
+      ansible.builtin.assert:
+        that: infrastructure | difference(running.stdout_lines) | length == 0
+
+    - name: Check the current application's readiness
+      ansible.builtin.uri:
+        url: https://unimeow.ru/actuator/health
+        return_content: true
+      register: current_readiness
+      failed_when: false
+
+    - name: Decide whether the running installation can replace its backup
+      ansible.builtin.set_fact:
+        make_backup: "{{ applications | difference(running.stdout_lines) | length == 0 and current_readiness.status == 200 and (current_readiness.json | default({})).get('status') == 'UP' }}"
+
+    - name: Check for the last verified backup
+      ansible.builtin.stat:
+        path: "{{ backup_dir }}/latest.tar.gz"
+      register: previous_backup
+
+    - name: Require a verified backup when recovering an unhealthy installation
+      ansible.builtin.assert:
+        that: make_backup or previous_backup.stat.exists
+        fail_msg: The application is unhealthy and no verified database backup exists. Review the database before releasing.
+
+    - name: Log in to the image registry
+      community.docker.docker_login:
+        registry_url: ghcr.io
+        username: "{{ lookup('env', 'GITHUB_ACTOR') }}"
+        password: "{{ lookup('env', 'GH_TOKEN') }}"
+      no_log: true
+
+    - name: Download application images before stopping anything
+      community.docker.docker_image_pull:
+        name: "ghcr.io/kaze-nomi/unimeow-{{ item }}:{{ version }}"
+        pull: not_present
+      loop: "{{ applications }}"
+
+    - name: Download Flyway before stopping anything
+      community.docker.docker_image_pull:
+        name: "{{ selected_compose.services.migrations.image }}"
+        pull: not_present
+      when: "'migrations' in selected_compose.services"
+
+    - name: Save current configuration for code rollback
+      ansible.builtin.copy:
+        src: "{{ project_dir }}/{{ item }}"
+        dest: "{{ backup_dir }}/{{ item }}.previous"
+        remote_src: true
+        force: "{{ make_backup }}"
+        mode: '0600'
+      loop: [docker-compose.yml, .env.production]
+
+    - name: Back up and update
+      block:
+        - name: Stop applications
+          community.docker.docker_compose_v2:
+            services: "{{ applications | reverse | list }}"
+            state: stopped
+
+        - name: Make and verify the database backup
+          ansible.builtin.include_tasks: backup.yml
+          when: make_backup
+
+        - name: Install the selected Compose file
+          ansible.builtin.copy:
+            src: ../release-artifact/docker-compose.yml
+            dest: "{{ project_dir }}/docker-compose.yml"
+            mode: '0644'
+
+        - name: Select the application version
+          ansible.builtin.lineinfile:
+            path: "{{ project_dir }}/.env.production"
+            regexp: '^VERSION='
+            line: "VERSION={{ version }}"
+            mode: '0600'
+
+        - name: Remove the previous migration files
+          ansible.builtin.file:
+            path: "{{ project_dir }}/{{ item }}/src/main/resources/db/migration"
+            state: absent
+          loop: [UserService, PostService, NotificationService]
+
+        - name: Install SQL migrations from the same build
+          ansible.builtin.copy:
+            src: "../release-artifact/{{ item }}/src/main/resources/db/migration/"
+            dest: "{{ project_dir }}/{{ item }}/src/main/resources/db/migration/"
+            mode: '0644'
+          loop: [UserService, PostService, NotificationService]
+
+        - name: Run Flyway migrations
+          community.docker.docker_compose_v2_run:
+            project_src: "{{ project_dir }}"
+            project_name: unimeow
+            files: [docker-compose.yml]
+            env_files: [.env.production]
+            service: migrations
+            no_deps: true
+            cleanup: true
+          when: "'migrations' in selected_compose.services"
+
+        - name: Start application services one at a time
+          community.docker.docker_compose_v2:
+            services: ["{{ item }}"]
+          loop: "{{ applications }}"
+
+        - name: Check public application readiness
+          ansible.builtin.uri:
+            url: https://unimeow.ru/actuator/health
+            return_content: true
+          register: readiness
+          until: readiness.status == 200 and readiness.json.status == 'UP'
+          retries: 12
+          delay: 5
+
+      rescue:
+        - name: Restore the previous configuration
+          ansible.builtin.copy:
+            src: "{{ backup_dir }}/{{ item }}.previous"
+            dest: "{{ project_dir }}/{{ item }}"
+            remote_src: true
+            mode: '0600'
+          loop: [docker-compose.yml, .env.production]
+
+        - name: Start the previous applications
+          community.docker.docker_compose_v2:
+            services: ["{{ item }}"]
+          loop: "{{ applications }}"
+
+        - name: Report unsuccessful release
+          ansible.builtin.fail:
+            msg: Release failed. Previous application images were restarted. No data was restored.

@@ -1,0 +1,98 @@
+- name: Create private backup directory
+  ansible.builtin.file: {path: /var/backups/unimeow, state: directory, owner: root, group: root, mode: '0700'}
+- name: Create a separate backup candidate
+  ansible.builtin.tempfile:
+    state: directory
+    path: /var/backups/unimeow
+    prefix: unimeow-backup-
+  register: backup_work
+- name: Back up and verify all three databases
+  block:
+    - name: Read the existing PostgreSQL containers
+      community.docker.docker_container_info:
+        name: "uni-postgres-{{ item }}"
+      loop: [user, post, notification]
+      register: backup_sources
+      no_log: true
+    - name: Check that the temporary container name is unused
+      community.docker.docker_container_info:
+        name: "{{ backup_work.path | basename }}"
+      register: backup_name
+    - ansible.builtin.assert:
+        that: not backup_name.exists
+    - name: Dump each database without changing its data
+      community.docker.docker_container_exec:
+        container: "{{ item.container.Id }}"
+        argv: [pg_dump, --format=custom, --create, --username, "{{ item.container.Config.Env | select('match', '^POSTGRES_USER=') | first | regex_replace('^POSTGRES_USER=', '') }}", --file, "/tmp/{{ backup_work.path | basename }}.dump", "{{ item.item }}_db"]
+        timeout: 600
+      loop: "{{ backup_sources.results }}"
+      register: backup_dump
+      failed_when: backup_dump.rc != 0
+      no_log: true
+    - name: Copy the dumps into the private candidate
+      ansible.builtin.command:
+        argv: [docker, cp, "uni-postgres-{{ item }}:/tmp/{{ backup_work.path | basename }}.dump", "{{ backup_work.path }}/{{ item }}.dump"]
+      loop: [user, post, notification]
+    - name: Package the three databases together
+      ansible.builtin.command:
+        argv: [tar, -czf, "{{ backup_work.path }}/latest.tar.gz", -C, "{{ backup_work.path }}", user.dump, post.dump, notification.dump]
+    - ansible.builtin.file:
+        path: "{{ backup_work.path }}/latest.tar.gz"
+        mode: '0600'
+
+    - name: Start an isolated PostgreSQL restore check
+      community.docker.docker_container:
+        name: "{{ backup_work.path | basename }}"
+        image: "{{ backup_sources.results[0].container.Image }}"
+        pull: never
+        network_mode: none
+        env: {POSTGRES_HOST_AUTH_METHOD: trust, PGDATA: /tmp/pgdata}
+        tmpfs: [/var/lib/postgresql/data]
+        healthcheck: {test: [CMD, pg_isready, -h, 127.0.0.1, -U, postgres, -d, postgres], interval: 2s, retries: 30}
+        state: healthy
+        healthy_wait_timeout: 120
+      register: backup_check
+
+    - name: Copy the actual archive to the restore container
+      ansible.builtin.command:
+        argv: [docker, cp, "{{ backup_work.path }}/latest.tar.gz", "{{ backup_work.path | basename }}:/tmp/latest.tar.gz"]
+    - name: Extract and check the archive
+      community.docker.docker_container_exec:
+        container: "{{ backup_check.container.Id }}"
+        argv: [tar, -xzf, /tmp/latest.tar.gz, -C, /tmp]
+        timeout: 600
+      register: backup_extract
+      failed_when: backup_extract.rc != 0
+
+    - name: Restore every database and check all restore errors
+      community.docker.docker_container_exec:
+        container: "{{ backup_check.container.Id }}"
+        argv: [pg_restore, --username, postgres, --dbname, postgres, --create, --no-owner, --no-privileges, --exit-on-error, "/tmp/{{ item }}.dump"]
+        timeout: 600
+      loop: [user, post, notification]
+      register: backup_restore
+      failed_when: backup_restore.rc != 0
+    - name: Flush the verified archive before publication
+      ansible.builtin.command:
+        argv: [sync, -f, "{{ backup_work.path }}/latest.tar.gz"]
+    - name: Atomically replace the last verified backup
+      ansible.builtin.command:
+        argv: [mv, -fT, --, "{{ backup_work.path }}/latest.tar.gz", /var/backups/unimeow/latest.tar.gz]
+    - name: Flush the published backup
+      ansible.builtin.command:
+        argv: [sync, -f, /var/backups/unimeow]
+
+  always:
+    - name: Remove only the created restore container
+      community.docker.docker_container:
+        name: "{{ backup_check.container.Id }}"
+        state: absent
+        keep_volumes: true
+      when: backup_check.container.Id is defined
+    - name: Remove only this run's temporary dump files
+      community.docker.docker_container_exec:
+        container: "uni-postgres-{{ item }}"
+        argv: [rm, -f, --, "/tmp/{{ backup_work.path | basename }}.dump"]
+      loop: [user, post, notification]
+    - name: Remove this run's candidate directory
+      ansible.builtin.file: {path: "{{ backup_work.path }}", state: absent}

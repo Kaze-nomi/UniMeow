@@ -82,7 +82,7 @@ services:
       start_period: 10s
 
   minio:
-    image: minio/minio:latest
+    image: minio/minio:RELEASE.2025-09-07T16-13-09Z
     container_name: uni-minio
     restart: unless-stopped
     command: server /data --console-address ":9001"
@@ -151,11 +151,38 @@ services:
     networks:
       - uni-network
 
+  migrations:
+    image: flyway/flyway:11.14.1
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - >-
+        flyway -url=jdbc:postgresql://postgres-user:5432/user_db -locations=filesystem:/flyway/sql/user migrate &&
+        flyway -url=jdbc:postgresql://postgres-post:5432/post_db -locations=filesystem:/flyway/sql/post migrate &&
+        flyway -url=jdbc:postgresql://postgres-notification:5432/notification_db -locations=filesystem:/flyway/sql/notification migrate
+    environment:
+      FLYWAY_USER: ${DB_USERNAME:-postgres}
+      FLYWAY_PASSWORD: ${DB_PASSWORD:-postgres}
+    volumes:
+      - ./UserService/src/main/resources/db/migration:/flyway/sql/user:ro
+      - ./PostService/src/main/resources/db/migration:/flyway/sql/post:ro
+      - ./NotificationService/src/main/resources/db/migration:/flyway/sql/notification:ro
+    depends_on:
+      postgres-user:
+        condition: service_healthy
+      postgres-post:
+        condition: service_healthy
+      postgres-notification:
+        condition: service_healthy
+    networks:
+      - uni-network
+
   eureka-server:
+    image: ghcr.io/kaze-nomi/unimeow-eureka-server:${VERSION:-local}
     build:
       context: ./Eureka
       dockerfile: Dockerfile
     container_name: uni-eureka
+    stop_grace_period: 40s
     restart: unless-stopped
     ports:
       - "127.0.0.1:8761:8761"
@@ -169,12 +196,16 @@ services:
       start_period: 180s
 
   user-service:
+    image: ghcr.io/kaze-nomi/unimeow-user-service:${VERSION:-local}
     build:
       context: .
       dockerfile: UserService/Dockerfile
     container_name: uni-user-service
+    stop_grace_period: 40s
     restart: unless-stopped
     depends_on:
+      migrations:
+        condition: service_completed_successfully
       postgres-user:
         condition: service_healthy
       eureka-server:
@@ -184,6 +215,7 @@ services:
       media-service:
         condition: service_healthy
     environment:
+      SPRING_FLYWAY_ENABLED: "false"
       SPRING_DATASOURCE_URL:      jdbc:postgresql://postgres-user:5432/user_db
       SPRING_DATASOURCE_USERNAME: ${DB_USERNAME:-postgres}
       SPRING_DATASOURCE_PASSWORD: ${DB_PASSWORD:-postgres}
@@ -205,10 +237,12 @@ services:
       start_period: 180s
 
   media-service:
+    image: ghcr.io/kaze-nomi/unimeow-media-service:${VERSION:-local}
     build:
       context: .
       dockerfile: MediaService/Dockerfile
     container_name: uni-media-service
+    stop_grace_period: 40s
     restart: unless-stopped
     depends_on:
       minio:
@@ -234,12 +268,16 @@ services:
       start_period: 180s
 
   post-service:
+    image: ghcr.io/kaze-nomi/unimeow-post-service:${VERSION:-local}
     build:
       context: .
       dockerfile: PostService/Dockerfile
     container_name: uni-post-service
+    stop_grace_period: 40s
     restart: unless-stopped
     depends_on:
+      migrations:
+        condition: service_completed_successfully
       postgres-post:
         condition: service_healthy
       eureka-server:
@@ -247,6 +285,7 @@ services:
       kafka:
         condition: service_healthy
     environment:
+      SPRING_FLYWAY_ENABLED: "false"
       SPRING_DATASOURCE_URL:      jdbc:postgresql://postgres-post:5432/post_db
       SPRING_DATASOURCE_USERNAME: ${DB_USERNAME:-postgres}
       SPRING_DATASOURCE_PASSWORD: ${DB_PASSWORD:-postgres}
@@ -265,10 +304,12 @@ services:
       start_period: 180s
 
   feed-service:
+    image: ghcr.io/kaze-nomi/unimeow-feed-service:${VERSION:-local}
     build:
       context: .
       dockerfile: FeedService/Dockerfile
     container_name: uni-feed-service
+    stop_grace_period: 40s
     restart: unless-stopped
     depends_on:
       eureka-server:
@@ -295,12 +336,16 @@ services:
       start_period: 180s
 
   notification-service:
+    image: ghcr.io/kaze-nomi/unimeow-notification-service:${VERSION:-local}
     build:
       context: .
       dockerfile: NotificationService/Dockerfile
     container_name: uni-notification-service
+    stop_grace_period: 40s
     restart: unless-stopped
     depends_on:
+      migrations:
+        condition: service_completed_successfully
       postgres-notification:
         condition: service_healthy
       eureka-server:
@@ -308,6 +353,7 @@ services:
       kafka:
         condition: service_healthy
     environment:
+      SPRING_FLYWAY_ENABLED: "false"
       SPRING_DATASOURCE_URL:      jdbc:postgresql://postgres-notification:5432/notification_db
       SPRING_DATASOURCE_USERNAME: ${DB_USERNAME:-postgres}
       SPRING_DATASOURCE_PASSWORD: ${DB_PASSWORD:-postgres}
@@ -326,12 +372,16 @@ services:
       start_period: 180s
 
   api-gateway:
+    image: ghcr.io/kaze-nomi/unimeow-api-gateway:${VERSION:-local}
     build:
       context: .
       dockerfile: APIGateway/Dockerfile
     container_name: uni-api-gateway
+    stop_grace_period: 40s
     restart: unless-stopped
     depends_on:
+      redis:
+        condition: service_healthy
       eureka-server:
         condition: service_healthy
       user-service:
@@ -343,6 +393,7 @@ services:
       notification-service:
         condition: service_healthy
     environment:
+      SPRING_DATA_REDIS_HOST: redis
       GOOGLE_CLIENT_ID:                       ${GOOGLE_CLIENT_ID}
       GOOGLE_CLIENT_SECRET:                   ${GOOGLE_CLIENT_SECRET}
       JWT_SECRET:                             ${JWT_SECRET}
@@ -362,13 +413,14 @@ services:
       start_period: 180s
 
   frontend:
+    image: ghcr.io/kaze-nomi/unimeow-frontend:${VERSION:-local}
     build:
       context: .
       dockerfile: Frontend/Dockerfile
-      args:
-        VITE_API_BASE: ${APP_PUBLIC_URL:-http://localhost:8081}
-        MINIO_PUBLIC_URL: ${APP_MINIO_PUBLIC_URL:-http://localhost:9000}
     container_name: uni-frontend
+    environment:
+      FRONTEND_API_BASE: ${FRONTEND_API_BASE:-${APP_PUBLIC_URL:-http://localhost:8081}}
+      MINIO_PUBLIC_URL: ${APP_MINIO_PUBLIC_URL:-http://localhost:9000}
     restart: unless-stopped
     depends_on:
       api-gateway:

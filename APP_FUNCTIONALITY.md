@@ -75,15 +75,17 @@ UniMeow — университетская социальная сеть с по
 
 ### Конфигурация окружения (env)
 
-Файл `.env` в корне проекта содержит два блока — PROD и DEV. Раскомментируйте нужный, второй закомментируйте, и выполните `docker compose up -d --build`. Frontend и MinIO public-URL встраиваются на этапе сборки Vite, поэтому смена окружения требует пересборки контейнера `frontend` (флаг `--build`).
+Один `docker-compose.yml` использует выбранный файл окружения: `.env.dev` для разработки, приватный `.env.production` на сервере или локальный `.env`. Запуск для разработки: `docker compose --env-file .env.dev up -d --build`. Frontend читает публичные адреса из `/runtime-config.json`, который создаётся при запуске контейнера; пересборка при смене адресов не требуется.
+
+Временная OAuth-сессия Gateway хранится в общем Redis через Spring Session и истекает через 10 минут. Gateway проверяет JWT каждого запроса, не хранит авторизацию в памяти экземпляра и инвалидирует общую WebSession при logout. Refresh tokens, как и раньше, находятся в UserService.
 
 Базовые env-переменные для переключения окружения:
 
 - `APP_PUBLIC_URL` — публичный URL фронтенда / gateway (предполагается единый домен, обратный прокси раздаёт frontend и API). Из этой переменной в `docker-compose.yml` производятся:
   - `APP_FRONTEND_URL` для UserService — используется в email-ссылках (`MailService.frontendUrl`).
   - `APP_SECURITY_OAUTH2_SUCCESS_REDIRECT` для APIGateway — куда редиректить браузер после успешной Google OAuth2 авторизации.
-  - `VITE_API_BASE` (build-arg для frontend) — базовый URL, в который встраиваются HTTP-вызовы из `Frontend/api.js` (`/graphql`, `/api/upload`, `/api/auth/*`, `/oauth2/authorization/google`).
-- `APP_MINIO_PUBLIC_URL` — публичный URL MinIO (хранилище медиа). Используется MediaService для генерации `mediaUrl` в gRPC-ответах и frontend-сборкой через `__MINIO_PUBLIC_URL__` для отображения изображений по абсолютным ссылкам.
+  - Базовый URL API frontend, если не указан `FRONTEND_API_BASE`. Для локального запуска `FRONTEND_API_BASE=http://localhost:8081`, поскольку frontend слушает другой порт.
+- `APP_MINIO_PUBLIC_URL` — публичный URL MinIO. Используется MediaService для генерации `mediaUrl` и передаётся frontend при запуске контейнера.
 - `APP_SECURITY_SECURE_COOKIE` (default `false`) — выставляет `Secure` флаг на cookies `ACCESS_TOKEN` и `REFRESH_TOKEN`. В production с HTTPS должно быть `true`; иначе cookies не отправятся браузером по HTTP.
 - `APP_SECURITY_ALLOWED_ORIGINS` (default `http://localhost:*,null`) — список разрешённых CORS origin'ов через запятую.
 
@@ -380,12 +382,12 @@ GraphQL-запросы ленты: `trendingFeed` (рекомендации с t
 - `USER_BANNED` — уведомление о блокировке.
 - `USER_DELETED` и `USER_PERMANENT_BANNED` — очистка уведомлений, связанных с аккаунтом.
 
+Outbox остаётся частью UserService и PostService. Каждый publisher получает транзакционную блокировку PostgreSQL, берёт до 100 событий по `createdAt, id`, отправляет их последовательно и отмечает опубликованные. Другой экземпляр того же сервиса пропускает занятую пачку. При первой ошибке отправка останавливается до следующего запуска: событие не удаляется и не пропускается. После сбоя возможна повторная доставка; это at-least-once, не exactly-once. Отдельного сервиса или общего модуля Outbox нет.
+
 **DLQ-топики:**
 
 | Источник | DLQ topic | Когда используется |
 |---|---|---|
-| `UserService` outbox publisher | `user-events.dlq` | Ошибка публикации события `user-events` в Kafka |
-| `PostService` outbox publisher | `post-events.dlq` | Ошибка публикации события `post-events` в Kafka |
 | `FeedService` Kafka consumer | `feed-events.dlq` | Ошибка обработки события из `post-events` или `user-events` |
 | `NotificationService` Kafka consumer | `notification-events.dlq` | Ошибка обработки события из `post-events` или `user-events` |
 
@@ -765,8 +767,6 @@ markAllNotificationsRead: Boolean!
 | `UserService` | `user-events` | `PostService` | Очистка контента при удалении аккаунта и бессрочной блокировке |
 | `PostService` | `post-events` | `FeedService` | Создание/удаление постов, пересчёт рейтинга при лайках |
 | `PostService` | `post-events` | `NotificationService` | Лайки, комментарии, ответы, упоминания |
-| `UserService` | `user-events.dlq` | — | Ошибки публикации `user-events` |
-| `PostService` | `post-events.dlq` | — | Ошибки публикации `post-events` |
 | `FeedService` | `feed-events.dlq` | — | Ошибки обработки событий ленты |
 | `NotificationService` | `notification-events.dlq` | — | Ошибки обработки событий уведомлений |
 
@@ -800,6 +800,8 @@ Kafka-события сохраняются в outbox-таблицах серв�
 
 `docker-compose.yml` поднимает все сервисы и инфраструктуру.
 
+Одноразовый контейнер `migrations` запускает готовый Flyway для трёх PostgreSQL-баз и завершает работу. UserService, PostService и NotificationService ждут его успешного завершения; внутри этих приложений Flyway отключён. Release запускает ту же операцию отдельно перед обновлением приложений.
+
 ### Порты
 
 | Сервис | HTTP | gRPC |
@@ -830,6 +832,8 @@ Kafka-события сохраняются в outbox-таблицах серв�
 ---
 
 ## 16. Мониторинг и метрики
+
+Java-сервисы пишут JSON-логи в stdout штатным structured logging Spring Boot; поле `service` содержит имя приложения. Graceful shutdown даёт запросам до 30 секунд на завершение, Compose ждёт остановки до 40 секунд.
 
 Сервисы приложения предоставляют actuator endpoints:
 

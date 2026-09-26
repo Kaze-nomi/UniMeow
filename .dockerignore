@@ -23,3 +23,10 @@ Thumbs.db
 # Git
 .git
 .gitignore
+.agent-private
+.env*
+**/.env*
+AGENT_TASK.md
+ADENT_TASK_CONTINUATION.md
+*PLAN.md
+ОТЧЕТ.md
