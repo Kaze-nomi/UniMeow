@@ -14,6 +14,23 @@ import java.util.UUID;
 
 public interface NotificationRepository extends JpaRepository<Notification, UUID> {
 
+	/**
+	 * Also serializes the first insert, when there is no notification row to lock
+	 * yet.
+	 */
+	@Query(value = "SELECT 1 FROM pg_advisory_xact_lock(hashtextextended(:groupKey, 7319))", nativeQuery = true)
+	int lockBusinessGroup(@Param("groupKey") String groupKey);
+
+	@Query(value = "SELECT 1 FROM pg_advisory_xact_lock(hashtextextended(CAST(:userId AS text), 7321))", nativeQuery = true)
+	int lockUser(@Param("userId") UUID userId);
+
+	@Modifying
+	@Query(value = "INSERT INTO notification_deleted_users(user_id) VALUES (:userId) ON CONFLICT DO NOTHING", nativeQuery = true)
+	int markUserDeleted(@Param("userId") UUID userId);
+
+	@Query(value = "SELECT EXISTS (SELECT 1 FROM notification_deleted_users WHERE user_id = :userId)", nativeQuery = true)
+	boolean isUserDeleted(@Param("userId") UUID userId);
+
 	Page<Notification> findByUserIdOrderByCreatedAtDesc(UUID userId, Pageable pageable);
 
 	long countByUserIdAndIsReadFalse(UUID userId);

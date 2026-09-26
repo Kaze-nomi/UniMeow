@@ -35,20 +35,18 @@ class NotificationCleanupServiceTest {
 	}
 
 	@Test
-	void cleanup_deletes_notifications_and_events_older_than_ttl() {
+	void cleanup_expires_notifications_but_retains_inbox_for_replay() {
 		when(notificationRepository.deleteOlderThan(any())).thenReturn(15);
-		when(processedEventRepository.deleteOlderThan(any())).thenReturn(8);
 
 		cleanupService.cleanup();
 
 		verify(notificationRepository).deleteOlderThan(any(LocalDateTime.class));
-		verify(processedEventRepository).deleteOlderThan(any(LocalDateTime.class));
+		verifyNoInteractions(processedEventRepository);
 	}
 
 	@Test
 	void cleanup_uses_cutoff_approximately_ttl_days_ago() {
 		when(notificationRepository.deleteOlderThan(any())).thenReturn(0);
-		when(processedEventRepository.deleteOlderThan(any())).thenReturn(0);
 
 		LocalDateTime before = LocalDateTime.now().minusDays(90).minusSeconds(1);
 		cleanupService.cleanup();
@@ -63,7 +61,6 @@ class NotificationCleanupServiceTest {
 	@Test
 	void cleanup_still_runs_when_nothing_to_delete() {
 		when(notificationRepository.deleteOlderThan(any())).thenReturn(0);
-		when(processedEventRepository.deleteOlderThan(any())).thenReturn(0);
 
 		assertThatNoException().isThrownBy(() -> cleanupService.cleanup());
 	}
@@ -72,7 +69,6 @@ class NotificationCleanupServiceTest {
 	void cleanup_respects_custom_ttl_days() {
 		ReflectionTestUtils.setField(cleanupService, "ttlDays", 30);
 		when(notificationRepository.deleteOlderThan(any())).thenReturn(0);
-		when(processedEventRepository.deleteOlderThan(any())).thenReturn(0);
 
 		LocalDateTime before = LocalDateTime.now().minusDays(30).minusSeconds(1);
 		cleanupService.cleanup();

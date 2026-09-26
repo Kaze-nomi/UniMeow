@@ -16,6 +16,16 @@ import static org.mockito.Mockito.*;
 @ExtendWith(MockitoExtension.class)
 class NotificationKafkaConsumerTest {
 
+	@Test
+	void databaseFailureLeavesOffsetForRetry() {
+		doThrow(new org.springframework.dao.DataAccessResourceFailureException("unavailable"))
+				.when(notificationEventService).processRaw(RAW);
+		org.assertj.core.api.Assertions
+				.assertThatThrownBy(() -> consumer.onPostEvent(RAW, acknowledgment, TOPIC, "key-1", 0, 5L))
+				.isInstanceOf(org.springframework.dao.DataAccessResourceFailureException.class);
+		verifyNoInteractions(acknowledgment, dlqProducer);
+	}
+
 	@Mock
 	NotificationEventService notificationEventService;
 
@@ -50,7 +60,7 @@ class NotificationKafkaConsumerTest {
 
 	@Test
 	void onPostEvent_sends_to_dlq_and_acknowledges_on_failure_when_dlq_succeeds() {
-		doThrow(new RuntimeException("parse error")).when(notificationEventService).processRaw(any());
+		doThrow(new IllegalArgumentException("parse error")).when(notificationEventService).processRaw(any());
 		when(dlqProducer.publishConsumerFailure(any(), any(), any(), anyInt(), anyLong(), any())).thenReturn(true);
 
 		consumer.onPostEvent(RAW, acknowledgment, TOPIC, "key-1", 0, 5L);
@@ -61,7 +71,7 @@ class NotificationKafkaConsumerTest {
 
 	@Test
 	void onPostEvent_rethrows_when_dlq_also_fails() {
-		doThrow(new RuntimeException("parse error")).when(notificationEventService).processRaw(any());
+		doThrow(new IllegalArgumentException("parse error")).when(notificationEventService).processRaw(any());
 		when(dlqProducer.publishConsumerFailure(any(), any(), any(), anyInt(), anyLong(), any())).thenReturn(false);
 
 		org.assertj.core.api.Assertions

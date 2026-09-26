@@ -28,6 +28,7 @@ dependencyManagement {
 
 dependencies {
     implementation(project(":gRPC"))
+    implementation(project(":outbox"))
 
     implementation("org.springframework.boot:spring-boot-starter-web")
     implementation("org.springframework.cloud:spring-cloud-starter-netflix-eureka-client")
@@ -60,4 +61,24 @@ dependencies {
 
 tasks.withType<Test> {
     useJUnitPlatform()
+}
+tasks.bootJar {
+    archiveClassifier.set("boot")
+}
+
+tasks.test {
+    useJUnitPlatform { excludeTags("integration") }
+}
+
+tasks.register<Test>("integrationTest") {
+    description = "Required real infrastructure consumer replay, transaction and failure checks"
+    testClassesDirs = sourceSets.test.get().output.classesDirs
+    classpath = sourceSets.test.get().runtimeClasspath
+    useJUnitPlatform { includeTags("integration") }
+    outputs.upToDateWhen { false }
+    doFirst {
+        listOf("INTEGRATION_POSTGRES_URL", "INTEGRATION_POSTGRES_USER", "INTEGRATION_POSTGRES_PASSWORD").forEach { name ->
+            require(!System.getenv(name).isNullOrBlank()) { "$name is required; run ops/test-integrations.sh with isolated infrastructure" }
+        }
+    }
 }

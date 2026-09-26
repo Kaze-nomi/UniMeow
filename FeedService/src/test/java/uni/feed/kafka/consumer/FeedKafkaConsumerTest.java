@@ -15,6 +15,17 @@ import static org.mockito.Mockito.*;
 @ExtendWith(MockitoExtension.class)
 class FeedKafkaConsumerTest {
 
+	@Test
+	void infrastructureFailureDoesNotAcknowledgeOrMoveUnfinishedFanoutToDlq() {
+		doThrow(new org.springframework.data.redis.RedisConnectionFailureException("unavailable"))
+				.when(feedEventService).processRaw("record");
+		org.assertj.core.api.Assertions
+				.assertThatThrownBy(() -> feedKafkaConsumer.onPostEvent("record", acknowledgment, POST_EVENTS_TOPIC,
+						MESSAGE_KEY, PARTITION, OFFSET))
+				.isInstanceOf(org.springframework.data.redis.RedisConnectionFailureException.class);
+		verifyNoInteractions(acknowledgment, feedDlqProducer);
+	}
+
 	@Mock
 	FeedEventService feedEventService;
 
@@ -70,7 +81,7 @@ class FeedKafkaConsumerTest {
 	@Test
 	void onPostEvent_sends_to_dlq_when_processing_fails() {
 		String eventJson = "invalid json";
-		RuntimeException exception = new RuntimeException("Parse error");
+		RuntimeException exception = new IllegalArgumentException("Parse error");
 
 		doThrow(exception).when(feedEventService).processRaw(eventJson);
 		when(feedDlqProducer.publishConsumerFailure(POST_EVENTS_TOPIC, MESSAGE_KEY, eventJson, PARTITION, OFFSET,
@@ -86,7 +97,7 @@ class FeedKafkaConsumerTest {
 	@Test
 	void onPostEvent_throws_when_dlq_publish_fails() {
 		String eventJson = "invalid json";
-		RuntimeException processError = new RuntimeException("Parse error");
+		RuntimeException processError = new IllegalArgumentException("Parse error");
 
 		doThrow(processError).when(feedEventService).processRaw(eventJson);
 		when(feedDlqProducer.publishConsumerFailure(eq(POST_EVENTS_TOPIC), any(), any(), anyInt(), anyLong(), any()))
@@ -103,7 +114,7 @@ class FeedKafkaConsumerTest {
 	@Test
 	void onUserEvent_sends_to_dlq_on_processing_failure() {
 		String eventJson = "malformed";
-		RuntimeException exception = new RuntimeException("Invalid event");
+		RuntimeException exception = new IllegalArgumentException("Invalid event");
 
 		doThrow(exception).when(feedEventService).processRaw(eventJson);
 		when(feedDlqProducer.publishConsumerFailure(USER_EVENTS_TOPIC, MESSAGE_KEY, eventJson, PARTITION, OFFSET,
@@ -119,7 +130,7 @@ class FeedKafkaConsumerTest {
 	@Test
 	void onPostEvent_passes_correct_metadata_to_dlq_producer() {
 		String eventJson = "event data";
-		RuntimeException exception = new RuntimeException("Error");
+		RuntimeException exception = new IllegalArgumentException("Error");
 
 		doThrow(exception).when(feedEventService).processRaw(eventJson);
 		when(feedDlqProducer.publishConsumerFailure(anyString(), anyString(), anyString(), anyInt(), anyLong(), any()))
@@ -133,7 +144,7 @@ class FeedKafkaConsumerTest {
 	@Test
 	void onPostEvent_only_acknowledges_after_dlq_success() {
 		String eventJson = "event";
-		RuntimeException exception = new RuntimeException("Error");
+		RuntimeException exception = new IllegalArgumentException("Error");
 
 		doThrow(exception).when(feedEventService).processRaw(eventJson);
 		when(feedDlqProducer.publishConsumerFailure(anyString(), anyString(), anyString(), anyInt(), anyLong(), any()))

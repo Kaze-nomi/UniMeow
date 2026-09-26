@@ -39,7 +39,7 @@ public class FeedKafkaConsumer {
 		try {
 			feedEventService.processRaw(raw);
 			acknowledgment.acknowledge();
-		} catch (Exception e) {
+		} catch (IllegalArgumentException e) {
 			boolean dlqPublished = feedDlqProducer.publishConsumerFailure(topic, key, raw, partition, offset, e);
 			if (dlqPublished) {
 				acknowledgment.acknowledge();

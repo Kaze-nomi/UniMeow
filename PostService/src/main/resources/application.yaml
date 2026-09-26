@@ -1,7 +1,12 @@
 server:
+  shutdown: graceful
   port: 9001
 
 spring:
+  main:
+    banner-mode: 'off'
+  lifecycle:
+    timeout-per-shutdown-phase: 35s
   application:
     name: post-service
 
@@ -20,7 +25,8 @@ spring:
         format_sql: true
 
   flyway:
-    enabled: true
+    enabled: false
+    clean-disabled: true
     locations: classpath:db/migration
 
   kafka:
@@ -58,6 +64,7 @@ app:
       post-events: post-events
       post-events-dlq: post-events.dlq
   outbox:
+    namespace: ${OUTBOX_NAMESPACE:unimeow-dev}
     publish-delay-ms: 1500
   idempotency:
     retention-hours: 24
@@ -65,6 +72,7 @@ app:
 
 grpc:
   server:
+    shutdown-grace-period: 30s
     port: 9091
     permit-keep-alive-without-calls: true
     permit-keep-alive-time: 20s
@@ -81,8 +89,10 @@ grpc:
 eureka:
   client:
     serviceUrl:
-      defaultZone: http://localhost:8761/eureka/
+      defaultZone: ${EUREKA_CLIENT_SERVICEURL_DEFAULTZONE:http://localhost:8761/eureka/}
   instance:
+    instance-id: ${spring.application.name}:${HOSTNAME:${random.uuid}}
+    prefer-ip-address: true
     lease-renewal-interval-in-seconds: 5
     lease-expiration-duration-in-seconds: 15
 
@@ -93,8 +103,21 @@ management:
         include: health,info,prometheus,metrics
   endpoint:
     health:
-      show-details: always
+      show-details: never
+      probes:
+        enabled: true
+      group:
+        readiness:
+          include: readinessState,db
   metrics:
     export:
       prometheus:
         enabled: true
+
+logging:
+  structured:
+    format:
+      console: ecs
+    json:
+      add:
+        instance: ${HOSTNAME:${spring.application.name}}

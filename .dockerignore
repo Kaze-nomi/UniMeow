@@ -23,3 +23,17 @@ Thumbs.db
 # Git
 .git
 .gitignore
+
+# Private configuration is supplied only at runtime.
+**/.env
+**/.env.*
+*TASK*.md
+**/*.pem
+**/*.key
+.agent-private/
+**/__pycache__/
+**/*.pyc
+12FACTOR*.md
+BACKUPPLAN.md
+PRODUCTION_RELEASE_PLAN.md
+ОТЧЕТ.md

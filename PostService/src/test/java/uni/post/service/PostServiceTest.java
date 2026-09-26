@@ -390,6 +390,7 @@ class PostServiceTest {
 
 		assertThat(foreignPost.getLikesCount()).isEqualTo(2);
 		verify(postRepository).save(foreignPost);
+		@SuppressWarnings("unchecked")
 		ArgumentCaptor<Map<String, Object>> payloadCaptor = ArgumentCaptor.forClass(Map.class);
 		verify(outboxService).enqueuePostEvent(eq("POST_UNLIKED"), eq(VIEWER_ID.toString()),
 				eq(foreignPostId.toString()), payloadCaptor.capture());
@@ -433,6 +434,7 @@ class PostServiceTest {
 
 		postService.likePost(POST_ID, VIEWER_ID);
 
+		@SuppressWarnings("unchecked")
 		ArgumentCaptor<Map<String, Object>> payloadCaptor = ArgumentCaptor.forClass(Map.class);
 		verify(outboxService).enqueuePostEvent(eq("POST_LIKED"), any(), any(), payloadCaptor.capture());
 
@@ -498,6 +500,7 @@ class PostServiceTest {
 
 		postService.unlikePost(POST_ID, VIEWER_ID);
 
+		@SuppressWarnings("unchecked")
 		ArgumentCaptor<Map<String, Object>> payloadCaptor = ArgumentCaptor.forClass(Map.class);
 		verify(outboxService).enqueuePostEvent(eq("POST_UNLIKED"), any(), any(), payloadCaptor.capture());
 		Map<String, Object> payload = payloadCaptor.getValue();
@@ -512,6 +515,7 @@ class PostServiceTest {
 
 		postService.deletePost(POST_ID, AUTHOR_ID);
 
+		@SuppressWarnings("unchecked")
 		ArgumentCaptor<Map<String, Object>> payloadCaptor = ArgumentCaptor.forClass(Map.class);
 		verify(outboxService).enqueuePostEvent(eq("POST_DELETED"), any(), any(), payloadCaptor.capture());
 		Map<String, Object> payload = payloadCaptor.getValue();

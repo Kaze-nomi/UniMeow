@@ -164,8 +164,15 @@ public class MinioService {
 		try {
 			boolean exists = minioClient.bucketExists(BucketExistsArgs.builder().bucket(bucketName).build());
 			if (!exists) {
-				minioClient.makeBucket(MakeBucketArgs.builder().bucket(bucketName).build());
-				log.info("Created MinIO bucket: {}", bucketName);
+				try {
+					minioClient.makeBucket(MakeBucketArgs.builder().bucket(bucketName).build());
+					log.info("Created MinIO bucket: {}", bucketName);
+				} catch (io.minio.errors.ErrorResponseException conflict) {
+					// A second replica may create the same shared bucket after our existence check.
+					if (!"BucketAlreadyOwnedByYou".equals(conflict.errorResponse().code())) {
+						throw conflict;
+					}
+				}
 			}
 			minioClient.setBucketPolicy(
 					SetBucketPolicyArgs.builder().bucket(bucketName).config(publicReadPolicy(bucketName)).build());
