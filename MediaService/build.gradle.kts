@@ -48,7 +48,3 @@ dependencies {
 tasks.withType<Test> {
     useJUnitPlatform()
 }
-
-tasks.bootJar {
-    archiveClassifier.set("boot")
-}

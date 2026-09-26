@@ -10,6 +10,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.test.util.ReflectionTestUtils;
 import uni.notification.entity.Notification;
+import uni.notification.entity.ProcessedEvent;
 import uni.notification.repository.NotificationRepository;
 import uni.notification.repository.ProcessedEventRepository;
 
@@ -61,7 +62,7 @@ class NotificationEventServiceTest {
 
 	@Test
 	void processRaw_skips_when_already_processed() {
-		when(processedEventRepository.claim(EVENT_ID)).thenReturn(0);
+		when(processedEventRepository.existsByEventId(EVENT_ID)).thenReturn(true);
 
 		notificationEventService.processRaw(event("POST_CREATED", """
 				{"postId":"%s","authorId":"%s","mentionedUserIds":["%s"]}
@@ -76,33 +77,33 @@ class NotificationEventServiceTest {
 				{"eventId":"  ","eventType":"POST_CREATED","occurredAt":"%s","payload":{}}
 				""".formatted(Instant.now());
 
-		assertThatThrownBy(() -> notificationEventService.processRaw(json))
-				.isInstanceOf(IllegalArgumentException.class);
+		notificationEventService.processRaw(json);
 
 		verify(notificationRepository, never()).saveAll(any());
-		verify(processedEventRepository, never()).claim(any());
+		verify(processedEventRepository, never()).save(any());
 	}
 
 	@Test
 	void processRaw_saves_processed_event_after_handling() {
-		when(processedEventRepository.claim(EVENT_ID)).thenReturn(1);
+		when(processedEventRepository.existsByEventId(EVENT_ID)).thenReturn(false);
 
 		notificationEventService.processRaw(event("USER_FOLLOWED", """
 				{"subscriberId":"%s","targetUserId":"%s"}
 				""".formatted(USER_A, USER_B)));
 
-		verify(processedEventRepository).claim(EVENT_ID);
+		ArgumentCaptor<ProcessedEvent> captor = ArgumentCaptor.forClass(ProcessedEvent.class);
+		verify(processedEventRepository).save(captor.capture());
+		assertThat(captor.getValue().getEventId()).isEqualTo(EVENT_ID);
 	}
 
 	@Test
 	void onPostCreated_creates_mention_notification_for_each_mentioned_user() {
-		when(processedEventRepository.claim(EVENT_ID)).thenReturn(1);
+		when(processedEventRepository.existsByEventId(EVENT_ID)).thenReturn(false);
 
 		notificationEventService.processRaw(event("POST_CREATED", """
 				{"postId":"%s","authorId":"%s","mentionedUserIds":["%s","%s"]}
 				""".formatted(POST_ID, USER_A, USER_B, USER_C)));
 
-		@SuppressWarnings("unchecked")
 		ArgumentCaptor<List<Notification>> captor = ArgumentCaptor.forClass(List.class);
 		verify(notificationRepository).saveAll(captor.capture());
 		List<Notification> saved = captor.getValue();
@@ -113,13 +114,12 @@ class NotificationEventServiceTest {
 
 	@Test
 	void onPostCreated_deduplicates_repeated_mentioned_user_ids_in_same_event() {
-		when(processedEventRepository.claim(EVENT_ID)).thenReturn(1);
+		when(processedEventRepository.existsByEventId(EVENT_ID)).thenReturn(false);
 
 		notificationEventService.processRaw(event("POST_CREATED", """
 				{"postId":"%s","authorId":"%s","mentionedUserIds":["%s","%s"]}
 				""".formatted(POST_ID, USER_A, USER_B, USER_B)));
 
-		@SuppressWarnings("unchecked")
 		ArgumentCaptor<List<Notification>> captor = ArgumentCaptor.forClass(List.class);
 		verify(notificationRepository).saveAll(captor.capture());
 		assertThat(captor.getValue()).hasSize(1);
@@ -128,7 +128,7 @@ class NotificationEventServiceTest {
 
 	@Test
 	void onPostCreated_skips_mention_if_author_is_mentioned() {
-		when(processedEventRepository.claim(EVENT_ID)).thenReturn(1);
+		when(processedEventRepository.existsByEventId(EVENT_ID)).thenReturn(false);
 
 		notificationEventService.processRaw(event("POST_CREATED", """
 				{"postId":"%s","authorId":"%s","mentionedUserIds":["%s"]}
@@ -139,7 +139,7 @@ class NotificationEventServiceTest {
 
 	@Test
 	void onPostCreated_produces_no_notifications_when_no_mentions() {
-		when(processedEventRepository.claim(EVENT_ID)).thenReturn(1);
+		when(processedEventRepository.existsByEventId(EVENT_ID)).thenReturn(false);
 
 		notificationEventService.processRaw(event("POST_CREATED", """
 				{"postId":"%s","authorId":"%s","mentionedUserIds":[]}
@@ -150,13 +150,12 @@ class NotificationEventServiceTest {
 
 	@Test
 	void onPostLiked_creates_like_notification_for_author() {
-		when(processedEventRepository.claim(EVENT_ID)).thenReturn(1);
+		when(processedEventRepository.existsByEventId(EVENT_ID)).thenReturn(false);
 
 		notificationEventService.processRaw(event("POST_LIKED", """
 				{"postId":"%s","authorId":"%s","actorId":"%s"}
 				""".formatted(POST_ID, USER_A, USER_B)));
 
-		@SuppressWarnings("unchecked")
 		ArgumentCaptor<List<Notification>> captor = ArgumentCaptor.forClass(List.class);
 		verify(notificationRepository).saveAll(captor.capture());
 		Notification n = captor.getValue().get(0);
@@ -167,7 +166,7 @@ class NotificationEventServiceTest {
 
 	@Test
 	void onPostLiked_merges_existing_like_notification_in_dedup_window() {
-		when(processedEventRepository.claim(EVENT_ID)).thenReturn(1);
+		when(processedEventRepository.existsByEventId(EVENT_ID)).thenReturn(false);
 		Notification existing = Notification.builder().id(UUID.randomUUID()).userId(UUID.fromString(USER_A))
 				.actorId(UUID.fromString(USER_B)).type("LIKE_POST").entityId(POST_ID).entityType("POST").isRead(true)
 				.createdAt(LocalDateTime.now().minusDays(1)).build();
@@ -179,7 +178,6 @@ class NotificationEventServiceTest {
 				{"postId":"%s","authorId":"%s","actorId":"%s"}
 				""".formatted(POST_ID, USER_A, USER_B)));
 
-		@SuppressWarnings("unchecked")
 		ArgumentCaptor<List<Notification>> captor = ArgumentCaptor.forClass(List.class);
 		verify(notificationRepository).saveAll(captor.capture());
 		assertThat(captor.getValue()).containsExactly(existing);
@@ -189,7 +187,7 @@ class NotificationEventServiceTest {
 
 	@Test
 	void onPostLiked_skips_self_like() {
-		when(processedEventRepository.claim(EVENT_ID)).thenReturn(1);
+		when(processedEventRepository.existsByEventId(EVENT_ID)).thenReturn(false);
 
 		notificationEventService.processRaw(event("POST_LIKED", """
 				{"postId":"%s","authorId":"%s","actorId":"%s"}
@@ -200,13 +198,12 @@ class NotificationEventServiceTest {
 
 	@Test
 	void onCommentCreated_notifies_post_author_when_no_parent() {
-		when(processedEventRepository.claim(EVENT_ID)).thenReturn(1);
+		when(processedEventRepository.existsByEventId(EVENT_ID)).thenReturn(false);
 
 		notificationEventService.processRaw(event("COMMENT_CREATED", """
 				{"commentId":"%s","postId":"%s","authorId":"%s","postAuthorId":"%s"}
 				""".formatted(COMMENT_ID, POST_ID, USER_B, USER_A)));
 
-		@SuppressWarnings("unchecked")
 		ArgumentCaptor<List<Notification>> captor = ArgumentCaptor.forClass(List.class);
 		verify(notificationRepository).saveAll(captor.capture());
 		Notification n = captor.getValue().get(0);
@@ -216,8 +213,8 @@ class NotificationEventServiceTest {
 
 	@Test
 	void onCommentCreated_merges_duplicate_comment_notification_with_new_event_id() {
-		when(processedEventRepository.claim("event-001")).thenReturn(1);
-		when(processedEventRepository.claim("event-002")).thenReturn(1);
+		when(processedEventRepository.existsByEventId("event-001")).thenReturn(false);
+		when(processedEventRepository.existsByEventId("event-002")).thenReturn(false);
 
 		notificationEventService.processRaw(eventWithId("event-001", "COMMENT_CREATED", """
 				{"commentId":"%s","postId":"%s","authorId":"%s","postAuthorId":"%s"}
@@ -234,7 +231,6 @@ class NotificationEventServiceTest {
 				{"commentId":"%s","postId":"%s","authorId":"%s","postAuthorId":"%s"}
 				""".formatted(COMMENT_ID, POST_ID, USER_B, USER_A)));
 
-		@SuppressWarnings("unchecked")
 		ArgumentCaptor<List<Notification>> captor = ArgumentCaptor.forClass(List.class);
 		verify(notificationRepository, times(2)).saveAll(captor.capture());
 		assertThat(captor.getAllValues().get(1)).containsExactly(existing);
@@ -243,14 +239,13 @@ class NotificationEventServiceTest {
 
 	@Test
 	void onCommentCreated_notifies_parent_author_on_reply() {
-		when(processedEventRepository.claim(EVENT_ID)).thenReturn(1);
+		when(processedEventRepository.existsByEventId(EVENT_ID)).thenReturn(false);
 
 		notificationEventService.processRaw(event("COMMENT_CREATED", """
 				{"commentId":"%s","postId":"%s","authorId":"%s","postAuthorId":"%s",
 				 "parentCommentId":"parent-1","parentAuthorId":"%s"}
 				""".formatted(COMMENT_ID, POST_ID, USER_B, USER_A, USER_C)));
 
-		@SuppressWarnings("unchecked")
 		ArgumentCaptor<List<Notification>> captor = ArgumentCaptor.forClass(List.class);
 		verify(notificationRepository).saveAll(captor.capture());
 		Notification n = captor.getValue().get(0);
@@ -260,7 +255,7 @@ class NotificationEventServiceTest {
 
 	@Test
 	void onCommentCreated_skips_comment_on_own_post() {
-		when(processedEventRepository.claim(EVENT_ID)).thenReturn(1);
+		when(processedEventRepository.existsByEventId(EVENT_ID)).thenReturn(false);
 
 		notificationEventService.processRaw(event("COMMENT_CREATED", """
 				{"commentId":"%s","postId":"%s","authorId":"%s","postAuthorId":"%s"}
@@ -271,14 +266,13 @@ class NotificationEventServiceTest {
 
 	@Test
 	void onCommentCreated_adds_mention_and_comment_notification_without_duplicating_already_notified_user() {
-		when(processedEventRepository.claim(EVENT_ID)).thenReturn(1);
+		when(processedEventRepository.existsByEventId(EVENT_ID)).thenReturn(false);
 
 		notificationEventService.processRaw(event("COMMENT_CREATED", """
 				{"commentId":"%s","postId":"%s","authorId":"%s","postAuthorId":"%s",
 				 "mentionedUserIds":["%s","%s"]}
 				""".formatted(COMMENT_ID, POST_ID, USER_B, USER_A, USER_A, USER_C)));
 
-		@SuppressWarnings("unchecked")
 		ArgumentCaptor<List<Notification>> captor = ArgumentCaptor.forClass(List.class);
 		verify(notificationRepository).saveAll(captor.capture());
 		List<Notification> saved = captor.getValue();
@@ -291,13 +285,12 @@ class NotificationEventServiceTest {
 
 	@Test
 	void onCommentLiked_creates_like_notification_for_comment_author() {
-		when(processedEventRepository.claim(EVENT_ID)).thenReturn(1);
+		when(processedEventRepository.existsByEventId(EVENT_ID)).thenReturn(false);
 
 		notificationEventService.processRaw(event("COMMENT_LIKED", """
 				{"commentId":"%s","commentAuthorId":"%s","actorId":"%s"}
 				""".formatted(COMMENT_ID, USER_A, USER_B)));
 
-		@SuppressWarnings("unchecked")
 		ArgumentCaptor<List<Notification>> captor = ArgumentCaptor.forClass(List.class);
 		verify(notificationRepository).saveAll(captor.capture());
 		Notification n = captor.getValue().get(0);
@@ -308,7 +301,7 @@ class NotificationEventServiceTest {
 
 	@Test
 	void onCommentLiked_skips_self_like() {
-		when(processedEventRepository.claim(EVENT_ID)).thenReturn(1);
+		when(processedEventRepository.existsByEventId(EVENT_ID)).thenReturn(false);
 
 		notificationEventService.processRaw(event("COMMENT_LIKED", """
 				{"commentId":"%s","commentAuthorId":"%s","actorId":"%s"}
@@ -319,13 +312,12 @@ class NotificationEventServiceTest {
 
 	@Test
 	void onUserFollowed_creates_follow_notification() {
-		when(processedEventRepository.claim(EVENT_ID)).thenReturn(1);
+		when(processedEventRepository.existsByEventId(EVENT_ID)).thenReturn(false);
 
 		notificationEventService.processRaw(event("USER_FOLLOWED", """
 				{"subscriberId":"%s","targetUserId":"%s"}
 				""".formatted(USER_A, USER_B)));
 
-		@SuppressWarnings("unchecked")
 		ArgumentCaptor<List<Notification>> captor = ArgumentCaptor.forClass(List.class);
 		verify(notificationRepository).saveAll(captor.capture());
 		Notification n = captor.getValue().get(0);
@@ -336,7 +328,7 @@ class NotificationEventServiceTest {
 
 	@Test
 	void onUserFollowed_skips_self_follow() {
-		when(processedEventRepository.claim(EVENT_ID)).thenReturn(1);
+		when(processedEventRepository.existsByEventId(EVENT_ID)).thenReturn(false);
 
 		notificationEventService.processRaw(event("USER_FOLLOWED", """
 				{"subscriberId":"%s","targetUserId":"%s"}
@@ -347,13 +339,12 @@ class NotificationEventServiceTest {
 
 	@Test
 	void onAdminGranted_creates_admin_granted_notification() {
-		when(processedEventRepository.claim(EVENT_ID)).thenReturn(1);
+		when(processedEventRepository.existsByEventId(EVENT_ID)).thenReturn(false);
 
 		notificationEventService.processRaw(event("ADMIN_GRANTED", """
 				{"targetUserId":"%s","granterId":"%s"}
 				""".formatted(USER_A, USER_B)));
 
-		@SuppressWarnings("unchecked")
 		ArgumentCaptor<List<Notification>> captor = ArgumentCaptor.forClass(List.class);
 		verify(notificationRepository).saveAll(captor.capture());
 		assertThat(captor.getValue().get(0).getType()).isEqualTo("ADMIN_GRANTED");
@@ -361,13 +352,12 @@ class NotificationEventServiceTest {
 
 	@Test
 	void onUserBanned_creates_banned_notification() {
-		when(processedEventRepository.claim(EVENT_ID)).thenReturn(1);
+		when(processedEventRepository.existsByEventId(EVENT_ID)).thenReturn(false);
 
 		notificationEventService.processRaw(event("USER_BANNED", """
 				{"targetUserId":"%s","moderatorId":"%s"}
 				""".formatted(USER_A, USER_B)));
 
-		@SuppressWarnings("unchecked")
 		ArgumentCaptor<List<Notification>> captor = ArgumentCaptor.forClass(List.class);
 		verify(notificationRepository).saveAll(captor.capture());
 		assertThat(captor.getValue().get(0).getType()).isEqualTo("BANNED");
@@ -375,20 +365,18 @@ class NotificationEventServiceTest {
 
 	@Test
 	void processRaw_ignores_unknown_event_type() {
-		when(processedEventRepository.claim(EVENT_ID)).thenReturn(1);
+		when(processedEventRepository.existsByEventId(EVENT_ID)).thenReturn(false);
 
 		notificationEventService.processRaw(event("UNKNOWN_TYPE", """
 				{"foo":"bar"}
 				"""));
 
 		verify(notificationRepository, never()).saveAll(any());
-		verify(processedEventRepository).claim(EVENT_ID);
+		verify(processedEventRepository).save(any());
 	}
 
 	@Test
 	void processRaw_throws_on_invalid_json() {
-		assertThatThrownBy(() -> notificationEventService.processRaw("null"))
-				.isInstanceOf(IllegalArgumentException.class);
 		assertThatThrownBy(() -> notificationEventService.processRaw("not json"))
 				.isInstanceOf(IllegalArgumentException.class).hasMessageContaining("Failed to deserialize");
 	}

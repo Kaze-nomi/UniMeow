@@ -30,8 +30,6 @@ dependencies {
     implementation(project(":gRPC"))
 
     implementation("org.springframework.boot:spring-boot-starter-webflux")
-    implementation("org.springframework.boot:spring-boot-starter-session-data-redis")
-    implementation("org.springframework.boot:spring-boot-starter-data-redis-reactive")
     implementation("org.springframework.cloud:spring-cloud-starter-netflix-eureka-client")
 
     implementation("org.springframework.boot:spring-boot-starter-graphql")
@@ -62,25 +60,4 @@ dependencies {
 
 tasks.withType<Test> {
     useJUnitPlatform()
-}
-
-tasks.test {
-    useJUnitPlatform { excludeTags("integration") }
-}
-
-tasks.register<Test>("integrationTest") {
-    description = "Two Gateway replicas complete an OAuth flow using real shared Redis"
-    outputs.upToDateWhen { false }
-    testClassesDirs = sourceSets.test.get().output.classesDirs
-    classpath = sourceSets.test.get().runtimeClasspath
-    useJUnitPlatform { includeTags("integration") }
-    doFirst {
-        require(!System.getenv("TEST_REDIS_PORT").isNullOrBlank()) {
-            "TEST_REDIS_PORT must point to an isolated Redis for the OAuth integration test"
-        }
-    }
-}
-
-tasks.bootJar {
-    archiveClassifier.set("boot")
 }

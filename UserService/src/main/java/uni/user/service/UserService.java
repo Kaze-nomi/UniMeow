@@ -180,7 +180,6 @@ public class UserService {
 
 	@Transactional
 	public void subscribe(UUID subscriberId, UUID targetUserId) {
-		outboxService.lockMutation(targetUserId);
 		if (subscriberId.equals(targetUserId)) {
 			throw new IllegalArgumentException("Cannot subscribe to yourself");
 		}
@@ -239,7 +238,6 @@ public class UserService {
 
 	@Transactional
 	public void unsubscribe(UUID subscriberId, UUID targetUserId) {
-		outboxService.lockMutation(targetUserId);
 		boolean exists = subscriptionRepository.existsBySubscriberIdAndTargetUserId(subscriberId, targetUserId);
 		if (!exists) {
 			return;
@@ -300,7 +298,6 @@ public class UserService {
 
 	@Transactional
 	public void banUser(UUID moderatorId, UUID targetUserId, LocalDateTime bannedUntil, String reason) {
-		outboxService.lockMutation(targetUserId);
 		User moderator = getById(moderatorId);
 		if (!moderator.isAdmin()) {
 			throw new SecurityException("Admin privileges required");
@@ -354,7 +351,6 @@ public class UserService {
 
 	@Transactional
 	public void deleteAccount(UUID userId) {
-		outboxService.lockMutation(userId);
 		User user = getById(userId);
 		if (isBanned(user)) {
 			throw new SecurityException("User is banned");

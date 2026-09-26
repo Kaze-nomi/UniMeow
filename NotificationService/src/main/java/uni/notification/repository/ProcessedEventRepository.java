@@ -11,12 +11,6 @@ public interface ProcessedEventRepository extends JpaRepository<ProcessedEvent, 
 
 	boolean existsByEventId(String eventId);
 
-	/** The claim and the notification effect commit or roll back together. */
-	@Modifying
-	@Query(value = "INSERT INTO processed_events(event_id, processed_at) VALUES (:eventId, CURRENT_TIMESTAMP) "
-			+ "ON CONFLICT (event_id) DO NOTHING", nativeQuery = true)
-	int claim(String eventId);
-
 	@Modifying
 	@Query("DELETE FROM ProcessedEvent p WHERE p.processedAt < :cutoff")
 	int deleteOlderThan(LocalDateTime cutoff);

@@ -28,7 +28,6 @@ dependencyManagement {
 
 dependencies {
     implementation(project(":gRPC"))
-    implementation(project(":outbox"))
 
     implementation("org.springframework.boot:spring-boot-starter-web")
     implementation("org.springframework.cloud:spring-cloud-starter-netflix-eureka-client")
@@ -64,7 +63,4 @@ dependencies {
 
 tasks.withType<Test> {
     useJUnitPlatform()
-}
-tasks.bootJar {
-    archiveClassifier.set("boot")
 }

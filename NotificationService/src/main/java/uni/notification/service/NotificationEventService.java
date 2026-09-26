@@ -7,6 +7,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import uni.notification.entity.Notification;
+import uni.notification.entity.ProcessedEvent;
 import uni.notification.kafka.EventEnvelope;
 import uni.notification.repository.NotificationRepository;
 import uni.notification.repository.ProcessedEventRepository;
@@ -14,10 +15,7 @@ import uni.notification.repository.ProcessedEventRepository;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Set;
 import java.util.UUID;
-import java.util.stream.Collectors;
-import java.util.stream.Stream;
 
 @Service
 @RequiredArgsConstructor
@@ -32,12 +30,10 @@ public class NotificationEventService {
 	public void processRaw(String raw) {
 		EventEnvelope event = parse(raw);
 		if (event.eventId() == null || event.eventId().isBlank()) {
-			throw new IllegalArgumentException("eventId is missing");
+			log.warn("Event with blank eventId skipped");
+			return;
 		}
-		if (event.eventType() == null) {
-			throw new IllegalArgumentException("eventType is missing");
-		}
-		if (processedEventRepository.claim(event.eventId()) == 0) {
+		if (processedEventRepository.existsByEventId(event.eventId())) {
 			return;
 		}
 
@@ -60,23 +56,6 @@ public class NotificationEventService {
 		};
 
 		if (!notifications.isEmpty()) {
-			// User removal and notifications from different Kafka topics have no shared
-			// order. Lock every participant before checking permanent deletion state.
-			// All paths take participant locks before business-group locks.
-			List<UUID> participants = notifications.stream()
-					.flatMap(n -> Stream.of(n.getUserId(), n.getActorId())).distinct().sorted().toList();
-			participants.forEach(notificationRepository::lockUser);
-			Set<UUID> deleted = participants.stream().filter(notificationRepository::isUserDeleted)
-					.collect(Collectors.toSet());
-			notifications = notifications.stream()
-					.filter(n -> !deleted.contains(n.getUserId()) && !deleted.contains(n.getActorId())).toList();
-		}
-
-		if (!notifications.isEmpty()) {
-			// Lock in deterministic order to avoid deadlocks for multi-mention events.
-			// An event-id inbox alone does not serialize different events in one group.
-			notifications.stream().map(NotificationEventService::businessGroup).distinct().sorted()
-					.forEach(notificationRepository::lockBusinessGroup);
 			List<Notification> toSave = new ArrayList<>();
 			LocalDateTime dedupWindow = LocalDateTime.now().minusDays(DEDUP_WINDOW_DAYS);
 			for (Notification notification : notifications) {
@@ -84,11 +63,9 @@ public class NotificationEventService {
 			}
 			notificationRepository.saveAll(toSave);
 		}
-	}
 
-	private static String businessGroup(Notification notification) {
-		return notification.getUserId() + ":" + notification.getActorId() + ":" + notification.getType() + ":"
-				+ notification.getEntityId();
+		processedEventRepository
+				.save(ProcessedEvent.builder().eventId(event.eventId()).processedAt(LocalDateTime.now()).build());
 	}
 
 	private static final long DEDUP_WINDOW_DAYS = 30;
@@ -241,8 +218,6 @@ public class NotificationEventService {
 			return;
 		}
 		UUID userId = UUID.fromString(userIdText);
-		notificationRepository.lockUser(userId);
-		notificationRepository.markUserDeleted(userId);
 		int deleted = notificationRepository.deleteAllForUser(userId, userIdText);
 		log.info("Deleted {} notifications for removed user {}", deleted, userId);
 	}
@@ -261,11 +236,7 @@ public class NotificationEventService {
 
 	private EventEnvelope parse(String raw) {
 		try {
-			EventEnvelope event = objectMapper.readValue(raw, EventEnvelope.class);
-			if (event == null) {
-				throw new IllegalArgumentException("Event must be a JSON object");
-			}
-			return event;
+			return objectMapper.readValue(raw, EventEnvelope.class);
 		} catch (Exception e) {
 			throw new IllegalArgumentException("Failed to deserialize event", e);
 		}

@@ -1,14 +1,6 @@
 import React from 'react';
 import { createRoot } from 'react-dom/client';
 import { createPortal } from 'react-dom';
-import { loadRuntimeConfig } from './runtime-config.js';
-
-try {
-  window.UM_CONFIG = await loadRuntimeConfig();
-} catch (error) {
-  document.getElementById('root').textContent = 'Не удалось загрузить настройки приложения. Попробуйте обновить страницу.';
-  throw error;
-}
 
 window.React = React;
 window.ReactDOM = { createRoot, createPortal };
