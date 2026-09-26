@@ -1,27 +1,31 @@
-FROM eclipse-temurin:25-jdk@sha256:119a3d18f160a3e7655a66034d0f43beee31cd7b3b9142d57a5de29772011de6 AS build
+FROM gradle:9-jdk25 AS build
 WORKDIR /app
-COPY settings.gradle.kts build.gradle.kts gradlew ./
-COPY gradle/ gradle/
-COPY config/ config/
-COPY gRPC/build.gradle.kts gRPC/
-COPY outbox/build.gradle.kts outbox/
-COPY APIGateway/build.gradle.kts APIGateway/
-COPY UserService/build.gradle.kts UserService/
-COPY PostService/build.gradle.kts PostService/
-COPY FeedService/build.gradle.kts FeedService/
+
+COPY settings.gradle.kts build.gradle.kts ./
+
+COPY gRPC/build.gradle.kts         gRPC/
+COPY FeedService/build.gradle.kts  FeedService/
+COPY UserService/build.gradle.kts  UserService/
+COPY PostService/build.gradle.kts  PostService/
+COPY APIGateway/build.gradle.kts   APIGateway/
+COPY Eureka/build.gradle.kts       Eureka/
 COPY MediaService/build.gradle.kts MediaService/
 COPY NotificationService/build.gradle.kts NotificationService/
-COPY Eureka/build.gradle.kts Eureka/
-RUN chmod +x gradlew
-COPY gRPC/src gRPC/src
-COPY outbox/src outbox/src
-COPY FeedService/src FeedService/src
-RUN --mount=type=cache,target=/root/.gradle,sharing=locked ./gradlew :FeedService:bootJar --no-daemon --max-workers=2
 
-FROM eclipse-temurin:25-jre-alpine@sha256:3c0a9084927a221ccd1d007fcaf614465672c0af37aaa834c5184483afe56d61
+RUN gradle :FeedService:dependencies --no-daemon --quiet 2>/dev/null || true
+
+COPY gRPC/src          gRPC/src
+COPY FeedService/src   FeedService/src
+
+RUN gradle :FeedService:bootJar --no-daemon -x test
+
+FROM eclipse-temurin:25-jre-alpine
 WORKDIR /app
+
 RUN addgroup -S app && adduser -S app -G app
 USER app
-COPY --from=build /app/FeedService/build/libs/*-boot.jar app.jar
+
+COPY --from=build /app/FeedService/build/libs/*.jar app.jar
+
 EXPOSE 9002 9092
 ENTRYPOINT ["java", "-XX:+UseContainerSupport", "-XX:MaxRAMPercentage=75.0", "-jar", "app.jar"]

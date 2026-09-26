@@ -1,46 +1,78 @@
 package uni.user.outbox;
 
-import jakarta.annotation.PreDestroy;
-import io.micrometer.core.instrument.Gauge;
-import io.micrometer.core.instrument.MeterRegistry;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
-import org.springframework.transaction.PlatformTransactionManager;
-import uni.outbox.JdbcOutboxStore;
-import uni.outbox.ShardPublisher;
-import uni.outbox.TransactionalProducers;
+import org.springframework.transaction.annotation.Transactional;
+
+import java.time.Instant;
+import java.time.LocalDateTime;
+import java.util.List;
+import java.util.Map;
 
 @Component
+@RequiredArgsConstructor
+@Slf4j
 public class OutboxPublisher {
-    private final ShardPublisher publisher;
 
-    public OutboxPublisher(JdbcTemplate jdbc, PlatformTransactionManager transactions,
-            KafkaTemplate<String, String> kafka, MeterRegistry metrics,
-            @Value("${app.outbox.namespace}") String namespace,
-            @Value("${app.outbox.workers:2}") int workers,
-            @Value("${app.outbox.batch-size:50}") int batchSize,
-            @Value("${app.outbox.lease-ms:45000}") long leaseMillis,
-            @Value("${app.outbox.max-block-ms:10000}") int maxBlockMillis,
-            @Value("${app.outbox.transaction-timeout-ms:30000}") int transactionTimeoutMillis) {
-        JdbcOutboxStore store = new JdbcOutboxStore(jdbc, transactions);
-        Gauge.builder("outbox.pending.events", store, JdbcOutboxStore::pendingCount).register(metrics);
-        Gauge.builder("outbox.oldest.pending.seconds", store, JdbcOutboxStore::oldestPendingSeconds).register(metrics);
-        publisher = new ShardPublisher(store,
-                TransactionalProducers.factory(kafka.getProducerFactory().getConfigurationProperties(),
-                        namespace, "user-service", maxBlockMillis, transactionTimeoutMillis),
-                workers, batchSize, leaseMillis, maxBlockMillis, transactionTimeoutMillis);
-    }
+	private final OutboxEventRepository outboxEventRepository;
+	private final KafkaTemplate<String, String> kafkaTemplate;
+	private final ObjectMapper objectMapper;
 
-    @Scheduled(fixedDelayString = "${app.outbox.publish-delay-ms:1500}")
-    public void publishPendingEvents() {
-        publisher.publishPendingEvents();
-    }
+	@Value("${app.kafka.topics.user-events-dlq:user-events.dlq}")
+	private String userEventsDlqTopic;
 
-    @PreDestroy
-    public void close() {
-        publisher.close();
-    }
+	@Scheduled(fixedDelayString = "${app.outbox.publish-delay-ms:1500}")
+	@Transactional
+	public void publishPendingEvents() {
+		List<OutboxEvent> events = outboxEventRepository.findTop100ByPublishedAtIsNullOrderByCreatedAtAsc();
+
+		for (OutboxEvent event : events) {
+			try {
+				kafkaTemplate.send(event.getTopic(), event.getEventKey(), event.getPayload()).join();
+				event.setPublishedAt(LocalDateTime.now());
+			} catch (Exception e) {
+				boolean dlqPublished = publishToDlq(event, e);
+				if (dlqPublished) {
+					event.setPublishedAt(LocalDateTime.now());
+					log.warn("Outbox event {} moved to producer DLQ", event.getId());
+					continue;
+				}
+
+				log.warn("Failed to publish outbox event {} and failed to publish to DLQ", event.getId(), e);
+				break;
+			}
+		}
+	}
+
+	private boolean publishToDlq(OutboxEvent event, Exception sourceError) {
+		try {
+			JsonNode originalPayload = tryReadJson(event.getPayload());
+
+			String dlqPayload = objectMapper.writeValueAsString(Map.of("failedAt", Instant.now().toString(),
+					"sourceTopic", event.getTopic(), "eventKey", event.getEventKey(), "outboxId",
+					event.getId().toString(), "errorClass", sourceError.getClass().getName(), "errorMessage",
+					sourceError.getMessage() == null ? "" : sourceError.getMessage(), "payload",
+					originalPayload == null ? event.getPayload() : originalPayload));
+
+			kafkaTemplate.send(userEventsDlqTopic, event.getEventKey(), dlqPayload).join();
+			return true;
+		} catch (Exception e) {
+			log.error("Failed to publish producer DLQ message for outbox event {}", event.getId(), e);
+			return false;
+		}
+	}
+
+	private JsonNode tryReadJson(String rawJson) {
+		try {
+			return objectMapper.readTree(rawJson);
+		} catch (Exception ignored) {
+			return null;
+		}
+	}
 }

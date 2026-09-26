@@ -5,8 +5,6 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Propagation;
-import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
 import java.time.LocalDateTime;
@@ -23,12 +21,6 @@ public class OutboxService {
 	@Value("${app.kafka.topics.user-events:user-events}")
 	private String userEventsTopic;
 
-	@Transactional(propagation = Propagation.MANDATORY)
-	public void lockMutation(UUID aggregateId) {
-		outboxEventRepository.lockMutation(aggregateId.toString());
-	}
-
-	@Transactional(propagation = Propagation.MANDATORY)
 	public void enqueueUserEvent(String eventType, String eventKey, String aggregateId, Map<String, Object> payload) {
 		try {
 			String eventId = UUID.randomUUID().toString();

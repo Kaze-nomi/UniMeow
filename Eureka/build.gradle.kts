@@ -30,6 +30,3 @@ dependencies {
 
     implementation("org.springframework.boot:spring-boot-starter-validation")
 }
-tasks.bootJar {
-    archiveClassifier.set("boot")
-}

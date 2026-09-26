@@ -1,6 +1,6 @@
 
 (function () {
-  const BASE = window.UM_CONFIG.apiBase;
+  const BASE = (typeof __API_BASE__ !== 'undefined' && __API_BASE__) || 'http://localhost:8081';
   const GQL = BASE + '/graphql';
 
   let _refreshing = null;
@@ -403,7 +403,7 @@
 
   function resolveAssetUrl(url) {
     if (!url) return url;
-    const publicMinioBase = window.UM_CONFIG.minioPublicUrl;
+    const publicMinioBase = (typeof __MINIO_PUBLIC_URL__ !== 'undefined' && __MINIO_PUBLIC_URL__) || 'http://localhost:9000';
     const normalizedPublicMinioBase = publicMinioBase.endsWith('/') ? publicMinioBase.slice(0, -1) : publicMinioBase;
     if (/^https?:\/\/(localhost|127\.0\.0\.1):9000\//i.test(url)) {
       return normalizedPublicMinioBase + url.replace(/^https?:\/\/(localhost|127\.0\.0\.1):9000/i, '');

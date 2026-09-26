@@ -55,7 +55,6 @@ public class AuthController {
 		return revokeMono.onErrorReturn(false).doOnNext(result -> {
 			exchange.getResponse().addCookie(cookieUtil.revokeCookie("ACCESS_TOKEN"));
 			exchange.getResponse().addCookie(cookieUtil.revokeCookie("REFRESH_TOKEN"));
-		}).then(exchange.getSession().flatMap(session -> session.invalidate()))
-				.thenReturn(ResponseEntity.ok().<Void>build());
+		}).thenReturn(ResponseEntity.ok().<Void>build());
 	}
 }

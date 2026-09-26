@@ -7,13 +7,9 @@ import uni.post.entity.Comment;
 
 import java.time.LocalDateTime;
 import java.util.List;
-import java.util.Optional;
 import java.util.UUID;
 
 public interface CommentRepository extends JpaRepository<Comment, UUID> {
-	@Query("SELECT c.postId FROM Comment c WHERE c.id = :commentId")
-	Optional<UUID> findPostIdForMutation(UUID commentId);
-
 	List<Comment> findByPostId(UUID postId);
 
 	List<Comment> findByAuthorId(UUID authorId);

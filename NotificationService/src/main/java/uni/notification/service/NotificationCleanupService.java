@@ -27,9 +27,8 @@ public class NotificationCleanupService {
 	public void cleanup() {
 		LocalDateTime cutoff = LocalDateTime.now().minusDays(ttlDays);
 		int deletedNotifications = notificationRepository.deleteOlderThan(cutoff);
-		// Keep event IDs across notification expiration and Kafka/DLQ replay. Deleting
-		// them here allowed an old delivery to recreate a previously expired notice.
-		log.info("Cleanup: deleted {} notifications older than {} days; inbox IDs retained", deletedNotifications,
-				ttlDays);
+		int deletedEvents = processedEventRepository.deleteOlderThan(cutoff);
+		log.info("Cleanup: deleted {} notifications and {} processed events older than {} days", deletedNotifications,
+				deletedEvents, ttlDays);
 	}
 }

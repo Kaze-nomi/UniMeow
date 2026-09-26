@@ -39,7 +39,7 @@ public class NotificationKafkaConsumer {
 		try {
 			notificationEventService.processRaw(raw);
 			acknowledgment.acknowledge();
-		} catch (IllegalArgumentException e) {
+		} catch (Exception e) {
 			boolean published = dlqProducer.publishConsumerFailure(topic, key, raw, partition, offset, e);
 			if (published) {
 				acknowledgment.acknowledge();

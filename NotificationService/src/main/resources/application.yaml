@@ -1,12 +1,7 @@
 server:
-  shutdown: graceful
   port: 9006
 
 spring:
-  main:
-    banner-mode: 'off'
-  lifecycle:
-    timeout-per-shutdown-phase: 35s
   application:
     name: notification-service
 
@@ -25,20 +20,11 @@ spring:
         format_sql: true
 
   flyway:
-    enabled: false
-    clean-disabled: true
+    enabled: true
     locations: classpath:db/migration
 
   kafka:
     bootstrap-servers: ${SPRING_KAFKA_BOOTSTRAP_SERVERS:kafka:9092}
-    producer:
-      acks: all
-      key-serializer: org.apache.kafka.common.serialization.StringSerializer
-      value-serializer: org.apache.kafka.common.serialization.StringSerializer
-      properties:
-        enable.idempotence: true
-        delivery.timeout.ms: 120000
-        request.timeout.ms: 30000
     consumer:
       group-id: notification-service
       auto-offset-reset: earliest
@@ -61,7 +47,6 @@ app:
 
 grpc:
   server:
-    shutdown-grace-period: 30s
     port: 9095
     permit-keep-alive-without-calls: true
     permit-keep-alive-time: 20s
@@ -69,10 +54,8 @@ grpc:
 eureka:
   client:
     serviceUrl:
-      defaultZone: ${EUREKA_CLIENT_SERVICEURL_DEFAULTZONE:http://localhost:8761/eureka/}
+      defaultZone: http://localhost:8761/eureka/
   instance:
-    instance-id: ${spring.application.name}:${HOSTNAME:${random.uuid}}
-    prefer-ip-address: true
     lease-renewal-interval-in-seconds: 5
     lease-expiration-duration-in-seconds: 15
 
@@ -83,21 +66,8 @@ management:
         include: health,info,prometheus,metrics
   endpoint:
     health:
-      show-details: never
-      probes:
-        enabled: true
-      group:
-        readiness:
-          include: readinessState,db
+      show-details: always
   metrics:
     export:
       prometheus:
         enabled: true
-
-logging:
-  structured:
-    format:
-      console: ecs
-    json:
-      add:
-        instance: ${HOSTNAME:${spring.application.name}}

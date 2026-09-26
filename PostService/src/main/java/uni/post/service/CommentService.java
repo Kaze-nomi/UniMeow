@@ -57,7 +57,6 @@ public class CommentService {
 	@Transactional
 	public CommentResult addComment(UUID postId, UUID authorId, String content, UUID parentCommentId,
 			String clientRequestId) {
-		outboxService.lockMutation(postId);
 		if (content == null || content.isBlank()) {
 			throw new IllegalArgumentException("Comment content cannot be empty");
 		}
@@ -247,9 +246,6 @@ public class CommentService {
 	}
 
 	private Comment findOrThrow(UUID commentId) {
-		// Scalar lookup avoids loading a stale entity before waiting for the lock.
-		// All comment mutations share the post lock with counts and user cleanup.
-		commentRepository.findPostIdForMutation(commentId).ifPresent(outboxService::lockMutation);
 		return commentRepository.findById(commentId)
 				.orElseThrow(() -> new CommentNotFoundException("Comment not found: " + commentId));
 	}

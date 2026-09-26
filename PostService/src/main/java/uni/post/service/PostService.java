@@ -178,7 +178,6 @@ public class PostService {
 
 	@Transactional
 	public void deletePost(UUID postId, UUID requesterId, boolean adminOverride) {
-		outboxService.lockMutation(postId);
 		Post post = findOrThrow(postId);
 
 		if (!adminOverride && !post.getAuthorId().equals(requesterId)) {
@@ -199,10 +198,6 @@ public class PostService {
 
 	@Transactional
 	public void deleteAllContentByAuthor(UUID authorId) {
-		// Two distinct removal events can target the same user. Serialize their
-		// reads as well as writes, so counts and outgoing events are applied once.
-		postRepository.lockAuthorDeletion(authorId.toString());
-		postRepository.findContentPostIdsForRemoval(authorId).stream().sorted().forEach(outboxService::lockMutation);
 		List<UUID> likedPostIds = likeRepository.findPostIdsByUserId(authorId);
 		List<UUID> likedCommentIds = commentLikeRepository.findCommentIdsByUserId(authorId);
 		List<Comment> ownComments = commentRepository.findByAuthorId(authorId);
@@ -304,7 +299,6 @@ public class PostService {
 
 	@Transactional
 	public void likePost(UUID postId, UUID userId) {
-		outboxService.lockMutation(postId);
 		Post post = findOrThrow(postId);
 
 		if (likeRepository.existsByPostIdAndUserId(postId, userId)) {
@@ -330,7 +324,6 @@ public class PostService {
 
 	@Transactional
 	public void unlikePost(UUID postId, UUID userId) {
-		outboxService.lockMutation(postId);
 		Post post = findOrThrow(postId);
 
 		if (!likeRepository.existsByPostIdAndUserId(postId, userId)) {
