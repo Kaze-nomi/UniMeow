@@ -14,8 +14,6 @@
         docker-control: "{{ routing_compose.networks['docker-control'] }}"
     applications: [eureka-server, media-service, user-service, post-service, feed-service, notification-service, api-gateway, frontend]
     infrastructure: [postgres-user, postgres-post, postgres-notification, redis, minio, kafka, prometheus, grafana]
-  environment:
-    TRUSTED_PROXY_IPS: "{{ trusted_proxy_ips | default('127.0.0.1/32') }}"
   module_defaults:
     community.docker.docker_compose_v2:
       project_src: /root/UniMeow
@@ -331,11 +329,6 @@
             state: absent
 
       rescue:
-        - name: Stop the frontend before restoring the previous port bindings
-          community.docker.docker_compose_v2:
-            services: [frontend]
-            state: stopped
-
         - name: Restore the previous configuration
           ansible.builtin.copy:
             src: "{{ backup_dir }}/{{ item }}.previous"
@@ -370,19 +363,6 @@
           ansible.builtin.slurp:
             src: "{{ project_dir }}/docker-compose.prod.yaml"
           register: previous_compose
-
-        - name: Preserve routing when recovering a configuration from before Traefik
-          ansible.builtin.copy:
-            content: "{{ (previous_compose.content | b64decode | from_yaml) | combine(routing_configuration, recursive=true) | to_nice_yaml }}"
-            dest: "{{ project_dir }}/docker-compose.prod.yaml"
-            mode: '0644'
-          when: routing | difference((previous_compose.content | b64decode | from_yaml).services.keys()) | length > 0
-
-        - name: Preserve the trusted Nginx address in the recovered configuration
-          ansible.builtin.replace:
-            path: "{{ project_dir }}/docker-compose.prod.yaml"
-            regexp: '\$\{TRUSTED_PROXY_IPS:-127\.0\.0\.1/32\}'
-            replace: "{{ trusted_proxy_ips }}"
 
         - name: Start routing before restoring application traffic
           community.docker.docker_compose_v2:

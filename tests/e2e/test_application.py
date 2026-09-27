@@ -92,7 +92,6 @@ def accounts(synthetic_provider):
         account = {'email': email, 'session': requests.Session(), 'id': None}
         created.append(account)
         session = login(email, account['session'])
-        account['session'] = session
         user = graphql(session, 'query{me{id emailGoogle}}')['me']
         require(user['emailGoogle'] == email, 'OAuth user identity did not match the synthetic provider')
         account['id'] = user['id']
@@ -102,9 +101,8 @@ def accounts(synthetic_provider):
     failures = 0
     for account in reversed(created):
         try:
-            if account['session'] is None or not account['session'].cookies.get('ACCESS_TOKEN'):
-                if account['session'] is not None:
-                    account['session'].close()
+            if not account['session'].cookies.get('ACCESS_TOKEN'):
+                account['session'].close()
                 account['session'] = login(account['email'])
             if account['id'] is None:
                 account['id'] = graphql(account['session'], 'query{me{id}}')['me']['id']
@@ -117,8 +115,7 @@ def accounts(synthetic_provider):
         except (Exception, pytest.fail.Exception):
             failures += 1
         finally:
-            if account['session'] is not None:
-                account['session'].close()
+            account['session'].close()
     require(failures == 0, 'API cleanup failed for one or more synthetic accounts')
 
 

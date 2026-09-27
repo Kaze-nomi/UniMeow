@@ -48,7 +48,6 @@ __pycache__/
 .pytest_cache/
 .venv/
 release-source/
-unimeow.tar.gz
 AGENT_TASK.md
 ADENT_TASK_CONTINUATION.md
 AGENT_TASK_CONTINUATION.md

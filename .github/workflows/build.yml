@@ -58,7 +58,6 @@ jobs:
           REDIS_TEST_PORT: '6379'
         run: |
           trap 'docker compose --env-file .env.dev -f docker-compose.dev.yaml -f tests/e2e/compose.oauth.yaml down' EXIT
-          sed -i 's/\r$//' gradlew
           bash gradlew test --no-daemon --max-workers=2
           docker compose --env-file .env.dev -f docker-compose.dev.yaml up -d --wait redis
           bash gradlew :FeedService:integrationTest --no-daemon --max-workers=2

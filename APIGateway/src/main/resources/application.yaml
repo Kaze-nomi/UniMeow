@@ -1,5 +1,4 @@
 server:
-  shutdown: graceful
   port: 8080
   forward-headers-strategy: framework
 
@@ -14,10 +13,6 @@ app:
     user-read-deadline-ms: ${APP_GRPC_USER_READ_DEADLINE_MS:2000}
 
 spring:
-  main:
-    banner-mode: "off"
-  lifecycle:
-    timeout-per-shutdown-phase: 30s
   application:
     name: api-gateway
   session:

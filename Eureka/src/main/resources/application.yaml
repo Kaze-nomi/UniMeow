@@ -1,12 +1,7 @@
 server:
-  shutdown: graceful
   port: 8761
 
 spring:
-  main:
-    banner-mode: "off"
-  lifecycle:
-    timeout-per-shutdown-phase: 30s
   application:
     name: eureka-server
 
