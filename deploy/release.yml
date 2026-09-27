@@ -55,10 +55,20 @@
       register: current_readiness
       failed_when: false
 
-    - name: Check each Java service before replacing its backup
+    - name: Find all running Java replicas by Compose labels
+      community.docker.docker_host_info:
+        containers: true
+        containers_filters:
+          status: running
+          label: [com.docker.compose.project=unimeow, "com.docker.compose.service={{ item }}"]
+      loop: "{{ applications | reject('equalto', 'frontend') | list }}"
+      register: current_replicas
+      no_log: true
+
+    - name: Check every Java replica before replacing its backup
       community.docker.docker_container_info:
-        name: "{{ item }}"
-      loop: [uni-eureka, uni-media-service, uni-user-service, uni-post-service, uni-feed-service, uni-notification-service, uni-api-gateway]
+        name: "{{ item.Id }}"
+      loop: "{{ current_replicas.results | map(attribute='containers') | flatten }}"
       register: current_services
       no_log: true
 
@@ -68,6 +78,7 @@
           {{ applications | difference(running.stdout_lines) | length == 0
              and current_readiness.status == 200
              and (current_readiness.json | default({})).get('status') == 'UP'
+             and current_replicas.results | map(attribute='containers') | map('length') | min > 0
              and current_services.results | map(attribute='container.State.Health.Status', default='missing') | unique | list == ['healthy'] }}
 
     - name: Check for the last verified backup
@@ -99,6 +110,12 @@
         pull: not_present
       when: "'migrations' in selected_compose.services"
 
+    - name: Download the selected proxy image before stopping anything
+      community.docker.docker_image_pull:
+        name: "{{ selected_compose.services.proxy.image }}"
+        pull: not_present
+      when: "'proxy' in selected_compose.services"
+
     - name: Save current configuration for code rollback
       ansible.builtin.copy:
         src: "{{ project_dir }}/{{ item }}"
@@ -108,12 +125,12 @@
         mode: '0600'
       loop: [docker-compose.prod.yaml, .env.prod]
 
-    - name: Save current migration files for code rollback
+    - name: Save current migrations and monitoring configuration for code rollback
       ansible.builtin.command:
-        argv: [tar, -czf, "{{ backup_dir }}/migrations.next.tar.gz", -C, "{{ project_dir }}", UserService/src/main/resources/db/migration, PostService/src/main/resources/db/migration, NotificationService/src/main/resources/db/migration]
+        argv: [tar, -czf, "{{ backup_dir }}/migrations.next.tar.gz", -C, "{{ project_dir }}", UserService/src/main/resources/db/migration, PostService/src/main/resources/db/migration, NotificationService/src/main/resources/db/migration, Monitoring/prometheus.yml]
       when: make_backup
 
-    - name: Preserve the complete migration archive
+    - name: Preserve the complete configuration archive
       ansible.builtin.command:
         argv: [mv, -fT, --, "{{ backup_dir }}/migrations.next.tar.gz", "{{ backup_dir }}/migrations.previous.tar.gz"]
       when: make_backup
@@ -123,11 +140,47 @@
         argv: [tar, -tzf, "{{ backup_dir }}/migrations.previous.tar.gz"]
       changed_when: false
 
+    - name: Read the current Compose configuration
+      ansible.builtin.slurp:
+        src: "{{ project_dir }}/docker-compose.prod.yaml"
+      register: current_compose
+
+    - name: Find existing application replicas before stopping anything
+      community.docker.docker_host_info:
+        containers: true
+        containers_all: true
+        containers_filters:
+          label: [com.docker.compose.project=unimeow, "com.docker.compose.service={{ item }}"]
+      loop: "{{ applications }}"
+      register: application_replicas
+      no_log: true
+
+    - name: Preserve application counts and respect fixed container names
+      ansible.builtin.set_fact:
+        application_scale: "{{ application_scale | default({}) | combine({item.item: ([item.containers | length, 1] | max)}) }}"
+        current_scale: "{{ current_scale | default({}) | combine({item.item: (1 if 'container_name' in (current_compose.content | b64decode | from_yaml).services[item.item] else ([item.containers | length, 1] | max))}) }}"
+      loop: "{{ application_replicas.results }}"
+      no_log: true
+
     - name: Back up and update
       block:
+        - name: Find the existing proxy before stopping applications
+          community.docker.docker_host_info:
+            containers: true
+            containers_all: true
+            containers_filters:
+              label: [com.docker.compose.project=unimeow, com.docker.compose.service=proxy]
+          register: current_proxy
+
+        - name: Stop the existing proxy and release its ports
+          ansible.builtin.command:
+            argv: "{{ ['docker', 'stop', '--time', '40'] + (current_proxy.containers | map(attribute='Id') | list) }}"
+          when: current_proxy.containers | length > 0
+
         - name: Stop applications
           community.docker.docker_compose_v2:
             services: "{{ applications | reverse | list }}"
+            scale: "{{ current_scale }}"
             state: stopped
 
         - name: Make and verify the database backup
@@ -139,6 +192,13 @@
             src: ../release-artifact/docker-compose.prod.yaml
             dest: "{{ project_dir }}/docker-compose.prod.yaml"
             mode: '0644'
+
+        - name: Install monitoring configuration when included in the release
+          ansible.builtin.copy:
+            src: ../release-artifact/Monitoring/prometheus.yml
+            dest: "{{ project_dir }}/Monitoring/prometheus.yml"
+            mode: '0644'
+          when: lookup('ansible.builtin.fileglob', playbook_dir + '/../release-artifact/Monitoring/prometheus.yml', wantlist=True) | length > 0
 
         - name: Select the application version
           ansible.builtin.lineinfile:
@@ -174,7 +234,18 @@
         - name: Start application services one at a time
           community.docker.docker_compose_v2:
             services: ["{{ item }}"]
+            scale: "{{ {item: (1 if 'container_name' in selected_compose.services[item] else application_scale[item])} }}"
           loop: "{{ applications }}"
+
+        - name: Reload Prometheus with the selected configuration
+          community.docker.docker_compose_v2:
+            services: [prometheus]
+            recreate: always
+
+        - name: Start the selected proxy and wait for its healthcheck
+          community.docker.docker_compose_v2:
+            services: [proxy]
+          when: "'proxy' in selected_compose.services"
 
         - name: Check public application readiness
           ansible.builtin.uri:
@@ -186,6 +257,19 @@
           delay: 5
 
       rescue:
+        - name: Find the existing proxy before restoring configuration
+          community.docker.docker_host_info:
+            containers: true
+            containers_all: true
+            containers_filters:
+              label: [com.docker.compose.project=unimeow, com.docker.compose.service=proxy]
+          register: failed_proxy
+
+        - name: Stop the unsuccessful proxy and release its ports
+          ansible.builtin.command:
+            argv: "{{ ['docker', 'stop', '--time', '40'] + (failed_proxy.containers | map(attribute='Id') | list) }}"
+          when: failed_proxy.containers | length > 0
+
         - name: Restore the previous configuration
           ansible.builtin.copy:
             src: "{{ backup_dir }}/{{ item }}.previous"
@@ -200,16 +284,32 @@
             state: absent
           loop: [UserService, PostService, NotificationService]
 
-        - name: Restore the previous migration files
+        - name: Restore the previous migrations and monitoring configuration
           ansible.builtin.unarchive:
             src: "{{ backup_dir }}/migrations.previous.tar.gz"
             dest: "{{ project_dir }}"
             remote_src: true
 
+        - name: Read the restored Compose configuration
+          ansible.builtin.slurp:
+            src: "{{ project_dir }}/docker-compose.prod.yaml"
+          register: previous_compose
+
         - name: Start the previous applications
           community.docker.docker_compose_v2:
             services: ["{{ item }}"]
+            scale: "{{ {item: (1 if 'container_name' in (previous_compose.content | b64decode | from_yaml).services[item] else application_scale[item])} }}"
           loop: "{{ applications }}"
+
+        - name: Reload Prometheus with the previous configuration
+          community.docker.docker_compose_v2:
+            services: [prometheus]
+            recreate: always
+
+        - name: Start the previous proxy when present and wait for its healthcheck
+          community.docker.docker_compose_v2:
+            services: [proxy]
+          when: "'proxy' in (previous_compose.content | b64decode | from_yaml).services"
 
         - name: Report unsuccessful release
           ansible.builtin.fail:

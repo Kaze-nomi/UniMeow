@@ -1,4 +1,4 @@
-FROM gradle:9-jdk25 AS build
+FROM gradle:9.1.0-jdk25 AS build
 WORKDIR /app
 
 COPY settings.gradle.kts build.gradle.kts ./

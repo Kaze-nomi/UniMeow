@@ -1,4 +1,4 @@
-FROM gradle:9-jdk25 AS build
+FROM gradle:9.1.0-jdk25 AS build
 WORKDIR /app
 
 COPY settings.gradle.kts build.gradle.kts ./
@@ -28,4 +28,4 @@ USER app
 COPY --from=build /app/NotificationService/build/libs/*.jar app.jar
 
 EXPOSE 9006 9095
-ENTRYPOINT ["java", "-XX:+UseContainerSupport", "-XX:MaxRAMPercentage=75.0", "-jar", "app.jar"]
+ENTRYPOINT ["java", "-jar", "app.jar"]

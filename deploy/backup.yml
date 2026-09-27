@@ -8,18 +8,41 @@
   register: backup_work
 - name: Back up and verify PostgreSQL, Redis and MinIO
   block:
+    - name: Find the five stores by Compose labels
+      community.docker.docker_host_info:
+        containers: true
+        containers_all: true
+        containers_filters:
+          label: [com.docker.compose.project=unimeow, "com.docker.compose.service={{ item }}"]
+      loop: [postgres-user, postgres-post, postgres-notification, redis, minio]
+      register: backup_containers
+      no_log: true
+    - name: Require exactly one container for each store
+      ansible.builtin.assert:
+        that: item.containers | length == 1
+        fail_msg: "Expected one container for {{ item.item }}"
+      loop: "{{ backup_containers.results }}"
+      loop_control:
+        label: "{{ item.item }}"
     - name: Read the existing PostgreSQL containers
       community.docker.docker_container_info:
-        name: "uni-postgres-{{ item }}"
+        name: "{{ backup_containers.results[backup_index].containers[0].Id }}"
       loop: [user, post, notification]
+      loop_control:
+        index_var: backup_index
       register: backup_sources
       no_log: true
     - name: Read the original Redis and MinIO containers
       community.docker.docker_container_info:
-        name: "uni-{{ item }}"
+        name: "{{ backup_containers.results[backup_index + 3].containers[0].Id }}"
       loop: [redis, minio]
+      loop_control:
+        index_var: backup_index
       register: backup_stores
       no_log: true
+    - name: Require all five stores to be running
+      ansible.builtin.assert:
+        that: (backup_sources.results + backup_stores.results) | map(attribute='container.State.Running') | unique | list == [true]
     - name: Preserve the MinIO credentials for the isolated check
       ansible.builtin.set_fact:
         backup_minio_env:
@@ -43,8 +66,9 @@
       no_log: true
     - name: Copy the dumps into the private candidate
       ansible.builtin.command:
-        argv: [docker, cp, "uni-postgres-{{ item }}:/tmp/{{ backup_work.path | basename }}.dump", "{{ backup_work.path }}/{{ item }}.dump"]
-      loop: [user, post, notification]
+        argv: [docker, cp, "{{ item.container.Id }}:/tmp/{{ backup_work.path | basename }}.dump", "{{ backup_work.path }}/{{ item.item }}.dump"]
+      loop: "{{ backup_sources.results }}"
+      no_log: true
     - name: Flush Redis into its existing data directory
       community.docker.docker_container_exec:
         container: "{{ backup_stores.results[0].container.Id }}"
@@ -56,8 +80,9 @@
         argv: "{{ ['docker', 'stop', '--time', '60'] + (backup_stores.results | map(attribute='container.Id') | list) }}"
     - name: Copy complete data directories including AOF and MinIO metadata
       ansible.builtin.command:
-        argv: [docker, cp, -a, "uni-{{ item }}:/data/.", "{{ backup_work.path }}/{{ item }}"]
-      loop: [redis, minio]
+        argv: [docker, cp, -a, "{{ item.container.Id }}:/data/.", "{{ backup_work.path }}/{{ item.item }}"]
+      loop: "{{ backup_stores.results }}"
+      no_log: true
     - name: Package the five stores in one archive
       ansible.builtin.command:
         argv: [tar, --numeric-owner, -czf, "{{ backup_work.path }}/latest.tar.gz", -C, "{{ backup_work.path }}", user.dump, post.dump, notification.dump, redis, minio]
@@ -190,9 +215,10 @@
       no_log: true
     - name: Remove only this run's temporary dump files
       community.docker.docker_container_exec:
-        container: "uni-postgres-{{ item }}"
+        container: "{{ item.container.Id }}"
         argv: [rm, -f, --, "/tmp/{{ backup_work.path | basename }}.dump"]
-      loop: [user, post, notification]
+      loop: "{{ backup_sources.results | default([]) | selectattr('container', 'defined') | rejectattr('container', 'none') | list }}"
+      no_log: true
     - name: Remove this run's candidate directory
       ansible.builtin.file: {path: "{{ backup_work.path }}", state: absent}
     - name: Restart the same original Redis and MinIO containers

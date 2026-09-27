@@ -362,7 +362,7 @@ GraphQL-запросы ленты: `trendingFeed` (рекомендации с t
 - `POST_DELETED` — удаляет пост из всех feeds.
 - `POST_LIKED` / `POST_UNLIKED` — пересчитывает trending score поста.
 - `USER_FOLLOWED` — backfill последних 100 постов автора в personal feed подписчика.
-- `USER_UNFOLLOWED` — удаляет последние 500 постов автора из personal feed подписчика.
+- `USER_UNFOLLOWED` — удаляет доступные в author feed посты автора из personal feed подписчика.
 - `USER_DELETED` — убирает подписки, связанные с аккаунтом, и чистит Redis-следы пользователя.
 - `USER_PERMANENT_BANNED` — убирает подписки, связанные с аккаунтом, и чистит Redis-следы пользователя.
 
@@ -384,14 +384,20 @@ GraphQL-запросы ленты: `trendingFeed` (рекомендации с t
 - `USER_BANNED` — уведомление о блокировке.
 - `USER_DELETED` и `USER_PERMANENT_BANNED` — очистка уведомлений, связанных с аккаунтом.
 
-Outbox остаётся частью UserService и PostService. Каждый publisher получает транзакционную блокировку PostgreSQL, берёт до 100 событий по `createdAt, id`, отправляет их последовательно и отмечает опубликованные. Другой экземпляр того же сервиса пропускает занятую пачку. При первой ошибке отправка останавливается до следующего запуска: событие не удаляется и не пропускается. После сбоя возможна повторная доставка; это at-least-once, не exactly-once. Отдельного сервиса или общего модуля Outbox нет.
+Outbox остаётся частью UserService и PostService. Блокировка PostgreSQL выбирает один publisher среди экземпляров сервиса. Он открывает штатную транзакцию Kafka, перепроверяет блокировку БД, читает до 100 событий по `createdAt, id` и отправляет их последовательно. Все экземпляры одного сервиса используют одинаковый Kafka transactional ID; `DefaultTransactionIdSuffixStrategy(1)` сохраняет его при пересоздании отправителя. Поэтому Kafka блокирует устаревшего отправителя при смене владельца (fencing).
+
+Только после успешного Kafka commit пачка отмечается опубликованной в PostgreSQL. При ошибке вся пачка остаётся для повторной обработки. Consumers используют `read_committed` и не видят отменённые Kafka-транзакции. Сбой между Kafka commit и PostgreSQL commit всё ещё допускает повтор: доставка at-least-once, не exactly-once. Отдельного сервиса или общего модуля Outbox нет.
+
+В Feed эффект и отметка обработки для каждой ленты выполняются атомарно в Redis; незавершённая рассылка продолжается при повторе. Срок защиты от повторов — 7 дней. Notification сохраняет отметку события и уведомления в одной транзакции PostgreSQL; срок хранения отметки — 90 дней. Старый произвольный replay после этих сроков требует отдельной проверки порядка и восстановления проекций.
 
 **DLQ-топики:**
 
 | Источник | DLQ topic | Когда используется |
 |---|---|---|
-| `FeedService` Kafka consumer | `feed-events.dlq` | Ошибка обработки события из `post-events` или `user-events` |
-| `NotificationService` Kafka consumer | `notification-events.dlq` | Ошибка обработки события из `post-events` или `user-events` |
+| `FeedService` Kafka consumer | `feed-events.dlq` | Некорректное содержимое события из `post-events` или `user-events` |
+| `NotificationService` Kafka consumer | `notification-events.dlq` | Некорректное содержимое события из `post-events` или `user-events` |
+
+Временная ошибка Redis/БД повторяется штатным обработчиком Spring Kafka с интервалом 1 секунда; offset не подтверждается. Некорректное событие подтверждается только после успешной записи в DLQ.
 
 Gateway получает список post IDs из `FeedService` по gRPC, затем заполняет посты через `PostService`.
 
@@ -806,16 +812,18 @@ Kafka-события сохраняются в outbox-таблицах серв�
 
 ### Порты
 
+Снаружи Gateway и Frontend доступны через сервис `proxy` (готовый Nginx). Остальные прикладные HTTP/gRPC-порты доступны только внутри Docker-сети. Имена контейнеров назначает Compose; фиксированных `container_name` нет. Nginx получает адреса реплик из Docker DNS, а gRPC-клиенты — из Eureka. Prometheus обнаруживает все реплики через Docker DNS.
+
 | Сервис | HTTP | gRPC |
 |---|---|---|
 | API Gateway | 8081 | — |
 | Frontend | 5173 | — |
 | Eureka | 8761 | — |
-| UserService | 9004 | 9090 |
-| PostService | 9005 | 9091 |
-| FeedService | 9002 | 9092 |
-| MediaService | 9003 | 9093 |
-| NotificationService | 9007 | 9095 |
+| UserService (внутри сети) | 9000 | 9090 |
+| PostService (внутри сети) | 9001 | 9091 |
+| FeedService (внутри сети) | 9002 | 9092 |
+| MediaService (внутри сети) | 9003 | 9093 |
+| NotificationService (внутри сети) | 9006 | 9095 |
 | MinIO API | 9000 | — |
 | MinIO Console | 9001 | — |
 | Kafka external | 9094 | — |
@@ -916,6 +924,8 @@ Prometheus собирает стандартные Micrometer/Spring Boot мет
 ## 17. Логирование
 
 Все сервисы используют SLF4J + Logback (стандартный Spring Boot). `@Slf4j` (Lombok) расставлен на сервисах.
+
+Семь Java-приложений выводят JSON в stdout: время, уровень, `service`, logger, сообщение и `stack_trace` при переданном исключении. Формат включает штатная настройка Spring Boot `logging.structured.format.console: logstash`. У событий Gateway, outbox, Feed, Kafka consumers и MinIO дополнительные поля передаются через SLF4J `addKeyValue`: например, `requestId`, `eventId`, `status`, `durationMs`. Набор полей зависит от события; тексты GraphQL-запросов в журнал не записываются.
 
 | Сервис | Событие | Уровень |
 |---|---|---|

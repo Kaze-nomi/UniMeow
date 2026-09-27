@@ -18,6 +18,11 @@ jobs:
   build:
     runs-on: ubuntu-24.04
     timeout-minutes: 60
+    services:
+      redis:
+        image: redis:7.4-alpine
+        ports: ['16379:6379']
+        options: --health-cmd "redis-cli ping" --health-interval 5s --health-timeout 3s --health-retries 20
     permissions:
       contents: write
       packages: write
@@ -62,12 +67,16 @@ jobs:
         run: |
           sed -i 's/\r$//' gradlew
           bash gradlew test --no-daemon --max-workers=2
+      - name: Test Redis projection recovery
+        env:
+          REDIS_TEST_PORT: '16379'
+        run: bash gradlew :FeedService:integrationTest --no-daemon --max-workers=2
       - name: Preserve test results
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: java-test-results
-          path: '**/build/test-results/test/*.xml'
+          path: '**/build/test-results/**/*.xml'
           if-no-files-found: ignore
           retention-days: 7
       - name: Sign in to GHCR
@@ -90,10 +99,10 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          tar -czf unimeow.tar.gz docker-compose.prod.yaml \
+          tar -czf unimeow.tar.gz docker-compose.prod.yaml Monitoring/prometheus.yml \
             UserService/src/main/resources/db/migration \
             PostService/src/main/resources/db/migration \
             NotificationService/src/main/resources/db/migration
-          printf 'Production версия %s\n' "${VERSION#v}" > release-notes.txt
+          printf 'Production РІРµСЂСЃРёСЏ %s\n' "${VERSION#v}" > release-notes.txt
           gh release create "$VERSION" unimeow.tar.gz --repo "$GITHUB_REPOSITORY" \
             --target "$GITHUB_SHA" --title "$VERSION" --notes-file release-notes.txt

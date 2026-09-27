@@ -50,7 +50,9 @@
 for service in eureka-server media-service user-service post-service feed-service notification-service api-gateway frontend; do
   docker compose -f docker-compose.dev.yaml --env-file .env.dev build "$service" || exit 1
 done
-docker compose -f docker-compose.dev.yaml --env-file .env.dev up -d
+for service in eureka-server media-service user-service post-service feed-service notification-service api-gateway frontend proxy prometheus grafana; do
+  docker compose -f docker-compose.dev.yaml --env-file .env.dev up -d --wait "$service" || exit 1
+done
 ```
 
 Frontend: http://localhost:5173, API: http://localhost:8081. Для настоящего Google OAuth передайте свои `GOOGLE_CLIENT_ID` и `GOOGLE_CLIENT_SECRET` через окружение процесса.
@@ -63,7 +65,7 @@ MinIO закреплён как `ghcr.io/coollabsio/minio:RELEASE.2025-10-15T17-
 
 ## Сборка и выпуск
 
-**Build** собирает восемь образов приложения, запускает существующие Java-тесты и после успеха публикует образы в GHCR и небольшой архив `unimeow.tar.gz` в GitHub Releases. Архив содержит `docker-compose.prod.yaml` и SQL-миграции. Для PR выполняются только сборка и тесты. Версии имеют вид `v1.0.1`; при ручном запуске Build можно указать версию, иначе используется `v1.0.<номер запуска>`. Опубликованную версию нельзя перезаписать.
+**Build** собирает восемь образов приложения, запускает Java-тесты и проверку восстановления обработки событий на настоящем Redis. После успеха публикует образы в GHCR и небольшой архив `unimeow.tar.gz` в GitHub Releases. Архив содержит `docker-compose.prod.yaml`, SQL-миграции и конфигурацию Prometheus. Для PR выполняются только сборка и тесты. Версии имеют вид `v1.0.1`; при ручном запуске Build можно указать версию, иначе используется `v1.0.<номер запуска>`. Опубликованную версию нельзя перезаписать.
 
 Чтобы установить выпуск: **GitHub → Actions → Release → Run workflow → version**. Публикация сборки сама по себе сервер не обновляет.
 

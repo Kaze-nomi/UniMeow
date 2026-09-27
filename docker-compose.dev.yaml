@@ -2,7 +2,6 @@ services:
 
   postgres-user:
     image: postgres:16-alpine
-    container_name: uni-postgres-user
     restart: unless-stopped
     environment:
       POSTGRES_DB:       user_db
@@ -23,7 +22,6 @@ services:
 
   postgres-notification:
     image: postgres:16-alpine
-    container_name: uni-postgres-notification
     restart: unless-stopped
     environment:
       POSTGRES_DB:       notification_db
@@ -44,7 +42,6 @@ services:
 
   postgres-post:
     image: postgres:16-alpine
-    container_name: uni-postgres-post
     restart: unless-stopped
     environment:
       POSTGRES_DB:       post_db
@@ -65,7 +62,6 @@ services:
 
   redis:
     image: redis:7.4-alpine
-    container_name: uni-redis
     restart: unless-stopped
     command: redis-server --appendonly yes --appendfsync everysec
     ports:
@@ -83,7 +79,6 @@ services:
 
   minio:
     image: ghcr.io/coollabsio/minio:RELEASE.2025-10-15T17-29-55Z
-    container_name: uni-minio
     restart: unless-stopped
     command: server /data --console-address ":9001"
     environment:
@@ -105,7 +100,6 @@ services:
 
   kafka:
     image: apache/kafka:4.0.0
-    container_name: uni-kafka
     restart: unless-stopped
     environment:
       KAFKA_NODE_ID: 1
@@ -137,7 +131,6 @@ services:
 
   kafka-ui:
     image: provectuslabs/kafka-ui:v0.7.2
-    container_name: uni-kafka-ui
     restart: unless-stopped
     depends_on:
       kafka:
@@ -181,7 +174,6 @@ services:
     build:
       context: ./Eureka
       dockerfile: Dockerfile
-    container_name: uni-eureka
     stop_grace_period: 40s
     restart: unless-stopped
     ports:
@@ -200,7 +192,6 @@ services:
     build:
       context: .
       dockerfile: UserService/Dockerfile
-    container_name: uni-user-service
     stop_grace_period: 40s
     restart: unless-stopped
     depends_on:
@@ -215,6 +206,7 @@ services:
       media-service:
         condition: service_healthy
     environment:
+      EUREKA_INSTANCE_PREFER_IP_ADDRESS: "true"
       SPRING_FLYWAY_ENABLED: "false"
       SPRING_DATASOURCE_URL:      jdbc:postgresql://postgres-user:5432/user_db
       SPRING_DATASOURCE_USERNAME: ${DB_USERNAME:-postgres}
@@ -224,9 +216,6 @@ services:
       SPRING_MAIL_PASSWORD: ${MAIL_PASSWORD}
       SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:9092
       APP_FRONTEND_URL: ${APP_PUBLIC_URL:-http://localhost:5173}
-    ports:
-      - "127.0.0.1:9004:9000"
-      - "127.0.0.1:9090:9090"
     networks:
       - uni-network
     healthcheck:
@@ -241,7 +230,6 @@ services:
     build:
       context: .
       dockerfile: MediaService/Dockerfile
-    container_name: uni-media-service
     stop_grace_period: 40s
     restart: unless-stopped
     depends_on:
@@ -250,14 +238,12 @@ services:
       eureka-server:
         condition: service_healthy
     environment:
+      EUREKA_INSTANCE_PREFER_IP_ADDRESS: "true"
       MINIO_ENDPOINT: http://minio:9000
       MINIO_ACCESS_KEY: ${MINIO_ROOT_USER:-admin}
       MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD:-changeme}
       MINIO_PUBLIC_URL: ${APP_MINIO_PUBLIC_URL:-http://localhost:9000}
       EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://eureka-server:8761/eureka/
-    ports:
-      - "127.0.0.1:9003:9003"
-      - "127.0.0.1:9093:9093"
     networks:
       - uni-network
     healthcheck:
@@ -272,7 +258,6 @@ services:
     build:
       context: .
       dockerfile: PostService/Dockerfile
-    container_name: uni-post-service
     stop_grace_period: 40s
     restart: unless-stopped
     depends_on:
@@ -285,15 +270,13 @@ services:
       kafka:
         condition: service_healthy
     environment:
+      EUREKA_INSTANCE_PREFER_IP_ADDRESS: "true"
       SPRING_FLYWAY_ENABLED: "false"
       SPRING_DATASOURCE_URL:      jdbc:postgresql://postgres-post:5432/post_db
       SPRING_DATASOURCE_USERNAME: ${DB_USERNAME:-postgres}
       SPRING_DATASOURCE_PASSWORD: ${DB_PASSWORD:-postgres}
       EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://eureka-server:8761/eureka/
       SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:9092
-    ports:
-      - "127.0.0.1:9005:9001"
-      - "127.0.0.1:9091:9091"
     networks:
       - uni-network
     healthcheck:
@@ -308,7 +291,6 @@ services:
     build:
       context: .
       dockerfile: FeedService/Dockerfile
-    container_name: uni-feed-service
     stop_grace_period: 40s
     restart: unless-stopped
     depends_on:
@@ -319,13 +301,11 @@ services:
       kafka:
         condition: service_healthy
     environment:
+      EUREKA_INSTANCE_PREFER_IP_ADDRESS: "true"
       EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://eureka-server:8761/eureka/
       SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:9092
       SPRING_DATA_REDIS_HOST: redis
       SPRING_DATA_REDIS_PORT: 6379
-    ports:
-      - "127.0.0.1:9002:9002"
-      - "127.0.0.1:9092:9092"
     networks:
       - uni-network
     healthcheck:
@@ -340,7 +320,6 @@ services:
     build:
       context: .
       dockerfile: NotificationService/Dockerfile
-    container_name: uni-notification-service
     stop_grace_period: 40s
     restart: unless-stopped
     depends_on:
@@ -353,15 +332,13 @@ services:
       kafka:
         condition: service_healthy
     environment:
+      EUREKA_INSTANCE_PREFER_IP_ADDRESS: "true"
       SPRING_FLYWAY_ENABLED: "false"
       SPRING_DATASOURCE_URL:      jdbc:postgresql://postgres-notification:5432/notification_db
       SPRING_DATASOURCE_USERNAME: ${DB_USERNAME:-postgres}
       SPRING_DATASOURCE_PASSWORD: ${DB_PASSWORD:-postgres}
       EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://eureka-server:8761/eureka/
       SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:9092
-    ports:
-      - "127.0.0.1:9007:9006"
-      - "127.0.0.1:9095:9095"
     networks:
       - uni-network
     healthcheck:
@@ -376,7 +353,6 @@ services:
     build:
       context: .
       dockerfile: APIGateway/Dockerfile
-    container_name: uni-api-gateway
     stop_grace_period: 40s
     restart: unless-stopped
     depends_on:
@@ -393,6 +369,7 @@ services:
       notification-service:
         condition: service_healthy
     environment:
+      EUREKA_INSTANCE_PREFER_IP_ADDRESS: "true"
       SPRING_DATA_REDIS_HOST: redis
       GOOGLE_CLIENT_ID:                       ${GOOGLE_CLIENT_ID}
       GOOGLE_CLIENT_SECRET:                   ${GOOGLE_CLIENT_SECRET}
@@ -401,8 +378,6 @@ services:
       APP_SECURITY_ALLOWED_ORIGINS:           ${APP_SECURITY_ALLOWED_ORIGINS:-http://localhost:*,null}
       APP_SECURITY_OAUTH2_SUCCESS_REDIRECT:   ${APP_PUBLIC_URL:-http://localhost:5173}/
       EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://eureka-server:8761/eureka/
-    ports:
-      - "127.0.0.1:8081:8080"
     networks:
       - uni-network
     healthcheck:
@@ -417,7 +392,6 @@ services:
     build:
       context: .
       dockerfile: Frontend/Dockerfile
-    container_name: uni-frontend
     environment:
       FRONTEND_API_BASE: ${FRONTEND_API_BASE:-${APP_PUBLIC_URL:-http://localhost:8081}}
       MINIO_PUBLIC_URL: ${APP_MINIO_PUBLIC_URL:-http://localhost:9000}
@@ -425,14 +399,34 @@ services:
     depends_on:
       api-gateway:
         condition: service_healthy
-    ports:
-      - "127.0.0.1:5173:80"
     networks:
       - uni-network
 
+  proxy:
+    image: nginx:1.27-alpine
+    restart: unless-stopped
+    stop_grace_period: 40s
+    depends_on:
+      frontend:
+        condition: service_started
+      api-gateway:
+        condition: service_healthy
+    configs:
+      - source: proxy
+        target: /etc/nginx/conf.d/default.conf
+    ports:
+      - "127.0.0.1:5173:80"
+      - "127.0.0.1:8081:8080"
+    networks:
+      - uni-network
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8080/actuator/health >/dev/null || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+
   prometheus:
     image: prom/prometheus:v2.53.4
-    container_name: uni-prometheus
     restart: unless-stopped
     volumes:
       - ./Monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
@@ -448,7 +442,6 @@ services:
 
   grafana:
     image: grafana/grafana:11.6.1
-    container_name: uni-grafana
     restart: unless-stopped
     depends_on:
       - prometheus
@@ -477,3 +470,36 @@ volumes:
 networks:
   uni-network:
     driver: bridge
+
+configs:
+  proxy:
+    content: |
+      resolver 127.0.0.11 valid=5s ipv6=off;
+      map $$http_x_forwarded_proto $$forwarded_proto {
+          default $$http_x_forwarded_proto;
+          "" $$scheme;
+      }
+      log_format upstream '$$remote_addr $$request_method $$uri $$status upstream=$$upstream_addr';
+      access_log /var/log/nginx/access.log upstream;
+      upstream gateways {
+          zone gateways 64k;
+          server api-gateway:8080 resolve;
+      }
+      upstream frontends {
+          zone frontends 64k;
+          server frontend:80 resolve;
+      }
+      proxy_set_header Host $$http_host;
+      proxy_set_header X-Forwarded-Host $$http_host;
+      proxy_set_header X-Forwarded-Proto $$forwarded_proto;
+      proxy_set_header X-Forwarded-For $$proxy_add_x_forwarded_for;
+      proxy_set_header X-Forwarded-Port $$http_x_forwarded_port;
+      client_max_body_size 12m;
+      server {
+          listen 80;
+          location / { proxy_pass http://frontends; }
+      }
+      server {
+          listen 8080;
+          location / { proxy_pass http://gateways; }
+      }
