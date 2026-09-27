@@ -10,5 +10,7 @@ public interface OutboxEventRepository extends JpaRepository<OutboxEvent, UUID> 
 	@Query(value = "select pg_try_advisory_xact_lock(hashtext('post-outbox'))", nativeQuery = true)
 	boolean tryLockPublisher();
 
+	boolean existsByPublishedAtIsNull();
+
 	List<OutboxEvent> findTop100ByPublishedAtIsNullOrderByCreatedAtAscIdAsc();
 }

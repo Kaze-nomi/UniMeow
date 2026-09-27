@@ -21,20 +21,30 @@ public class OutboxPublisher {
 	@Scheduled(fixedDelayString = "${app.outbox.publish-delay-ms:1500}")
 	@Transactional
 	public void publishPendingEvents() {
-		if (!outboxEventRepository.tryLockPublisher()) {
+		if (!outboxEventRepository.tryLockPublisher() || !outboxEventRepository.existsByPublishedAtIsNull()) {
 			return;
 		}
-		List<OutboxEvent> events = outboxEventRepository.findTop100ByPublishedAtIsNullOrderByCreatedAtAscIdAsc();
-
-		for (OutboxEvent event : events) {
-			try {
-				kafkaTemplate.send(event.getTopic(), event.getEventKey(), event.getPayload()).join();
-				event.setPublishedAt(LocalDateTime.now());
-			} catch (Exception e) {
-				log.warn("Failed to publish outbox event {}; will retry", event.getId(), e);
-				break;
+		long start = System.nanoTime();
+		try {
+			List<OutboxEvent> events = kafkaTemplate.executeInTransaction(operations -> {
+				if (!outboxEventRepository.tryLockPublisher()) {
+					throw new IllegalStateException("Outbox ownership lost during Kafka initialization");
+				}
+				List<OutboxEvent> pending = outboxEventRepository
+						.findTop100ByPublishedAtIsNullOrderByCreatedAtAscIdAsc();
+				for (OutboxEvent event : pending) {
+					operations.send(event.getTopic(), event.getEventKey(), event.getPayload()).join();
+				}
+				return pending;
+			});
+			if (events != null) {
+				LocalDateTime publishedAt = LocalDateTime.now();
+				events.forEach(event -> event.setPublishedAt(publishedAt));
 			}
+		} catch (Exception e) {
+			log.atWarn().addKeyValue("event", "outbox_publish_failed").addKeyValue("status", "retry")
+					.addKeyValue("durationMs", (System.nanoTime() - start) / 1_000_000L)
+					.setCause(e).log("Failed to commit outbox batch; will retry");
 		}
 	}
-
 }
