@@ -205,6 +205,11 @@
         argv: [sync, -f, /var/backups/unimeow]
 
   always:
+    - name: Restart the same original Redis and MinIO containers
+      ansible.builtin.command:
+        argv: [docker, start, "{{ item.container.Id }}"]
+      loop: "{{ backup_stores.results | default([]) | selectattr('container', 'defined') | rejectattr('container', 'none') | list }}"
+      no_log: true
     - name: Remove only the created restore containers
       community.docker.docker_container:
         name: "{{ item.container.Id }}"
@@ -221,8 +226,3 @@
       no_log: true
     - name: Remove this run's candidate directory
       ansible.builtin.file: {path: "{{ backup_work.path }}", state: absent}
-    - name: Restart the same original Redis and MinIO containers
-      ansible.builtin.command:
-        argv: [docker, start, "{{ item.container.Id }}"]
-      loop: "{{ backup_stores.results | default([]) | selectattr('container', 'defined') | rejectattr('container', 'none') | list }}"
-      no_log: true
