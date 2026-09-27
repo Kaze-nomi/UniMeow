@@ -48,7 +48,6 @@ jobs:
           VERSION: ${{ inputs.version }}
           SSH_HOST: ${{ vars.SSH_HOST }}
           SSH_USER: ${{ vars.SSH_USER }}
-          SSH_PORT: ${{ vars.SSH_PORT }}
         run: |
-          [[ "$SSH_HOST" =~ ^[a-zA-Z0-9.-]+$ && "$SSH_USER" =~ ^[a-z_][a-z0-9_-]*$ && "$SSH_PORT" =~ ^[0-9]+$ ]]
-          ansible-playbook -i "$SSH_HOST," -u "$SSH_USER" deploy/release.yml -e "version=$VERSION ansible_port=$SSH_PORT"
+          [[ "$SSH_HOST" =~ ^[a-zA-Z0-9.-]+$ && "$SSH_USER" =~ ^[a-z_][a-z0-9_-]*$ ]]
+          ansible-playbook -i "$SSH_HOST," -u "$SSH_USER" deploy/release.yml -e "version=$VERSION"
