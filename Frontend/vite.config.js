@@ -7,7 +7,7 @@ export default defineConfig(({ mode }) => {
     response.setHeader('Content-Type', 'application/json');
     response.setHeader('Cache-Control', 'no-store');
     response.end(JSON.stringify({
-      apiBase: process.env.FRONTEND_API_BASE || env.FRONTEND_API_BASE || env.VITE_API_BASE || 'http://localhost:8081',
+      apiBase: process.env.FRONTEND_API_BASE || env.FRONTEND_API_BASE || env.VITE_API_BASE || 'http://localhost:8082',
       minioPublicUrl: process.env.MINIO_PUBLIC_URL || env.MINIO_PUBLIC_URL || 'http://localhost:9000',
     }));
   });

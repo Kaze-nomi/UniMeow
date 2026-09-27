@@ -50,20 +50,22 @@
 for service in eureka-server media-service user-service post-service feed-service notification-service api-gateway frontend; do
   docker compose -f docker-compose.dev.yaml --env-file .env.dev build "$service" || exit 1
 done
-for service in eureka-server media-service user-service post-service feed-service notification-service api-gateway frontend prometheus grafana; do
+for service in socket-proxy traefik eureka-server media-service user-service post-service feed-service notification-service api-gateway frontend prometheus grafana; do
   docker compose -f docker-compose.dev.yaml --env-file .env.dev up -d --wait "$service" || exit 1
 done
 ```
 
-Frontend: http://localhost:5173, API: http://localhost:8081. Для настоящего Google OAuth передайте свои `GOOGLE_CLIENT_ID` и `GOOGLE_CLIENT_SECRET` через окружение процесса.
+Frontend: http://localhost:5173, API: http://localhost:8082. Для настоящего Google OAuth передайте свои `GOOGLE_CLIENT_ID` и `GOOGLE_CLIENT_SECRET` через окружение процесса.
 
-Nginx внутри frontend раздаёт сайт на порту 5173 и распределяет API-запросы с порта 8081 между репликами Gateway. Frontend остаётся в одном экземпляре; отдельного контейнера `proxy` нет. Серверный Nginx отвечает за внешний домен и HTTPS. Межсервисные gRPC-вызовы распределяются через Eureka. Например, второй Gateway запускается так:
+Frontend остаётся одним контейнером: его Nginx раздаёт HTML, CSS и JavaScript на порту 5173. React выполняется в браузере и отправляет API-запросы через отдельный Traefik на порту 8082. Traefik автоматически обнаруживает Gateway текущего Compose-проекта и распределяет запросы между готовыми экземплярами. На production перед ним остаётся серверный Nginx с существующими доменами и HTTPS. Межсервисные gRPC-вызовы распределяются через Eureka. Например, второй Gateway запускается так:
 
 ```sh
 docker compose -f docker-compose.dev.yaml --env-file .env.dev up -d --no-deps --wait --scale api-gateway=2 api-gateway
 ```
 
 Для возврата к одной реплике укажите `=1`. Аналогично масштабируются UserService, PostService, FeedService, MediaService и NotificationService по их именам в Compose. Ansible сохраняет установленное количество их реплик при выпуске и откате; старый выпуск с фиксированными именами контейнеров запускается в одном экземпляре.
+
+Traefik обращается к Docker через готовый `socket-proxy`: разрешены необходимые операции чтения, изменения запрещены. Его порт доступен только Traefik в отдельной внутренней сети. Метаданные контейнеров остаются доступны этому соединению. Маршрутизация ограничена сервисом `api-gateway` текущего Compose-проекта, поэтому работает и с исходным выпуском без новых Traefik labels. Access logs содержат метод, статус и адрес Gateway; cookies и OAuth query-параметры не записываются.
 
 На сервере используются `docker-compose.prod.yaml` и приватный `.env.prod`. Production Compose запускает готовые образы из GHCR; секций сборки в нём нет. Публичные адреса frontend читает при запуске контейнера, поэтому смена адреса не требует пересборки образа.
 
@@ -99,11 +101,17 @@ HTTP-тесты в `tests/e2e` проходят OAuth, создают двух �
 
 Release получает исходники выбранного тега и запускает [Ansible](deploy/release.yml). Это готовый инструмент, который подключается по SSH и выполняет перечисленные в YAML шаги: скачивает образы из GHCR, останавливает приложения, проверяет бэкап PostgreSQL, Redis и MinIO, переносит Compose, SQL и весь каталог Monitoring, запускает Flyway и последовательно поднимает сервисы. Образы на сервере не собираются. `.env.prod`, серверный Nginx и сертификаты остаются на сервере. Для первоначальной настройки нужны environment `production`, secrets `SSH_PRIVATE_KEY`, `SSH_KNOWN_HOSTS` и variables `SSH_HOST`, `SSH_USER`, `SSH_PORT`.
 
+Первоначальное подключение балансировщика описано в [deploy/ingress.yml](deploy/ingress.yml): Ansible сохраняет прежнюю конфигурацию, запускает только Traefik и socket-proxy, переключает API-маршруты серверного Nginx на локальный порт 8082 и проверяет GraphQL и HTTPS callback OAuth. При ошибке возвращает прежнюю конфигурацию. Приложения и хранилища при этой настройке не пересоздаются. Последующие выпуски выполняются обычным Action Release. Адрес доверенного серверного Nginx определяется из Docker-сети и сохраняется в установленном Compose; новых полей `.env.prod` не требуется.
+
+Traefik и socket-proxy скачиваются из публичных registry по закреплённым версиям. Они не входят в восемь собираемых образов приложения. Балансировка не отменяет согласованный простой на время бэкапа при Release.
+
+Серверный Nginx задаёт публичные домен и порт для API и удаляет присланные клиентом `Forwarded` и `X-Forwarded-Prefix`. Ansible проверяет, что поддельные proxy-заголовки не меняют HTTPS callback OAuth.
+
 ## Возврат версии и бэкап
 
 В том же Action **Release** можно выбрать ранее опубликованную версию. Возвращается код; данные остаются текущими. Старый код должен быть совместим с текущей схемой БД. Другой вариант — сделать `git revert`, пройти CI и выпустить новую версию с отменёнными изменениями.
 
-Старый `v1.0.0` выпущен до этого CI: Ansible читает его прежний `docker-compose.yml` и подставляет сохранённые образы `v1.0.0` вместо сборки. Эти исходные образы сохранены на действующем сервере; для нового сервера потребуется их перенос из резервной копии.
+Старый `v1.0.0` выпущен до этого CI: Ansible читает его прежний `docker-compose.yml`, подставляет сохранённые образы `v1.0.0` вместо сборки и сохраняет Traefik с socket-proxy. Эти исходные образы сохранены на действующем сервере; для нового сервера потребуется их перенос из резервной копии.
 
 Перед каждым выпуском работающей установки Ansible останавливает приложения и сохраняет три PostgreSQL-базы, Redis и MinIO. Redis и MinIO ненадолго останавливаются для полной копии их данных. Восстановление проверяется в отдельных временных контейнерах. Только после успешной проверки новый `/var/backups/unimeow/latest.tar.gz` заменяет предыдущий архив. Если установка нездорова или предыдущий выпуск не завершился, Release сохраняет последний проверенный бэкап. При ошибке выпуска Ansible пытается запустить предыдущие приложения; данные автоматически не восстанавливаются.
 

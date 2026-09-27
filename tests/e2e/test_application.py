@@ -9,7 +9,7 @@ import requests
 
 from synthetic_oauth import start_provider
 
-API = 'http://localhost:8081'
+API = 'http://localhost:8082'
 FRONTEND = 'http://localhost:5173'
 JOBS = {'api-gateway', 'user-service', 'post-service', 'feed-service', 'media-service', 'notification-service'}
 PNG = base64.b64decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=')

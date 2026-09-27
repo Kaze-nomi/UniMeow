@@ -86,7 +86,7 @@ GitHub собирает образы без production-секретов. Сер�
 - `APP_PUBLIC_URL` — публичный URL фронтенда / gateway (предполагается единый домен, обратный прокси раздаёт frontend и API). Из этой переменной в Compose-файлах производятся:
   - `APP_FRONTEND_URL` для UserService — используется в email-ссылках (`MailService.frontendUrl`).
   - `APP_SECURITY_OAUTH2_SUCCESS_REDIRECT` для APIGateway — куда редиректить браузер после успешной Google OAuth2 авторизации.
-  - Базовый URL API frontend, если не указан `FRONTEND_API_BASE`. Для локального запуска `FRONTEND_API_BASE=http://localhost:8081`, поскольку frontend слушает другой порт.
+  - Базовый URL API frontend, если не указан `FRONTEND_API_BASE`. Для локального запуска `FRONTEND_API_BASE=http://localhost:8082`, поскольку frontend слушает другой порт.
 - `APP_MINIO_PUBLIC_URL` — публичный URL MinIO. Используется MediaService для генерации `mediaUrl` и передаётся frontend при запуске контейнера.
 - `APP_SECURITY_SECURE_COOKIE` (default `false`) — выставляет `Secure` флаг на cookies `ACCESS_TOKEN` и `REFRESH_TOKEN`. В production с HTTPS должно быть `true`; иначе cookies не отправятся браузером по HTTP.
 - `APP_SECURITY_ALLOWED_ORIGINS` (default `http://localhost:*,null`) — список разрешённых CORS origin'ов через запятую.
@@ -812,11 +812,16 @@ Kafka-события сохраняются в outbox-таблицах серв�
 
 ### Порты
 
-Frontend работает в одном экземпляре. Его Nginx раздаёт сайт через порт 5173 и распределяет API-запросы с порта 8081 между Gateway; отдельного контейнера `proxy` нет. Серверный Nginx обслуживает внешний домен и HTTPS. Остальные прикладные HTTP/gRPC-порты доступны только внутри Docker-сети. Имена контейнеров назначает Compose; фиксированных `container_name` нет. Nginx получает адреса Gateway из Docker DNS, а gRPC-клиенты — из Eureka. Prometheus обнаруживает все реплики через Docker DNS.
+Frontend работает в одном экземпляре и раздаёт статические файлы через порт 5173. React в браузере отправляет API-запросы через отдельный Traefik на порту 8082; frontend-контейнер в обработке API не участвует. На production серверный Nginx сохраняет домены и HTTPS, направляет API к Traefik, а сайт и MinIO — по их прежним маршрутам. Traefik обнаруживает экземпляры Gateway через Docker API, учитывает Docker healthcheck и дополнительно проверяет `/actuator/health`. Доступ к Docker проходит через `socket-proxy` в отдельной внутренней сети, без опубликованного порта и разрешений на изменение контейнеров.
+
+Остальные прикладные HTTP/gRPC-порты доступны только внутри Docker-сети. Имена контейнеров назначает Compose; фиксированных `container_name` нет. gRPC-клиенты получают адреса из Eureka; Prometheus обнаруживает реплики через Docker DNS. Ansible определяет доверенный адрес серверного Nginx и сохраняет его в установленном Compose, чтобы HTTPS и OAuth продолжали работать после ручного перезапуска. Исходный выпуск `v1.0.0` сохраняет свои прежние порты и обслуживается тем же Traefik на 8082.
+
+На входе API серверный Nginx задаёт `X-Forwarded-Host` и `X-Forwarded-Port`, удаляет клиентские `Forwarded` и `X-Forwarded-Prefix`. Проверка Ansible включает OAuth-запросы с поддельными заголовками: адрес возврата должен оставаться публичным HTTPS URL.
 
 | Сервис | HTTP | gRPC |
 |---|---|---|
-| API Gateway | 8081 | — |
+| Traefik → API Gateway | 8082 | — |
+| API Gateway (внутри сети) | 8080 | — |
 | Frontend | 5173 | — |
 | Eureka | 8761 | — |
 | UserService (внутри сети) | 9000 | 9090 |

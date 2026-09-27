@@ -32,7 +32,7 @@ def start_provider():
                 redirect = query.get('redirect_uri', '')
                 if (query.get('client_id') != 'synthetic-e2e-client'
                         or query.get('response_type') != 'code' or not query.get('state')
-                        or redirect != 'http://localhost:8081/login/oauth2/code/google'
+                        or redirect != 'http://localhost:8082/login/oauth2/code/google'
                         or not re.fullmatch(r'e2e-[a-f0-9]{32}@example\.invalid', email)):
                     self.reply(400, {'error': 'invalid_request'})
                     return

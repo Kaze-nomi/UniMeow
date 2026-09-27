@@ -6,8 +6,16 @@
     project_dir: /root/UniMeow
     backup_dir: /var/backups/unimeow
     selected_compose: "{{ lookup('ansible.builtin.file', '../release-source/' ~ ('docker-compose.yml' if version == 'v1.0.0' else 'docker-compose.prod.yaml')) | from_yaml }}"
+    routing: [socket-proxy, traefik]
+    routing_compose: "{{ lookup('ansible.builtin.file', '../docker-compose.prod.yaml') | from_yaml }}"
+    routing_configuration:
+      services: "{{ routing_compose.services | dict2items | selectattr('key', 'in', routing) | items2dict }}"
+      networks:
+        docker-control: "{{ routing_compose.networks['docker-control'] }}"
     applications: [eureka-server, media-service, user-service, post-service, feed-service, notification-service, api-gateway, frontend]
     infrastructure: [postgres-user, postgres-post, postgres-notification, redis, minio, kafka, prometheus, grafana]
+  environment:
+    TRUSTED_PROXY_IPS: "{{ trusted_proxy_ips | default('127.0.0.1/32') }}"
   module_defaults:
     community.docker.docker_compose_v2:
       project_src: /root/UniMeow
@@ -33,12 +41,33 @@
       loop: "{{ applications }}"
       when: version == 'v1.0.0'
 
+    - name: Keep Traefik when selecting the original v1.0.0 release
+      ansible.builtin.set_fact:
+        selected_compose: "{{ selected_compose | combine(routing_configuration, recursive=true) }}"
+      when: version == 'v1.0.0'
+
     - name: Install the Docker module dependency
       ansible.builtin.apt:
         name: python3-requests
         state: present
         update_cache: true
         cache_valid_time: 86400
+
+    - name: Read the network used by the existing application
+      community.docker.docker_network_info:
+        name: unimeow_uni-network
+      register: application_network
+
+    - name: Require the existing Docker bridge
+      ansible.builtin.assert:
+        that:
+          - application_network.exists
+          - application_network.network.IPAM.Config | length == 1
+          - application_network.network.IPAM.Config[0].Gateway is defined
+
+    - name: Trust forwarded HTTPS headers from the server Nginx
+      ansible.builtin.set_fact:
+        trusted_proxy_ips: "127.0.0.1/32,{{ application_network.network.IPAM.Config[0].Gateway }}/32"
 
     - name: Create private backup directory
       ansible.builtin.file:
@@ -125,6 +154,12 @@
         pull: not_present
       when: "'migrations' in selected_compose.services"
 
+    - name: Download routing images before stopping anything
+      community.docker.docker_image_pull:
+        name: "{{ selected_compose.services[item].image }}"
+        pull: not_present
+      loop: "{{ routing }}"
+
     - name: Save current configuration for code rollback
       ansible.builtin.copy:
         src: "{{ project_dir }}/{{ item }}"
@@ -206,6 +241,17 @@
             dest: "{{ project_dir }}/docker-compose.prod.yaml"
             mode: '0644'
           when: version == 'v1.0.0'
+
+        - name: Preserve the trusted Nginx address for manual Compose commands
+          ansible.builtin.replace:
+            path: "{{ project_dir }}/docker-compose.prod.yaml"
+            regexp: '\$\{TRUSTED_PROXY_IPS:-127\.0\.0\.1/32\}'
+            replace: "{{ trusted_proxy_ips }}"
+
+        - name: Start the Docker socket proxy and Traefik one at a time
+          community.docker.docker_compose_v2:
+            services: ["{{ item }}"]
+          loop: "{{ routing }}"
 
         - name: Install monitoring configuration when included in the release
           when: lookup('ansible.builtin.fileglob', playbook_dir + '/../release-source/Monitoring/prometheus.yml', wantlist=True) | length > 0
@@ -324,6 +370,24 @@
           ansible.builtin.slurp:
             src: "{{ project_dir }}/docker-compose.prod.yaml"
           register: previous_compose
+
+        - name: Preserve routing when recovering a configuration from before Traefik
+          ansible.builtin.copy:
+            content: "{{ (previous_compose.content | b64decode | from_yaml) | combine(routing_configuration, recursive=true) | to_nice_yaml }}"
+            dest: "{{ project_dir }}/docker-compose.prod.yaml"
+            mode: '0644'
+          when: routing | difference((previous_compose.content | b64decode | from_yaml).services.keys()) | length > 0
+
+        - name: Preserve the trusted Nginx address in the recovered configuration
+          ansible.builtin.replace:
+            path: "{{ project_dir }}/docker-compose.prod.yaml"
+            regexp: '\$\{TRUSTED_PROXY_IPS:-127\.0\.0\.1/32\}'
+            replace: "{{ trusted_proxy_ips }}"
+
+        - name: Start routing before restoring application traffic
+          community.docker.docker_compose_v2:
+            services: ["{{ item }}"]
+          loop: "{{ routing }}"
 
         - name: Start the previous applications
           community.docker.docker_compose_v2:

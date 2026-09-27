@@ -330,6 +330,59 @@ services:
       retries: 12
       start_period: 180s
 
+  socket-proxy:
+    image: tecnativa/docker-socket-proxy:v0.5.0
+    restart: unless-stopped
+    environment:
+      CONTAINERS: "1"
+      EVENTS: "1"
+      PING: "1"
+      VERSION: "1"
+      POST: "0"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks:
+      - docker-control
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:2375/_ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  traefik:
+    image: traefik:v3.7.13
+    restart: unless-stopped
+    stop_grace_period: 40s
+    depends_on:
+      socket-proxy:
+        condition: service_healthy
+    command:
+      - '--entrypoints.web.address=:8080'
+      - '--entrypoints.web.forwardedheaders.trustedips=${TRUSTED_PROXY_IPS:-127.0.0.1/32}'
+      - '--providers.docker.endpoint=tcp://socket-proxy:2375'
+      - '--providers.docker.exposedbydefault=true'
+      - '--providers.docker.constraints=Label(`com.docker.compose.project`, `${COMPOSE_PROJECT_NAME}`) && Label(`com.docker.compose.service`, `api-gateway`)'
+      - '--providers.docker.network=${COMPOSE_PROJECT_NAME}_uni-network'
+      - '--providers.docker.defaultrule=PathPrefix(`/`)'
+      - '--ping=true'
+      - '--ping.entrypoint=web'
+      - '--log.format=json'
+      - '--accesslog.format=json'
+      - '--accesslog.fields.defaultmode=drop'
+      - '--accesslog.fields.names.RequestMethod=keep'
+      - '--accesslog.fields.names.DownstreamStatus=keep'
+      - '--accesslog.fields.names.ServiceAddr=keep'
+    ports:
+      - "127.0.0.1:8082:8080"
+    networks:
+      - uni-network
+      - docker-control
+    healthcheck:
+      test: ["CMD", "traefik", "healthcheck", "--ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
   api-gateway:
     image: ghcr.io/kaze-nomi/unimeow-api-gateway:${VERSION:?VERSION is required}
     stop_grace_period: 40s
@@ -359,6 +412,15 @@ services:
       EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://eureka-server:8761/eureka/
     networks:
       - uni-network
+    labels:
+      traefik.http.routers.gateway.rule: PathPrefix(`/`)
+      traefik.http.routers.gateway.entrypoints: web
+      traefik.http.routers.gateway.service: gateway
+      traefik.http.services.gateway.loadbalancer.server.port: "8080"
+      traefik.http.services.gateway.loadbalancer.healthcheck.path: /actuator/health
+      traefik.http.services.gateway.loadbalancer.healthcheck.status: "200"
+      traefik.http.services.gateway.loadbalancer.healthcheck.interval: 5s
+      traefik.http.services.gateway.loadbalancer.healthcheck.timeout: 2s
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://localhost:8080/actuator/health || exit 1"]
       interval: 15s
@@ -373,16 +435,12 @@ services:
       FRONTEND_API_BASE: ${FRONTEND_API_BASE:-${APP_PUBLIC_URL:?APP_PUBLIC_URL is required}}
       MINIO_PUBLIC_URL: ${APP_MINIO_PUBLIC_URL:?APP_MINIO_PUBLIC_URL is required}
     restart: unless-stopped
-    depends_on:
-      api-gateway:
-        condition: service_healthy
     ports:
       - "127.0.0.1:5173:80"
-      - "127.0.0.1:8081:8080"
     networks:
       - uni-network
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8080/actuator/health >/dev/null || exit 1"]
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1/runtime-config.json"]
       interval: 10s
       timeout: 5s
       retries: 12
@@ -432,3 +490,5 @@ volumes:
 networks:
   uni-network:
     driver: bridge
+  docker-control:
+    internal: true

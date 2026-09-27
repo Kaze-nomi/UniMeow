@@ -62,7 +62,7 @@ jobs:
           bash gradlew test --no-daemon --max-workers=2
           docker compose --env-file .env.dev -f docker-compose.dev.yaml up -d --wait redis
           bash gradlew :FeedService:integrationTest --no-daemon --max-workers=2
-          for service in $SERVICES prometheus grafana; do
+          for service in socket-proxy traefik $SERVICES prometheus grafana; do
             docker compose --env-file .env.dev -f docker-compose.prod.yaml -f tests/e2e/compose.oauth.yaml up -d --no-build --wait "$service"
           done
           python3 -m venv .venv
