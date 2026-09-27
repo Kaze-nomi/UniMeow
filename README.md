@@ -50,20 +50,20 @@
 for service in eureka-server media-service user-service post-service feed-service notification-service api-gateway frontend; do
   docker compose -f docker-compose.dev.yaml --env-file .env.dev build "$service" || exit 1
 done
-for service in eureka-server media-service user-service post-service feed-service notification-service api-gateway frontend proxy prometheus grafana; do
+for service in eureka-server media-service user-service post-service feed-service notification-service api-gateway frontend prometheus grafana; do
   docker compose -f docker-compose.dev.yaml --env-file .env.dev up -d --wait "$service" || exit 1
 done
 ```
 
 Frontend: http://localhost:5173, API: http://localhost:8081. Для настоящего Google OAuth передайте свои `GOOGLE_CLIENT_ID` и `GOOGLE_CLIENT_SECRET` через окружение процесса.
 
-Nginx в сервисе `proxy` распределяет HTTP-запросы между репликами Gateway и frontend. Межсервисные gRPC-вызовы распределяются через Eureka. Например, второй Gateway запускается так:
+Nginx внутри frontend раздаёт сайт на порту 5173 и распределяет API-запросы с порта 8081 между репликами Gateway. Frontend остаётся в одном экземпляре; отдельного контейнера `proxy` нет. Серверный Nginx отвечает за внешний домен и HTTPS. Межсервисные gRPC-вызовы распределяются через Eureka. Например, второй Gateway запускается так:
 
 ```sh
 docker compose -f docker-compose.dev.yaml --env-file .env.dev up -d --no-deps --wait --scale api-gateway=2 api-gateway
 ```
 
-Для возврата к одной реплике укажите `=1`. Аналогично масштабируются frontend, UserService, PostService, FeedService, MediaService и NotificationService по их именам в Compose. Ansible сохраняет установленное количество реплик при выпуске и откате; старый выпуск с фиксированными именами контейнеров запускается в одном экземпляре.
+Для возврата к одной реплике укажите `=1`. Аналогично масштабируются UserService, PostService, FeedService, MediaService и NotificationService по их именам в Compose. Ansible сохраняет установленное количество их реплик при выпуске и откате; старый выпуск с фиксированными именами контейнеров запускается в одном экземпляре.
 
 На сервере используются `docker-compose.prod.yaml` и приватный `.env.prod`. Production Compose запускает готовые образы из GHCR; секций сборки в нём нет. Публичные адреса frontend читает при запуске контейнера, поэтому смена адреса не требует пересборки образа.
 
@@ -73,19 +73,37 @@ MinIO закреплён как `ghcr.io/coollabsio/minio:RELEASE.2025-10-15T17-
 
 ## Сборка и выпуск
 
-В GitHub Actions два workflow: **Build** и **Release**. В Build одна job **Build, test and publish**: её шаги выполняются последовательно на одной машине GitHub. Это позволяет опубликовать уже собранные образы после успешных тестов, без передачи образов между отдельными jobs.
+В GitHub Actions два workflow: **CI** и **Release**. CI выполняется последовательно на одной машине GitHub:
 
-**Build** собирает восемь образов приложения, запускает Java-тесты и проверку восстановления обработки событий на настоящем Redis. После успеха публикует образы в GHCR и небольшой архив `unimeow.tar.gz` в GitHub Releases. Архив содержит `docker-compose.prod.yaml`, SQL-миграции и конфигурацию Prometheus. Для PR выполняются только сборка и тесты. Версии имеют вид `v1.0.1`; при ручном запуске Build можно указать версию, иначе используется `v1.0.<номер запуска>`. Опубликованную версию нельзя перезаписать.
+1. **Lint** — actionlint проверяет workflow, Docker Compose проверяет dev/prod-конфигурацию.
+2. **Build** — собираются восемь образов приложения, по одному.
+3. **Test** — выполняются Java-тесты, Redis integration tests и HTTP-тесты всего приложения с настоящими хранилищами.
+4. **Push to GHCR** — прошедшие проверки образы публикуются с одним тегом версии, создаётся GitHub Release.
 
-Build запускается при открытии/обновлении PR, push в `meow` или вручную. Порядок шагов: получить исходники → подготовить Java 25 и Redis для тестов → проверить номер версии → собрать восемь образов → выполнить Java-тесты → выполнить Redis integration tests → сохранить XML-отчёты на семь дней. Только для `meow`, после успеха, выполняются вход в GHCR, загрузка восьми образов и создание GitHub Release с архивом. При ошибке публикация не выполняется; отчёты тестов сохраняются и при неуспехе.
+CI запускается при открытии/обновлении PR, push в `meow` или вручную. Публикация выполняется только для `meow` после успешных проверок. Получение исходников, установка Java и сохранение XML-отчётов — служебные действия; отдельного этапа Redis нет. Отчёты сохраняются на семь дней, в том числе при ошибке. Версии имеют вид `v1.0.1`; при ручном запуске CI можно указать версию, иначе используется `v1.0.<номер запуска>`. Опубликованную версию нельзя перезаписать.
+
+HTTP-тесты в `tests/e2e` проходят OAuth, создают двух пользователей, подписку, пост, лайк, комментарий и уведомления, читают ленту, загружают и скачивают файл. PostgreSQL, Kafka, Redis и MinIO настоящие. Google заменён явно тестовым OAuth-провайдером, поэтому внешний Google и отправка почты этим тестом не проверяются. Проверки Eureka, Prometheus и Grafana выполняются отдельно от пользовательского сценария. Тестовый Compose override меняет только OAuth endpoints Gateway; production его не использует.
+
+Выпуск состоит из нескольких частей:
+
+| Где | Что находится |
+|---|---|
+| Восемь образов в GHCR с одним тегом версии | Java-приложения, библиотеки, ресурсы, собранный frontend и его Nginx |
+| Исходники по Git-тегу версии | Production Compose, SQL-миграции, настройки Prometheus и Grafana, dashboards |
+| На сервере | Приватный `.env.prod`, HTTPS-конфигурация и сертификаты серверного Nginx |
+| Docker volumes на сервере | Данные PostgreSQL, Redis, MinIO и остальных хранилищ; данные не являются частью выпуска |
+
+Отдельный архив выпуска не создаётся: GitHub сам предоставляет Source code, а Release получает ту же версию через `actions/checkout` по тегу. CI проверяет production Compose с собранными образами и тестовыми значениями `.env.dev`. Ansible берётся из репозитория workflow Release.
 
 Чтобы установить выпуск: **GitHub → Actions → Release → Run workflow → version**. Публикация сборки сама по себе сервер не обновляет.
 
-Release запускает [Ansible](deploy/release.yml). Это готовый инструмент, который подключается по SSH и выполняет перечисленные в YAML шаги: скачивает образы, останавливает приложения, проверяет бэкап PostgreSQL, Redis и MinIO, запускает Flyway и последовательно поднимает сервисы через `docker-compose.prod.yaml`. Образы на сервере не собираются. Для первоначальной настройки нужны environment `production`, secrets `SSH_PRIVATE_KEY`, `SSH_KNOWN_HOSTS` и variables `SSH_HOST`, `SSH_USER`, `SSH_PORT`.
+Release получает исходники выбранного тега и запускает [Ansible](deploy/release.yml). Это готовый инструмент, который подключается по SSH и выполняет перечисленные в YAML шаги: скачивает образы из GHCR, останавливает приложения, проверяет бэкап PostgreSQL, Redis и MinIO, переносит Compose, SQL и весь каталог Monitoring, запускает Flyway и последовательно поднимает сервисы. Образы на сервере не собираются. `.env.prod`, серверный Nginx и сертификаты остаются на сервере. Для первоначальной настройки нужны environment `production`, secrets `SSH_PRIVATE_KEY`, `SSH_KNOWN_HOSTS` и variables `SSH_HOST`, `SSH_USER`, `SSH_PORT`.
 
 ## Возврат версии и бэкап
 
-В том же Action **Release** можно выбрать ранее опубликованную версию. Возвращается код; данные остаются текущими. Старый код должен быть совместим с текущей схемой БД. Другой вариант — сделать `git revert`, пройти Build и выпустить новую версию с отменёнными изменениями.
+В том же Action **Release** можно выбрать ранее опубликованную версию. Возвращается код; данные остаются текущими. Старый код должен быть совместим с текущей схемой БД. Другой вариант — сделать `git revert`, пройти CI и выпустить новую версию с отменёнными изменениями.
+
+Старый `v1.0.0` выпущен до этого CI: Ansible читает его прежний `docker-compose.yml` и подставляет сохранённые образы `v1.0.0` вместо сборки. Эти исходные образы сохранены на действующем сервере; для нового сервера потребуется их перенос из резервной копии.
 
 Перед каждым выпуском работающей установки Ansible останавливает приложения и сохраняет три PostgreSQL-базы, Redis и MinIO. Redis и MinIO ненадолго останавливаются для полной копии их данных. Восстановление проверяется в отдельных временных контейнерах. Только после успешной проверки новый `/var/backups/unimeow/latest.tar.gz` заменяет предыдущий архив. Если установка нездорова или предыдущий выпуск не завершился, Release сохраняет последний проверенный бэкап. При ошибке выпуска Ansible пытается запустить предыдущие приложения; данные автоматически не восстанавливаются.
 

@@ -19,14 +19,16 @@ jobs:
     timeout-minutes: 90
     steps:
       - uses: actions/checkout@v7
-      - name: Download the selected build
+      - name: Validate version
         env:
-          GH_TOKEN: ${{ github.token }}
           VERSION: ${{ inputs.version }}
         run: |
           [[ "$VERSION" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]
-          gh release download "$VERSION" --dir release-artifact --pattern unimeow.tar.gz
-          tar -xzf release-artifact/unimeow.tar.gz -C release-artifact
+      - name: Get the selected version
+        uses: actions/checkout@v7
+        with:
+          ref: refs/tags/${{ inputs.version }}
+          path: release-source
       - name: Install Ansible
         run: |
           pip install ansible-core==2.19.3
