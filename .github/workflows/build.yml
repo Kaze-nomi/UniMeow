@@ -103,6 +103,6 @@ jobs:
             UserService/src/main/resources/db/migration \
             PostService/src/main/resources/db/migration \
             NotificationService/src/main/resources/db/migration
-          printf 'Production РІРµСЂСЃРёСЏ %s\n' "${VERSION#v}" > release-notes.txt
+          printf 'Production версия %s\n' "${VERSION#v}" > release-notes.txt
           gh release create "$VERSION" unimeow.tar.gz --repo "$GITHUB_REPOSITORY" \
             --target "$GITHUB_SHA" --title "$VERSION" --notes-file release-notes.txt

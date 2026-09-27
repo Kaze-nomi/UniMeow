@@ -870,7 +870,7 @@ Prometheus собирает стандартные Micrometer/Spring Boot мет
 - **Доступность targets:** `up`, `scrape_duration_seconds`, `scrape_samples_scraped`, `scrape_samples_post_metric_relabeling`.
 - **JVM:** `jvm_memory_used_bytes`, `jvm_memory_committed_bytes`, `jvm_memory_max_bytes`, `jvm_gc_pause_seconds`, `jvm_threads_*`, `jvm_classes_loaded_classes`, `jvm_classes_unloaded_classes`.
 - **HTTP:** `http_server_requests_seconds_*` с лейблами `uri`, `method`, `status`, `exception`.
-- **gRPC:** `grpc_server_calls_*` для серверных gRPC-вызовов.
+- **gRPC:** `grpc_server_seconds_count` и `grpc_server_seconds_sum` для количества и длительности вызовов, с полями `rpc_service`, `rpc_method` и `grpc_status_code`. Их собирает стандартный Micrometer interceptor.
 - **Kafka:** `kafka_producer_*`, `kafka_consumer_*`, `spring_kafka_listener_*` для producers, consumers и listener-контейнеров.
 - **Redis:** `spring_data_redis_*` и Redis client metrics для FeedService.
 - **PostgreSQL/HikariCP:** `hikaricp_*`, `jdbc_connections_*` для сервисов с базой данных.

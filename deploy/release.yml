@@ -60,7 +60,7 @@
         containers: true
         containers_filters:
           status: running
-          label: [com.docker.compose.project=unimeow, "com.docker.compose.service={{ item }}"]
+          label: [com.docker.compose.project=unimeow, com.docker.compose.oneoff=False, "com.docker.compose.service={{ item }}"]
       loop: "{{ applications | reject('equalto', 'frontend') | list }}"
       register: current_replicas
       no_log: true
@@ -72,10 +72,16 @@
       register: current_services
       no_log: true
 
+    - name: Check for an interrupted or failed release
+      ansible.builtin.stat:
+        path: "{{ backup_dir }}/.release-in-progress"
+      register: release_in_progress
+
     - name: Decide whether the running installation can replace its backup
       ansible.builtin.set_fact:
         make_backup: >-
-          {{ applications | difference(running.stdout_lines) | length == 0
+          {{ not release_in_progress.stat.exists
+             and applications | difference(running.stdout_lines) | length == 0
              and current_readiness.status == 200
              and (current_readiness.json | default({})).get('status') == 'UP'
              and current_replicas.results | map(attribute='containers') | map('length') | min > 0
@@ -86,10 +92,10 @@
         path: "{{ backup_dir }}/latest.tar.gz"
       register: previous_backup
 
-    - name: Require a verified backup when recovering an unhealthy installation
+    - name: Require a verified backup when recovering an interrupted or unhealthy installation
       ansible.builtin.assert:
         that: make_backup or previous_backup.stat.exists
-        fail_msg: The application is unhealthy and no verified database backup exists. Review the database before releasing.
+        fail_msg: The installation is unhealthy or a release is incomplete, and no verified database backup exists. Review the database before releasing.
 
     - name: Log in to the image registry
       community.docker.docker_login:
@@ -150,7 +156,7 @@
         containers: true
         containers_all: true
         containers_filters:
-          label: [com.docker.compose.project=unimeow, "com.docker.compose.service={{ item }}"]
+          label: [com.docker.compose.project=unimeow, com.docker.compose.oneoff=False, "com.docker.compose.service={{ item }}"]
       loop: "{{ applications }}"
       register: application_replicas
       no_log: true
@@ -169,7 +175,7 @@
             containers: true
             containers_all: true
             containers_filters:
-              label: [com.docker.compose.project=unimeow, com.docker.compose.service=proxy]
+              label: [com.docker.compose.project=unimeow, com.docker.compose.oneoff=False, com.docker.compose.service=proxy]
           register: current_proxy
 
         - name: Stop the existing proxy and release its ports
@@ -186,6 +192,16 @@
         - name: Make and verify the database backup
           ansible.builtin.include_tasks: backup.yml
           when: make_backup
+
+        - name: Mark the release incomplete before changing configuration
+          ansible.builtin.copy:
+            content: "{{ version }}\n"
+            dest: "{{ backup_dir }}/.release-in-progress"
+            mode: '0600'
+
+        - name: Flush the release marker before changing configuration
+          ansible.builtin.command:
+            argv: [sync, -f, "{{ backup_dir }}"]
 
         - name: Install the selected Compose file
           ansible.builtin.copy:
@@ -245,6 +261,7 @@
         - name: Start the selected proxy and wait for its healthcheck
           community.docker.docker_compose_v2:
             services: [proxy]
+            recreate: always
           when: "'proxy' in selected_compose.services"
 
         - name: Check public application readiness
@@ -256,13 +273,18 @@
           retries: 12
           delay: 5
 
+        - name: Clear the marker only after the complete release succeeds
+          ansible.builtin.file:
+            path: "{{ backup_dir }}/.release-in-progress"
+            state: absent
+
       rescue:
         - name: Find the existing proxy before restoring configuration
           community.docker.docker_host_info:
             containers: true
             containers_all: true
             containers_filters:
-              label: [com.docker.compose.project=unimeow, com.docker.compose.service=proxy]
+              label: [com.docker.compose.project=unimeow, com.docker.compose.oneoff=False, com.docker.compose.service=proxy]
           register: failed_proxy
 
         - name: Stop the unsuccessful proxy and release its ports
@@ -309,6 +331,7 @@
         - name: Start the previous proxy when present and wait for its healthcheck
           community.docker.docker_compose_v2:
             services: [proxy]
+            recreate: always
           when: "'proxy' in (previous_compose.content | b64decode | from_yaml).services"
 
         - name: Report unsuccessful release

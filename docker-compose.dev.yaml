@@ -480,7 +480,6 @@ configs:
           "" $$scheme;
       }
       log_format upstream '$$remote_addr $$request_method $$uri $$status upstream=$$upstream_addr';
-      access_log /var/log/nginx/access.log upstream;
       upstream gateways {
           zone gateways 64k;
           server api-gateway:8080 resolve;
@@ -497,9 +496,11 @@ configs:
       client_max_body_size 12m;
       server {
           listen 80;
+          access_log /var/log/nginx/access.log upstream;
           location / { proxy_pass http://frontends; }
       }
       server {
           listen 8080;
+          access_log /var/log/nginx/access.log upstream;
           location / { proxy_pass http://gateways; }
       }
