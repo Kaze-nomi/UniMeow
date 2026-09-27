@@ -57,6 +57,14 @@ done
 
 Frontend: http://localhost:5173, API: http://localhost:8081. Для настоящего Google OAuth передайте свои `GOOGLE_CLIENT_ID` и `GOOGLE_CLIENT_SECRET` через окружение процесса.
 
+Nginx в сервисе `proxy` распределяет HTTP-запросы между репликами Gateway и frontend. Межсервисные gRPC-вызовы распределяются через Eureka. Например, второй Gateway запускается так:
+
+```sh
+docker compose -f docker-compose.dev.yaml --env-file .env.dev up -d --no-deps --wait --scale api-gateway=2 api-gateway
+```
+
+Для возврата к одной реплике укажите `=1`. Аналогично масштабируются frontend, UserService, PostService, FeedService, MediaService и NotificationService по их именам в Compose. Ansible сохраняет установленное количество реплик при выпуске и откате; старый выпуск с фиксированными именами контейнеров запускается в одном экземпляре.
+
 На сервере используются `docker-compose.prod.yaml` и приватный `.env.prod`. Production Compose запускает готовые образы из GHCR; секций сборки в нём нет. Публичные адреса frontend читает при запуске контейнера, поэтому смена адреса не требует пересборки образа.
 
 GitHub собирает образы без production-секретов: настройки подключения нужны приложениям при запуске, а не при сборке. Во время Release Ansible вызывает серверный Compose с `-f docker-compose.prod.yaml --env-file .env.prod`, и тот передаёт настройки контейнерам. `.env.prod` не загружается в GitHub и не включается в образы; следующий релиз сохраняет его значения, меняя только `VERSION`.
