@@ -33,6 +33,9 @@ public class NotificationEventService {
 				|| event.payload() == null || !event.payload().isObject()) {
 			throw new IllegalArgumentException("Event must have eventId, eventType and an object payload");
 		}
+		if (event.eventId().codePointCount(0, event.eventId().length()) > 100) {
+			throw new IllegalArgumentException("eventId must not exceed 100 characters");
+		}
 		if (processedEventRepository.claim(event.eventId(), LocalDateTime.now()) == 0) {
 			return;
 		}

@@ -4,6 +4,8 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
@@ -93,6 +95,27 @@ class NotificationEventServiceTest {
 		var order = inOrder(processedEventRepository, notificationRepository);
 		order.verify(processedEventRepository).claim(eq(EVENT_ID), any());
 		order.verify(notificationRepository).saveAll(any());
+	}
+
+	@ParameterizedTest
+	@ValueSource(strings = {"a", "\uD83D\uDE00"})
+	void processRaw_rejects_event_id_over_database_limit(String character) {
+		String raw = eventWithId(character.repeat(101), "POST_CREATED", "{}");
+
+		assertThatThrownBy(() -> notificationEventService.processRaw(raw))
+				.isInstanceOf(IllegalArgumentException.class).hasMessageContaining("100");
+
+		verifyNoInteractions(notificationRepository, processedEventRepository);
+	}
+
+	@ParameterizedTest
+	@ValueSource(strings = {"a", "\uD83D\uDE00"})
+	void processRaw_accepts_event_id_at_database_limit(String character) {
+		String eventId = character.repeat(100);
+
+		notificationEventService.processRaw(eventWithId(eventId, "POST_CREATED", "{}"));
+
+		verify(processedEventRepository).claim(eq(eventId), any());
 	}
 
 	@Test
