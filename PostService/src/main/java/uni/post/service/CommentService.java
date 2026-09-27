@@ -61,7 +61,11 @@ public class CommentService {
 			throw new IllegalArgumentException("Comment content cannot be empty");
 		}
 
+		postRepository.lockContentMutation();
+		postRepository.lockPost(postId);
+
 		if (clientRequestId != null && !clientRequestId.isBlank()) {
+			idempotencyKeyRepository.lockRequest(clientRequestId);
 			var existing = idempotencyKeyRepository.findById(clientRequestId);
 			if (existing.isPresent()) {
 				UUID existingCommentId = UUID.fromString(existing.get().getEntityId());
@@ -174,6 +178,7 @@ public class CommentService {
 			throw new IllegalArgumentException("Comment content cannot be empty");
 		}
 
+		lockCommentMutation(commentId);
 		Comment comment = findOrThrow(commentId);
 
 		if (!comment.getAuthorId().equals(requesterId)) {
@@ -194,6 +199,7 @@ public class CommentService {
 
 	@Transactional
 	public void deleteComment(UUID commentId, UUID requesterId, boolean adminOverride) {
+		lockCommentMutation(commentId);
 		Comment comment = findOrThrow(commentId);
 
 		if (!adminOverride && !comment.getAuthorId().equals(requesterId)) {
@@ -201,16 +207,18 @@ public class CommentService {
 		}
 
 		log.info("Comment {} deleted by requester {} (adminOverride={})", commentId, requesterId, adminOverride);
+		int removedCount = commentRepository.countSubtree(commentId);
 		commentRepository.delete(comment);
 
 		postRepository.findById(comment.getPostId()).ifPresent(post -> {
-			post.setCommentsCount(Math.max(0, post.getCommentsCount() - 1));
+			post.setCommentsCount(Math.max(0, post.getCommentsCount() - removedCount));
 			postRepository.save(post);
 		});
 	}
 
 	@Transactional
 	public void likeComment(UUID commentId, UUID userId) {
+		lockCommentMutation(commentId);
 		Comment comment = findOrThrow(commentId);
 
 		if (commentLikeRepository.existsByCommentIdAndUserId(commentId, userId)) {
@@ -233,6 +241,7 @@ public class CommentService {
 
 	@Transactional
 	public void unlikeComment(UUID commentId, UUID userId) {
+		lockCommentMutation(commentId);
 		Comment comment = findOrThrow(commentId);
 
 		if (!commentLikeRepository.existsByCommentIdAndUserId(commentId, userId)) {
@@ -243,6 +252,15 @@ public class CommentService {
 
 		comment.setLikesCount(Math.max(0, comment.getLikesCount() - 1));
 		commentRepository.save(comment);
+	}
+
+	private void lockCommentMutation(UUID commentId) {
+		postRepository.lockContentMutation();
+		UUID postId = commentRepository.findPostIdByCommentId(commentId);
+		if (postId == null) {
+			throw new CommentNotFoundException("Comment not found: " + commentId);
+		}
+		postRepository.lockPost(postId);
 	}
 
 	private Comment findOrThrow(UUID commentId) {

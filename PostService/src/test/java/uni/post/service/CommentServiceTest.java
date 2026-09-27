@@ -1,6 +1,7 @@
 package uni.post.service;
 
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
@@ -54,6 +55,12 @@ class CommentServiceTest {
 	private static final UUID POST_ID = UUID.fromString("f47ac10b-58cc-4372-a567-0e02b2c3d479");
 	private static final UUID AUTHOR_ID = UUID.fromString("550e8400-e29b-41d4-a716-446655440001");
 	private static final UUID COMMENT_ID = UUID.fromString("550e8400-e29b-41d4-a716-446655440002");
+
+	@BeforeEach
+	void setUp() {
+		lenient().when(commentRepository.findPostIdByCommentId(any())).thenReturn(POST_ID);
+		lenient().when(commentRepository.countSubtree(any())).thenReturn(1);
+	}
 
 	private Post buildPost() {
 		LocalDateTime now = LocalDateTime.now();
@@ -326,6 +333,22 @@ class CommentServiceTest {
 	}
 
 	@Test
+	void delete_comment_decrements_count_for_entire_cascaded_reply_tree() {
+		Post post = buildPost();
+		post.setCommentsCount(5);
+		when(commentRepository.findById(COMMENT_ID)).thenReturn(Optional.of(buildComment()));
+		when(postRepository.findById(POST_ID)).thenReturn(Optional.of(post));
+		when(commentRepository.countSubtree(COMMENT_ID)).thenReturn(3);
+
+		commentService.deleteComment(COMMENT_ID, AUTHOR_ID);
+
+		assertThat(post.getCommentsCount()).isEqualTo(2);
+		var order = inOrder(commentRepository);
+		order.verify(commentRepository).countSubtree(COMMENT_ID);
+		order.verify(commentRepository).delete(any());
+	}
+
+	@Test
 	void delete_comment_does_not_decrement_below_zero() {
 		Post post = buildPost();
 		post.setCommentsCount(0);
@@ -354,6 +377,22 @@ class CommentServiceTest {
 
 		assertThatThrownBy(() -> commentService.deleteComment(COMMENT_ID, AUTHOR_ID))
 				.isInstanceOf(CommentNotFoundException.class);
+	}
+
+	@Test
+	void comment_mutation_locks_post_before_loading_entity_or_counter() {
+		when(commentRepository.findById(COMMENT_ID)).thenReturn(Optional.of(buildComment()));
+		when(postRepository.findById(POST_ID)).thenReturn(Optional.of(buildPost()));
+
+		commentService.deleteComment(COMMENT_ID, AUTHOR_ID);
+
+		var order = inOrder(postRepository, commentRepository);
+		order.verify(postRepository).lockContentMutation();
+		order.verify(commentRepository).findPostIdByCommentId(COMMENT_ID);
+		order.verify(postRepository).lockPost(POST_ID);
+		order.verify(commentRepository).findById(COMMENT_ID);
+		order.verify(commentRepository).delete(any());
+		order.verify(postRepository).findById(POST_ID);
 	}
 
 	@Test

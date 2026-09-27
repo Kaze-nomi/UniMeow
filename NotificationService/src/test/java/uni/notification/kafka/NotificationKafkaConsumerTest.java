@@ -5,6 +5,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.dao.DataAccessResourceFailureException;
 import org.springframework.kafka.support.Acknowledgment;
 import uni.notification.kafka.consumer.NotificationKafkaConsumer;
 import uni.notification.kafka.producer.NotificationDlqProducer;
@@ -50,7 +51,7 @@ class NotificationKafkaConsumerTest {
 
 	@Test
 	void onPostEvent_sends_to_dlq_and_acknowledges_on_failure_when_dlq_succeeds() {
-		doThrow(new RuntimeException("parse error")).when(notificationEventService).processRaw(any());
+		doThrow(new IllegalArgumentException("parse error")).when(notificationEventService).processRaw(any());
 		when(dlqProducer.publishConsumerFailure(any(), any(), any(), anyInt(), anyLong(), any())).thenReturn(true);
 
 		consumer.onPostEvent(RAW, acknowledgment, TOPIC, "key-1", 0, 5L);
@@ -61,7 +62,7 @@ class NotificationKafkaConsumerTest {
 
 	@Test
 	void onPostEvent_rethrows_when_dlq_also_fails() {
-		doThrow(new RuntimeException("parse error")).when(notificationEventService).processRaw(any());
+		doThrow(new IllegalArgumentException("parse error")).when(notificationEventService).processRaw(any());
 		when(dlqProducer.publishConsumerFailure(any(), any(), any(), anyInt(), anyLong(), any())).thenReturn(false);
 
 		org.assertj.core.api.Assertions
@@ -69,5 +70,17 @@ class NotificationKafkaConsumerTest {
 				.isInstanceOf(RuntimeException.class);
 
 		verify(acknowledgment, never()).acknowledge();
+	}
+
+	@Test
+	void onPostEvent_retries_database_failure_without_dlq_or_acknowledgment() {
+		DataAccessResourceFailureException failure = new DataAccessResourceFailureException("Database unavailable");
+		doThrow(failure).when(notificationEventService).processRaw(RAW);
+
+		org.assertj.core.api.Assertions
+				.assertThatThrownBy(() -> consumer.onPostEvent(RAW, acknowledgment, TOPIC, "key-1", 0, 5L))
+				.isSameAs(failure);
+
+		verifyNoInteractions(dlqProducer, acknowledgment);
 	}
 }

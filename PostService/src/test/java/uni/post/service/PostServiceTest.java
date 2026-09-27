@@ -543,4 +543,32 @@ class PostServiceTest {
 		verify(postRepository, never()).save(any());
 		verify(outboxService, never()).enqueuePostEvent(eq("POST_UNLIKED"), any(), any(), any());
 	}
+	@Test
+	void like_locks_post_before_loading_counter_and_checking_existing_like() {
+		when(postRepository.findById(POST_ID)).thenReturn(Optional.of(buildPost()));
+		when(likeRepository.existsByPostIdAndUserId(POST_ID, VIEWER_ID)).thenReturn(true);
+
+		postService.likePost(POST_ID, VIEWER_ID);
+
+		var order = inOrder(postRepository, likeRepository);
+		order.verify(postRepository).lockContentMutation();
+		order.verify(postRepository).lockPost(POST_ID);
+		order.verify(postRepository).findById(POST_ID);
+		order.verify(likeRepository).existsByPostIdAndUserId(POST_ID, VIEWER_ID);
+		verifyNoInteractions(outboxService);
+	}
+
+	@Test
+	void author_cleanup_locks_before_observing_existing_effects() {
+		postService.deleteAllContentByAuthor(AUTHOR_ID);
+
+		var order = inOrder(postRepository, likeRepository, commentLikeRepository, commentRepository);
+		order.verify(postRepository).lockContentCleanup();
+		order.verify(likeRepository).findPostIdsByUserId(AUTHOR_ID);
+		order.verify(commentLikeRepository).findCommentIdsByUserId(AUTHOR_ID);
+		order.verify(commentRepository).findByAuthorId(AUTHOR_ID);
+		order.verify(postRepository).findByAuthorId(AUTHOR_ID);
+		verifyNoInteractions(outboxService);
+	}
+
 }

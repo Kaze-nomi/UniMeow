@@ -2,13 +2,18 @@ package uni.feed.kafka.consumer;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.context.annotation.Bean;
 import org.springframework.kafka.annotation.KafkaListener;
+import org.springframework.kafka.listener.DefaultErrorHandler;
 import org.springframework.kafka.support.Acknowledgment;
 import org.springframework.kafka.support.KafkaHeaders;
 import org.springframework.messaging.handler.annotation.Header;
 import org.springframework.stereotype.Component;
+import org.springframework.util.backoff.FixedBackOff;
 import uni.feed.kafka.producer.FeedDlqProducer;
 import uni.feed.service.FeedEventService;
+
+import java.util.Map;
 
 @Component
 @RequiredArgsConstructor
@@ -17,6 +22,13 @@ public class FeedKafkaConsumer {
 
 	private final FeedEventService feedEventService;
 	private final FeedDlqProducer feedDlqProducer;
+
+	@Bean
+	DefaultErrorHandler kafkaErrorHandler() {
+		DefaultErrorHandler handler = new DefaultErrorHandler(new FixedBackOff(1_000L, FixedBackOff.UNLIMITED_ATTEMPTS));
+		handler.setClassifications(Map.of(), true);
+		return handler;
+	}
 
 	@KafkaListener(topics = "${app.kafka.topics.post-events}")
 	public void onPostEvent(String raw, Acknowledgment acknowledgment,
@@ -36,20 +48,32 @@ public class FeedKafkaConsumer {
 
 	private void consume(String raw, Acknowledgment acknowledgment, String topic, String key, int partition,
 			long offset) {
+		long start = System.nanoTime();
 		try {
 			feedEventService.processRaw(raw);
-			acknowledgment.acknowledge();
-		} catch (Exception e) {
+		} catch (IllegalArgumentException e) {
 			boolean dlqPublished = feedDlqProducer.publishConsumerFailure(topic, key, raw, partition, offset, e);
 			if (dlqPublished) {
 				acknowledgment.acknowledge();
-				log.warn("Event moved to DLQ: topic={}, partition={}, offset={}", topic, partition, offset);
+				log.atWarn().addKeyValue("event", "kafka_consumer_dlq").addKeyValue("topic", topic)
+						.addKeyValue("key", key).addKeyValue("partition", partition).addKeyValue("offset", offset)
+						.addKeyValue("status", "dlq").addKeyValue("durationMs", (System.nanoTime() - start) / 1_000_000L)
+						.setCause(e).log("Event moved to DLQ");
 				return;
 			}
 
-			log.error("Event processing failed and DLQ publish failed: topic={}, partition={}, offset={}", topic,
-					partition, offset, e);
+			log.atError().addKeyValue("event", "kafka_consumer_failed").addKeyValue("topic", topic)
+					.addKeyValue("key", key).addKeyValue("partition", partition).addKeyValue("offset", offset)
+					.addKeyValue("status", "retry").addKeyValue("durationMs", (System.nanoTime() - start) / 1_000_000L)
+					.setCause(e).log("Event processing failed and DLQ publish failed");
+			throw e;
+		} catch (Exception e) {
+			log.atError().addKeyValue("event", "kafka_consumer_failed").addKeyValue("topic", topic)
+					.addKeyValue("key", key).addKeyValue("partition", partition).addKeyValue("offset", offset)
+					.addKeyValue("status", "retry").addKeyValue("durationMs", (System.nanoTime() - start) / 1_000_000L)
+					.setCause(e).log("Event processing failed; will retry");
 			throw e;
 		}
+		acknowledgment.acknowledge();
 	}
 }

@@ -10,6 +10,19 @@ import java.util.List;
 import java.util.UUID;
 
 public interface CommentRepository extends JpaRepository<Comment, UUID> {
+	@Query(value = "SELECT post_id FROM comments WHERE id = :commentId", nativeQuery = true)
+	UUID findPostIdByCommentId(UUID commentId);
+
+	@Query(value = """
+			WITH RECURSIVE subtree AS (
+			    SELECT id FROM comments WHERE id = :commentId
+			    UNION ALL
+			    SELECT c.id FROM comments c JOIN subtree s ON c.parent_comment_id = s.id
+			)
+			SELECT count(*) FROM subtree
+			""", nativeQuery = true)
+	int countSubtree(UUID commentId);
+
 	List<Comment> findByPostId(UUID postId);
 
 	List<Comment> findByAuthorId(UUID authorId);

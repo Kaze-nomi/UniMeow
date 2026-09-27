@@ -50,3 +50,18 @@ dependencies {
 tasks.withType<Test> {
     useJUnitPlatform()
 }
+
+
+tasks.named<Test>("test") {
+    useJUnitPlatform { excludeTags("integration") }
+}
+
+tasks.register<Test>("integrationTest") {
+    testClassesDirs = sourceSets.test.get().output.classesDirs
+    classpath = sourceSets.test.get().runtimeClasspath
+    useJUnitPlatform { includeTags("integration") }
+    outputs.upToDateWhen { false }
+    doFirst {
+        require(!System.getenv("REDIS_TEST_PORT").isNullOrBlank()) { "REDIS_TEST_PORT is required" }
+    }
+}
