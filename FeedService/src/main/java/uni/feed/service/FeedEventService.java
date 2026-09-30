@@ -43,8 +43,10 @@ public class FeedEventService {
 
 	public void processRaw(String raw) {
 		EventEnvelope event = parse(raw);
-		if (event == null) throw new IllegalArgumentException("Event envelope is missing");
-		if (event.eventType() == null || event.eventType().isBlank() || event.payload() == null || !event.payload().isObject()) {
+		if (event == null)
+			throw new IllegalArgumentException("Event envelope is missing");
+		if (event.eventType() == null || event.eventType().isBlank() || event.payload() == null
+				|| !event.payload().isObject()) {
 			throw new IllegalArgumentException("Event type or payload is invalid");
 		}
 		if (event.eventId() == null || event.eventId().isBlank()) {
@@ -59,9 +61,8 @@ public class FeedEventService {
 			case "POST_CREATED", "POST_DELETED", "POST_LIKED", "POST_UNLIKED" -> onPostEvent(event);
 			case "USER_FOLLOWED", "USER_UNFOLLOWED" -> onFollowingEvent(event);
 			case "USER_DELETED", "USER_PERMANENT_BANNED" -> onUserDeleted(event);
-			default -> log.atDebug().addKeyValue("event", "event_ignored")
-					.addKeyValue("eventId", event.eventId()).addKeyValue("eventType", event.eventType())
-					.log("Ignoring event type");
+			default -> log.atDebug().addKeyValue("event", "event_ignored").addKeyValue("eventId", event.eventId())
+					.addKeyValue("eventType", event.eventType()).log("Ignoring event type");
 		}
 
 		redisRepository.markEventProcessed(event.eventId(), DEDUP_TTL);
@@ -81,12 +82,13 @@ public class FeedEventService {
 	private void onPostEvent(EventEnvelope event) {
 		String postId = text(event.payload(), "postId");
 		String authorId = text(event.payload(), "authorId");
-		boolean created = event.eventType().equals("POST_CREATED");
-		boolean deleted = event.eventType().equals("POST_DELETED");
+		boolean created = "POST_CREATED".equals(event.eventType());
+		boolean deleted = "POST_DELETED".equals(event.eventType());
 		if (postId == null || (created && authorId == null)) {
 			throw new IllegalArgumentException(event.eventType() + " payload is incomplete");
 		}
-		if (deleted) redisRepository.markPostDeleted(postId, DEDUP_TTL);
+		if (deleted)
+			redisRepository.markPostDeleted(postId, DEDUP_TTL);
 
 		String createdAtMs = text(event.payload(), "createdAtMs");
 		double chronological = created || createdAtMs == null ? score(event.occurredAt()) : parseLong(createdAtMs);
@@ -95,32 +97,39 @@ public class FeedEventService {
 		applyPost(event, "feed:popular", postId, authorId, null, popular, popularWindowSize);
 		for (String feed : scopedFeeds(event)) {
 			applyPost(event, feed + ":popular", postId, authorId, null, popular, popularWindowSize);
-			if (created || deleted) applyPost(event, feed, postId, authorId, null, chronological, uniWindowSize);
+			if (created || deleted)
+				applyPost(event, feed, postId, authorId, null, chronological, uniWindowSize);
 		}
 		if ((created || deleted) && authorId != null) {
 			applyPost(event, "feed:author:" + authorId, postId, authorId, null, chronological, authorWindowSize);
 			for (String followerId : redisRepository.findFollowers(authorId)) {
-				applyPost(event, "feed:user:" + followerId, postId, authorId, followerId, chronological, userWindowSize);
+				applyPost(event, "feed:user:" + followerId, postId, authorId, followerId, chronological,
+						userWindowSize);
 			}
 		}
 	}
 
 	private List<String> scopedFeeds(EventEnvelope event) {
 		Long universityId = parseNullableLong(text(event.payload(), "authorUniversityId"));
-		if (universityId == null) universityId = parseNullableLong(text(event.payload(), "universityId"));
-		if (universityId == null) return List.of("feed:outside");
+		if (universityId == null)
+			universityId = parseNullableLong(text(event.payload(), "universityId"));
+		if (universityId == null)
+			return List.of("feed:outside");
 		String university = "feed:uni:" + universityId;
 		List<String> feeds = new ArrayList<>(List.of(university));
 		Long facultyId = parseNullableLong(text(event.payload(), "facultyId"));
 		Long parentTopicId = parseNullableLong(text(event.payload(), "parentTopicId"));
-		if (facultyId == null) facultyId = parentTopicId;
-		if (facultyId != null) feeds.add(university + ":topic:" + facultyId);
+		if (facultyId == null)
+			facultyId = parentTopicId;
+		if (facultyId != null)
+			feeds.add(university + ":topic:" + facultyId);
 		Long programId = parseNullableLong(text(event.payload(), "programId"));
 		Long topicId = parseNullableLong(text(event.payload(), "topicId"));
 		if (programId == null && topicId != null && parentTopicId != null && !topicId.equals(parentTopicId)) {
 			programId = topicId;
 		}
-		if (programId != null) feeds.add(university + ":subtopic:" + programId);
+		if (programId != null)
+			feeds.add(university + ":subtopic:" + programId);
 		return feeds;
 	}
 
@@ -131,9 +140,11 @@ public class FeedEventService {
 			throw new IllegalArgumentException(event.eventType() + " payload is invalid");
 		}
 		redisRepository.applyFollowingEvent(event, subscriberId, targetUserId, DEDUP_TTL);
-		long last = event.eventType().equals("USER_FOLLOWED") ? 99 : -1;
-		for (Map.Entry<String, Double> post : redisRepository.findLatestAuthorPostsWithScores(targetUserId, 0, last).entrySet()) {
-			applyPost(event, "feed:user:" + subscriberId, post.getKey(), targetUserId, subscriberId, post.getValue(), userWindowSize);
+		long last = "USER_FOLLOWED".equals(event.eventType()) ? 99 : -1;
+		for (Map.Entry<String, Double> post : redisRepository.findLatestAuthorPostsWithScores(targetUserId, 0, last)
+				.entrySet()) {
+			applyPost(event, "feed:user:" + subscriberId, post.getKey(), targetUserId, subscriberId, post.getValue(),
+					userWindowSize);
 		}
 	}
 

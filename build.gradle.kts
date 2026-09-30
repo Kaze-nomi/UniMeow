@@ -28,14 +28,14 @@ subprojects {
 
             extensions.configure<PmdExtension> {
                 toolVersion = "7.19.0"
-                isIgnoreFailures = true
+                isIgnoreFailures = false
                 ruleSets = listOf()
                 ruleSetFiles = files("${rootDir}/config/pmd/ruleset.xml")
             }
 
             extensions.configure<com.github.spotbugs.snom.SpotBugsExtension> {
                 toolVersion = "4.9.8"
-                ignoreFailures = true
+                ignoreFailures = false
                 effort = com.github.spotbugs.snom.Effort.DEFAULT
                 reportLevel = com.github.spotbugs.snom.Confidence.MEDIUM
                 excludeFilter.set(file("${rootDir}/config/spotbugs/exclude.xml"))

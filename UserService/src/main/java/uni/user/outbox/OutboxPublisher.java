@@ -20,6 +20,7 @@ public class OutboxPublisher {
 
 	@Scheduled(fixedDelayString = "${app.outbox.publish-delay-ms:1500}")
 	@Transactional
+	@SuppressWarnings("PMD.ExceptionAsFlowControl")
 	public void publishPendingEvents() {
 		if (!outboxEventRepository.tryLockPublisher() || !outboxEventRepository.existsByPublishedAtIsNull()) {
 			return;
@@ -43,8 +44,8 @@ public class OutboxPublisher {
 			}
 		} catch (Exception e) {
 			log.atWarn().addKeyValue("event", "outbox_publish_failed").addKeyValue("status", "retry")
-					.addKeyValue("durationMs", (System.nanoTime() - start) / 1_000_000L)
-					.setCause(e).log("Failed to commit outbox batch; will retry");
+					.addKeyValue("durationMs", (System.nanoTime() - start) / 1_000_000L).setCause(e)
+					.log("Failed to commit outbox batch; will retry");
 		}
 	}
 }

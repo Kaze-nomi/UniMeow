@@ -94,8 +94,8 @@ class FeedKafkaConsumerTest {
 		when(feedDlqProducer.publishConsumerFailure(eq(POST_EVENTS_TOPIC), any(), any(), anyInt(), anyLong(), any()))
 				.thenReturn(false);
 
-		assertThatThrownBy(() -> feedKafkaConsumer.onPostEvent(eventJson, acknowledgment, POST_EVENTS_TOPIC, MESSAGE_KEY, PARTITION, OFFSET))
-				.isSameAs(processError);
+		assertThatThrownBy(() -> feedKafkaConsumer.onPostEvent(eventJson, acknowledgment, POST_EVENTS_TOPIC,
+				MESSAGE_KEY, PARTITION, OFFSET)).isSameAs(processError);
 
 		verify(acknowledgment, never()).acknowledge();
 	}
@@ -177,8 +177,8 @@ class FeedKafkaConsumerTest {
 		RedisConnectionFailureException failure = new RedisConnectionFailureException("Redis unavailable");
 		doThrow(failure).when(feedEventService).processRaw("event");
 
-		assertThatThrownBy(() -> feedKafkaConsumer.onPostEvent("event", acknowledgment, POST_EVENTS_TOPIC, MESSAGE_KEY, PARTITION, OFFSET))
-				.isSameAs(failure);
+		assertThatThrownBy(() -> feedKafkaConsumer.onPostEvent("event", acknowledgment, POST_EVENTS_TOPIC, MESSAGE_KEY,
+				PARTITION, OFFSET)).isSameAs(failure);
 
 		verifyNoInteractions(feedDlqProducer, acknowledgment);
 	}

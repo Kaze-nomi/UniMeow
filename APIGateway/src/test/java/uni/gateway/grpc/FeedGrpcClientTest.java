@@ -71,7 +71,7 @@ class FeedGrpcClientTest {
 		StepVerifier.create(feedGrpcClient.getFeed(FeedType.TRENDING, "user-123", null, 20)).expectNextCount(1)
 				.verifyComplete();
 
-		verify(stub).getFeed(argThat(req -> req.getUserId().equals("user-123")));
+		verify(stub).getFeed(argThat(req -> "user-123".equals(req.getUserId())));
 	}
 
 	@Test
@@ -174,7 +174,7 @@ class FeedGrpcClientTest {
 
 		verify(stub).getFeed(argThat(req -> req.getFeedType() == FeedType.TRENDING && req.getUniversityId() == 42L
 				&& req.getFacultyId() == 11L && req.getProgramId() == 5L && req.getCursor() == 777L
-				&& req.getSize() == 15 && req.getUserId().equals("user-123")));
+				&& req.getSize() == 15 && "user-123".equals(req.getUserId())));
 	}
 
 	@Test

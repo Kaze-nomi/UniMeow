@@ -102,8 +102,8 @@ class NotificationEventServiceTest {
 	void processRaw_rejects_event_id_over_database_limit(String character) {
 		String raw = eventWithId(character.repeat(101), "POST_CREATED", "{}");
 
-		assertThatThrownBy(() -> notificationEventService.processRaw(raw))
-				.isInstanceOf(IllegalArgumentException.class).hasMessageContaining("100");
+		assertThatThrownBy(() -> notificationEventService.processRaw(raw)).isInstanceOf(IllegalArgumentException.class)
+				.hasMessageContaining("100");
 
 		verifyNoInteractions(notificationRepository, processedEventRepository);
 	}
@@ -130,8 +130,8 @@ class NotificationEventServiceTest {
 		verify(notificationRepository).saveAll(captor.capture());
 		List<Notification> saved = captor.getValue();
 		assertThat(saved).hasSize(2);
-		assertThat(saved).allMatch(n -> n.getType().equals("MENTION_IN_POST"));
-		assertThat(saved).allMatch(n -> n.getEntityId().equals(POST_ID));
+		assertThat(saved).allMatch(n -> "MENTION_IN_POST".equals(n.getType()));
+		assertThat(saved).allMatch(n -> POST_ID.equals(n.getEntityId()));
 	}
 
 	@Test
@@ -300,9 +300,9 @@ class NotificationEventServiceTest {
 		List<Notification> saved = captor.getValue();
 		assertThat(saved).hasSize(2);
 		assertThat(saved)
-				.anyMatch(n -> n.getType().equals("COMMENT_ON_POST") && n.getUserId().toString().equals(USER_A));
+				.anyMatch(n -> "COMMENT_ON_POST".equals(n.getType()) && USER_A.equals(n.getUserId().toString()));
 		assertThat(saved)
-				.anyMatch(n -> n.getType().equals("MENTION_IN_COMMENT") && n.getUserId().toString().equals(USER_C));
+				.anyMatch(n -> "MENTION_IN_COMMENT".equals(n.getType()) && USER_C.equals(n.getUserId().toString()));
 	}
 
 	@Test

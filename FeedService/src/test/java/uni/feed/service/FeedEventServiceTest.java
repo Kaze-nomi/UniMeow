@@ -98,7 +98,8 @@ class FeedEventServiceTest {
 
 		feedEventService.processRaw(json);
 
-		verify(redisRepository, never()).applyPostProjection(any(), any(), any(), any(), any(), anyDouble(), anyLong(), any());
+		verify(redisRepository, never()).applyPostProjection(any(), any(), any(), any(), any(), anyDouble(), anyLong(),
+				any());
 		verify(redisRepository, never()).markEventProcessed(any(), any());
 	}
 
@@ -137,7 +138,8 @@ class FeedEventServiceTest {
 		projection("feed:uni:7", POST_ID, null);
 		projection("feed:uni:7:topic:5", POST_ID, null);
 		projection("feed:uni:7:subtopic:11", POST_ID, null);
-		verify(redisRepository, never()).applyPostProjection(any(), eq("feed:outside"), any(), any(), any(), anyDouble(), anyLong(), any());
+		verify(redisRepository, never()).applyPostProjection(any(), eq("feed:outside"), any(), any(), any(),
+				anyDouble(), anyLong(), any());
 	}
 
 	@Test
@@ -165,6 +167,7 @@ class FeedEventServiceTest {
 	}
 
 	@Test
+	@SuppressWarnings("PMD.UnitTestShouldIncludeAssert")
 	void onPostCreated_adds_post_to_all_follower_feeds() {
 		ReflectionTestUtils.setField(feedEventService, "authorWindowSize", 1000L);
 
@@ -178,8 +181,9 @@ class FeedEventServiceTest {
 
 		feedEventService.processRaw(json);
 
-		followers.forEach(followerId -> verify(redisRepository).applyPostProjection(any(), eq("feed:user:" + followerId),
-				eq(POST_ID), eq(AUTHOR_ID), eq(followerId), anyDouble(), eq(1000L), any()));
+		followers
+				.forEach(followerId -> verify(redisRepository).applyPostProjection(any(), eq("feed:user:" + followerId),
+						eq(POST_ID), eq(AUTHOR_ID), eq(followerId), anyDouble(), eq(1000L), any()));
 	}
 
 	@Test
@@ -225,7 +229,8 @@ class FeedEventServiceTest {
 		projection("feed:popular", POST_ID, null);
 		projection("feed:outside", POST_ID, null);
 		projection("feed:outside:popular", POST_ID, null);
-		verify(redisRepository, never()).applyPostProjection(any(), startsWith("feed:author:"), any(), any(), any(), anyDouble(), anyLong(), any());
+		verify(redisRepository, never()).applyPostProjection(any(), startsWith("feed:author:"), any(), any(), any(),
+				anyDouble(), anyLong(), any());
 	}
 
 	@Test

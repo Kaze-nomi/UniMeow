@@ -72,20 +72,25 @@ public class FeedRedisRepository {
 			default -> "update";
 		};
 		String receipt = "feed:receipt:" + event.eventId() + ":" + feedKey + ":" + postId;
-		Long result = redis.execute(APPLY_POST, List.of(feedKey, receipt, processedEventKey(event.eventId()),
-				deletedPostKey(postId), deletedUserKey(authorId), deletedUserKey(followerId),
-				followersKey(authorId)), postId, Double.toString(score), Long.toString(ttl.toSeconds()), action,
+		Long result = redis.execute(APPLY_POST,
+				List.of(feedKey, receipt, processedEventKey(event.eventId()), deletedPostKey(postId),
+						deletedUserKey(authorId), deletedUserKey(followerId), followersKey(authorId)),
+				postId, Double.toString(score), Long.toString(ttl.toSeconds()), action,
 				followerId == null ? "" : followerId, Long.toString(maxSize),
-				event.eventType().equals("POST_DELETED") ? "any" : "relation");
-		if (result == null) throw new IllegalStateException("Feed projection was not applied");
+				"POST_DELETED".equals(event.eventType()) ? "any" : "relation");
+		if (result == null)
+			throw new IllegalStateException("Feed projection was not applied");
 	}
 
 	public void applyFollowingEvent(EventEnvelope event, String subscriberId, String targetUserId, Duration ttl) {
-		Long result = redis.execute(APPLY_RELATION, List.of("feed:receipt:" + event.eventId() + ":relation",
-				processedEventKey(event.eventId()), followersKey(targetUserId), followingKey(subscriberId),
-				deletedUserKey(subscriberId), deletedUserKey(targetUserId)), subscriberId, targetUserId,
-				event.eventType().equals("USER_UNFOLLOWED") ? "remove" : "add", Long.toString(ttl.toSeconds()));
-		if (result == null) throw new IllegalStateException("Following relation was not applied");
+		Long result = redis.execute(APPLY_RELATION,
+				List.of("feed:receipt:" + event.eventId() + ":relation", processedEventKey(event.eventId()),
+						followersKey(targetUserId), followingKey(subscriberId), deletedUserKey(subscriberId),
+						deletedUserKey(targetUserId)),
+				subscriberId, targetUserId, "USER_UNFOLLOWED".equals(event.eventType()) ? "remove" : "add",
+				Long.toString(ttl.toSeconds()));
+		if (result == null)
+			throw new IllegalStateException("Following relation was not applied");
 	}
 
 	public void markPostDeleted(String postId, Duration ttl) {

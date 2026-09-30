@@ -163,6 +163,7 @@ public class MinioService {
 		return base + "/" + bucket + "/" + objectName;
 	}
 
+	@SuppressWarnings("PMD.ExceptionAsFlowControl")
 	private void createBucketIfMissing(String bucketName) {
 		try {
 			boolean exists = minioClient.bucketExists(BucketExistsArgs.builder().bucket(bucketName).build());

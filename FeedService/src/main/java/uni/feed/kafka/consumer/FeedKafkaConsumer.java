@@ -25,7 +25,8 @@ public class FeedKafkaConsumer {
 
 	@Bean
 	DefaultErrorHandler kafkaErrorHandler() {
-		DefaultErrorHandler handler = new DefaultErrorHandler(new FixedBackOff(1_000L, FixedBackOff.UNLIMITED_ATTEMPTS));
+		DefaultErrorHandler handler = new DefaultErrorHandler(
+				new FixedBackOff(1_000L, FixedBackOff.UNLIMITED_ATTEMPTS));
 		handler.setClassifications(Map.of(), true);
 		return handler;
 	}
@@ -57,8 +58,9 @@ public class FeedKafkaConsumer {
 				acknowledgment.acknowledge();
 				log.atWarn().addKeyValue("event", "kafka_consumer_dlq").addKeyValue("topic", topic)
 						.addKeyValue("key", key).addKeyValue("partition", partition).addKeyValue("offset", offset)
-						.addKeyValue("status", "dlq").addKeyValue("durationMs", (System.nanoTime() - start) / 1_000_000L)
-						.setCause(e).log("Event moved to DLQ");
+						.addKeyValue("status", "dlq")
+						.addKeyValue("durationMs", (System.nanoTime() - start) / 1_000_000L).setCause(e)
+						.log("Event moved to DLQ");
 				return;
 			}
 

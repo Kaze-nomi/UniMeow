@@ -3,4 +3,19 @@
     <Match>
         <Bug pattern="EI_EXPOSE_REP,EI_EXPOSE_REP2"/>
     </Match>
+    <Match>
+        <Or>
+            <Class name="uni.feed.service.FeedEventServiceTest"/>
+            <Class name="uni.notification.service.NotificationEventServiceTest"/>
+        </Or>
+        <Bug pattern="VA_FORMAT_STRING_USES_NEWLINE"/>
+    </Match>
+    <Match>
+        <Or>
+            <Class name="uni.post.outbox.OutboxServiceTest"/>
+            <Class name="uni.user.outbox.OutboxServiceTest"/>
+        </Or>
+        <Field name="objectMapper"/>
+        <Bug pattern="URF_UNREAD_FIELD"/>
+    </Match>
 </FindBugsFilter>

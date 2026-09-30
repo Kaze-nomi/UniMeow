@@ -142,9 +142,9 @@ class OutboxPublisherTest {
 		OutboxEvent first = event("first");
 		OutboxEvent later = event("later");
 		pending(first, later);
-		when(kafkaTemplate.send(first.getTopic(), first.getEventKey(), first.getPayload()))
-				.thenReturn(CompletableFuture.failedFuture(new RuntimeException("Kafka unavailable")),
-						CompletableFuture.completedFuture(null));
+		when(kafkaTemplate.send(first.getTopic(), first.getEventKey(), first.getPayload())).thenReturn(
+				CompletableFuture.failedFuture(new RuntimeException("Kafka unavailable")),
+				CompletableFuture.completedFuture(null));
 		when(kafkaTemplate.send(later.getTopic(), later.getEventKey(), later.getPayload()))
 				.thenReturn(CompletableFuture.completedFuture(null));
 
@@ -183,7 +183,7 @@ class OutboxPublisherTest {
 			KafkaOperations.OperationsCallback<String, String, ?> callback = call.getArgument(0);
 			callback.doInOperations(kafkaTemplate);
 			assertThat(first.getPublishedAt()).isNull();
-			throw new RuntimeException("Kafka commit failed");
+			throw new IllegalStateException("Kafka commit failed");
 		}).when(kafkaTemplate).executeInTransaction(any());
 
 		outboxPublisher.publishPendingEvents();

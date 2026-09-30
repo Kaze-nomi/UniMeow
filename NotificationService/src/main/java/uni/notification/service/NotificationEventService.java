@@ -28,9 +28,8 @@ public class NotificationEventService {
 	@Transactional
 	public void processRaw(String raw) {
 		EventEnvelope event = parse(raw);
-		if (event == null || event.eventId() == null || event.eventId().isBlank()
-				|| event.eventType() == null || event.eventType().isBlank()
-				|| event.payload() == null || !event.payload().isObject()) {
+		if (event == null || event.eventId() == null || event.eventId().isBlank() || event.eventType() == null
+				|| event.eventType().isBlank() || event.payload() == null || !event.payload().isObject()) {
 			throw new IllegalArgumentException("Event must have eventId, eventType and an object payload");
 		}
 		if (event.eventId().codePointCount(0, event.eventId().length()) > 100) {
