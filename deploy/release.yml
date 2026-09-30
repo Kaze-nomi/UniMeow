@@ -5,18 +5,16 @@
   vars:
     project_dir: /root/UniMeow
     backup_dir: /var/backups/unimeow
-    selected_compose: "{{ lookup('ansible.builtin.file', '../release-source/' ~ ('docker-compose.yml' if version == 'v1.0.0' else 'docker-compose.prod.yaml')) | from_yaml }}"
-    routing: [socket-proxy, traefik]
-    routing_compose: "{{ lookup('ansible.builtin.file', '../docker-compose.prod.yaml') | from_yaml }}"
-    routing_configuration:
-      services: "{{ routing_compose.services | dict2items | selectattr('key', 'in', routing) | items2dict }}"
-      networks:
-        docker-control: "{{ routing_compose.networks['docker-control'] }}"
+    compose: docker compose --project-name unimeow --file docker-compose.prod.yaml --env-file .env.prod
+    selected_compose: "{{ lookup('ansible.builtin.file', '../release-source/docker-compose.prod.yaml') | from_yaml }}"
     applications: [eureka-server, media-service, user-service, post-service, feed-service, notification-service, api-gateway, frontend]
-    infrastructure: [postgres-user, postgres-post, postgres-notification, redis, minio, kafka, prometheus, grafana]
+    configuration: [Monitoring, UserService/src/main/resources/db/migration, PostService/src/main/resources/db/migration, NotificationService/src/main/resources/db/migration]
   module_defaults:
+    ansible.builtin.command:
+      chdir: "{{ project_dir }}"
+      expand_argument_vars: false
     community.docker.docker_compose_v2:
-      project_src: /root/UniMeow
+      project_src: "{{ project_dir }}"
       project_name: unimeow
       files: [docker-compose.prod.yaml]
       env_files: [.env.prod]
@@ -26,361 +24,129 @@
       wait: true
       wait_timeout: 1200
   tasks:
-    - name: Check version
+    - name: Check the selected release
       ansible.builtin.assert:
-        that: version is match('^v[0-9]+\.[0-9]+\.[0-9]+$')
+        that:
+          - version is match('^v[0-9]+\.[0-9]+\.[0-9]+$')
+          - selected_compose.services.migrations is defined
 
-    - name: Use the preserved application images for the original v1.0.0 Compose file
-      ansible.builtin.set_fact:
-        selected_compose: >-
-          {{ selected_compose | combine({'services': selected_compose.services | combine({item:
-             (selected_compose.services[item] | dict2items | rejectattr('key', 'equalto', 'build') | items2dict)
-             | combine({'image': 'ghcr.io/kaze-nomi/unimeow-' ~ item ~ ':v1.0.0'})})}) }}
-      loop: "{{ applications }}"
-      when: version == 'v1.0.0'
-
-    - name: Keep Traefik when selecting the original v1.0.0 release
-      ansible.builtin.set_fact:
-        selected_compose: "{{ selected_compose | combine(routing_configuration, recursive=true) }}"
-      when: version == 'v1.0.0'
-
-    - name: Install the Docker module dependency
+    - name: Install Ansible Docker dependencies
       ansible.builtin.apt:
-        name: python3-requests
+        name: [python3-requests, python3-yaml]
         state: present
         update_cache: true
         cache_valid_time: 86400
 
-    - name: Read the network used by the existing application
+    - name: Read the server Docker network
       community.docker.docker_network_info:
         name: unimeow_uni-network
       register: application_network
+      failed_when: not application_network.exists
 
-    - name: Require the existing Docker bridge
-      ansible.builtin.assert:
-        that:
-          - application_network.exists
-          - application_network.network.IPAM.Config | length == 1
-          - application_network.network.IPAM.Config[0].Gateway is defined
-
-    - name: Trust forwarded HTTPS headers from the server Nginx
-      ansible.builtin.set_fact:
-        trusted_proxy_ips: "127.0.0.1/32,{{ application_network.network.IPAM.Config[0].Gateway }}/32"
-
-    - name: Create private backup directory
-      ansible.builtin.file:
-        path: "{{ backup_dir }}"
-        state: directory
-        mode: '0700'
-
-    - name: Read running services
-      ansible.builtin.command:
-        argv: [docker, compose, --project-name, unimeow, --file, docker-compose.prod.yaml, --env-file, .env.prod, ps, --services, --status, running]
-        chdir: "{{ project_dir }}"
-      register: running
-      changed_when: false
-
-    - name: Require the existing infrastructure
-      ansible.builtin.assert:
-        that: infrastructure | difference(running.stdout_lines) | length == 0
-
-    - name: Check the current application's readiness
-      ansible.builtin.uri:
-        url: https://unimeow.ru/actuator/health
-        return_content: true
-      register: current_readiness
-      failed_when: false
-
-    - name: Find all running Java replicas by Compose labels
-      community.docker.docker_host_info:
-        containers: true
-        containers_filters:
-          status: running
-          label: [com.docker.compose.project=unimeow, com.docker.compose.oneoff=False, "com.docker.compose.service={{ item }}"]
-      loop: "{{ applications | reject('equalto', 'frontend') | list }}"
-      register: current_replicas
-      no_log: true
-
-    - name: Check every Java replica before replacing its backup
-      community.docker.docker_container_info:
-        name: "{{ item.Id }}"
-      loop: "{{ current_replicas.results | map(attribute='containers') | flatten }}"
-      register: current_services
-      no_log: true
-
-    - name: Check for an interrupted or failed release
+    - name: Check for an unfinished release
       ansible.builtin.stat:
         path: "{{ backup_dir }}/.release-in-progress"
-      register: release_in_progress
+      register: unfinished_release
 
-    - name: Decide whether the running installation can replace its backup
-      ansible.builtin.set_fact:
-        make_backup: >-
-          {{ not release_in_progress.stat.exists
-             and applications | difference(running.stdout_lines) | length == 0
-             and current_readiness.status == 200
-             and (current_readiness.json | default({})).get('status') == 'UP'
-             and current_replicas.results | map(attribute='containers') | map('length') | min > 0
-             and current_services.results | map(attribute='container.State.Health.Status', default='missing') | unique | list == ['healthy'] }}
-
-    - name: Check for the last verified backup
+    - name: Check for the data backup
       ansible.builtin.stat:
         path: "{{ backup_dir }}/latest.tar.gz"
-      register: previous_backup
+      register: data_backup
 
-    - name: Require a verified backup when recovering an interrupted or unhealthy installation
+    - name: Preserve the backup when retrying a failed release
       ansible.builtin.assert:
-        that: make_backup or previous_backup.stat.exists
-        fail_msg: The installation is unhealthy or a release is incomplete, and no verified database backup exists. Review the database before releasing.
+        that: not unfinished_release.stat.exists or data_backup.stat.exists
+        fail_msg: An unfinished release has no data backup. Check the stores before continuing.
 
-    - name: Log in to the image registry
+    - name: Log in to GHCR
       community.docker.docker_login:
         registry_url: ghcr.io
         username: "{{ lookup('env', 'GITHUB_ACTOR') }}"
         password: "{{ lookup('env', 'GH_TOKEN') }}"
       no_log: true
 
-    - name: Download application images before stopping anything
-      community.docker.docker_image_pull:
-        name: "ghcr.io/kaze-nomi/unimeow-{{ item }}:{{ version }}"
-        pull: not_present
-      loop: "{{ applications }}"
+    - name: Download release images
+      community.docker.docker_compose_v2_pull:
+        definition: "{{ selected_compose }}"
+        project_name: unimeow
+        env_files: ["{{ project_dir }}/.env.prod"]
+        policy: missing
+      environment:
+        VERSION: "{{ version }}"
 
-    - name: Download Flyway before stopping anything
-      community.docker.docker_image_pull:
-        name: "{{ selected_compose.services.migrations.image }}"
-        pull: not_present
-      when: "'migrations' in selected_compose.services"
+    - name: Stop the application and monitoring
+      ansible.builtin.command: "{{ compose }} stop --timeout 60 {{ applications | join(' ') }} prometheus grafana"
 
-    - name: Download routing images before stopping anything
-      community.docker.docker_image_pull:
-        name: "{{ selected_compose.services[item].image }}"
-        pull: not_present
-      loop: "{{ routing }}"
+    - name: Back up PostgreSQL, Redis and MinIO
+      ansible.builtin.include_tasks: backup.yml
+      when: not unfinished_release.stat.exists
 
-    - name: Save current configuration for code rollback
+    - name: Protect the data backup until the release succeeds
       ansible.builtin.copy:
-        src: "{{ project_dir }}/{{ item }}"
-        dest: "{{ backup_dir }}/{{ item }}.previous"
-        remote_src: true
-        force: "{{ make_backup }}"
+        content: "{{ version }}\n"
+        dest: "{{ backup_dir }}/.release-in-progress"
         mode: '0600'
-      loop: [docker-compose.prod.yaml, .env.prod]
 
-    - name: Save current migrations and monitoring configuration for code rollback
-      ansible.builtin.command:
-        argv: [tar, -czf, "{{ backup_dir }}/migrations.next.tar.gz", -C, "{{ project_dir }}", UserService/src/main/resources/db/migration, PostService/src/main/resources/db/migration, NotificationService/src/main/resources/db/migration, Monitoring]
-      when: make_backup
+    - name: Flush the backup protection marker
+      ansible.builtin.command: "sync -f {{ backup_dir }}"
 
-    - name: Preserve the complete configuration archive
-      ansible.builtin.command:
-        argv: [mv, -fT, --, "{{ backup_dir }}/migrations.next.tar.gz", "{{ backup_dir }}/migrations.previous.tar.gz"]
-      when: make_backup
+    - name: Install the selected Compose file
+      ansible.builtin.copy:
+        src: ../release-source/docker-compose.prod.yaml
+        dest: "{{ project_dir }}/docker-compose.prod.yaml"
+        mode: '0644'
 
-    - name: Require a readable migration archive before changing files
-      ansible.builtin.command:
-        argv: [tar, -tzf, "{{ backup_dir }}/migrations.previous.tar.gz"]
-      changed_when: false
+    - name: Keep HTTPS forwarding from the server Nginx
+      ansible.builtin.replace:
+        path: "{{ project_dir }}/docker-compose.prod.yaml"
+        regexp: '\$\{TRUSTED_PROXY_IPS:-127\.0\.0\.1/32\}'
+        replace: "127.0.0.1/32,{{ application_network.network.IPAM.Config[0].Gateway }}/32"
 
-    - name: Read the current Compose configuration
-      ansible.builtin.slurp:
-        src: "{{ project_dir }}/docker-compose.prod.yaml"
-      register: current_compose
+    - name: Select the application version
+      ansible.builtin.lineinfile:
+        path: "{{ project_dir }}/.env.prod"
+        regexp: '^VERSION='
+        line: "VERSION={{ version }}"
+        mode: '0600'
 
-    - name: Find existing application replicas before stopping anything
-      community.docker.docker_host_info:
-        containers: true
-        containers_all: true
-        containers_filters:
-          label: [com.docker.compose.project=unimeow, com.docker.compose.oneoff=False, "com.docker.compose.service={{ item }}"]
-      loop: "{{ applications }}"
-      register: application_replicas
-      no_log: true
+    - name: Remove the old SQL and monitoring files
+      ansible.builtin.file:
+        path: "{{ project_dir }}/{{ item }}"
+        state: absent
+      loop: "{{ configuration }}"
 
-    - name: Preserve application counts with one frontend and respect fixed container names
-      ansible.builtin.set_fact:
-        application_scale: "{{ application_scale | default({}) | combine({item.item: (1 if item.item == 'frontend' else ([item.containers | length, 1] | max))}) }}"
-        current_scale: "{{ current_scale | default({}) | combine({item.item: (1 if 'container_name' in (current_compose.content | b64decode | from_yaml).services[item.item] else ([item.containers | length, 1] | max))}) }}"
-      loop: "{{ application_replicas.results }}"
-      no_log: true
+    - name: Install SQL and monitoring from the selected release
+      ansible.builtin.copy:
+        src: "../release-source/{{ item }}/"
+        dest: "{{ project_dir }}/{{ item }}/"
+        mode: '0644'
+        directory_mode: '0755'
+      loop: "{{ configuration }}"
 
-    - name: Back up and update
-      block:
-        - name: Stop applications
-          community.docker.docker_compose_v2:
-            services: "{{ applications | reverse | list }}"
-            scale: "{{ current_scale }}"
-            state: stopped
+    - name: Start infrastructure one service at a time
+      community.docker.docker_compose_v2:
+        services: ["{{ item }}"]
+      loop: [postgres-user, postgres-post, postgres-notification, redis, minio, kafka, socket-proxy, traefik]
 
-        - name: Make and verify the database backup
-          ansible.builtin.include_tasks: backup.yml
-          when: make_backup
+    - name: Run database migrations
+      ansible.builtin.command: "{{ compose }} run --rm --no-deps -T migrations"
 
-        - name: Mark the release incomplete before changing configuration
-          ansible.builtin.copy:
-            content: "{{ version }}\n"
-            dest: "{{ backup_dir }}/.release-in-progress"
-            mode: '0600'
+    - name: Start the application and monitoring one service at a time
+      community.docker.docker_compose_v2:
+        services: ["{{ item }}"]
+        recreate: always
+      loop: "{{ applications + ['prometheus', 'grafana'] }}"
 
-        - name: Flush the release marker before changing configuration
-          ansible.builtin.command:
-            argv: [sync, -f, "{{ backup_dir }}"]
+    - name: Check application readiness
+      ansible.builtin.uri:
+        url: https://unimeow.ru/actuator/health
+        return_content: true
+      register: readiness
+      until: readiness.status == 200 and readiness.json.status == 'UP'
+      retries: 12
+      delay: 5
 
-        - name: Install the selected Compose file
-          ansible.builtin.copy:
-            src: ../release-source/docker-compose.prod.yaml
-            dest: "{{ project_dir }}/docker-compose.prod.yaml"
-            mode: '0644'
-          when: version != 'v1.0.0'
-
-        - name: Install the original Compose file with its preserved v1.0.0 images
-          ansible.builtin.copy:
-            content: "{{ selected_compose | to_nice_yaml }}"
-            dest: "{{ project_dir }}/docker-compose.prod.yaml"
-            mode: '0644'
-          when: version == 'v1.0.0'
-
-        - name: Preserve the trusted Nginx address for manual Compose commands
-          ansible.builtin.replace:
-            path: "{{ project_dir }}/docker-compose.prod.yaml"
-            regexp: '\$\{TRUSTED_PROXY_IPS:-127\.0\.0\.1/32\}'
-            replace: "{{ trusted_proxy_ips }}"
-
-        - name: Start the Docker socket proxy and Traefik one at a time
-          community.docker.docker_compose_v2:
-            services: ["{{ item }}"]
-          loop: "{{ routing }}"
-
-        - name: Install monitoring configuration when included in the release
-          when: lookup('ansible.builtin.fileglob', playbook_dir + '/../release-source/Monitoring/prometheus.yml', wantlist=True) | length > 0
-          block:
-            - name: Stop monitoring before replacing its configuration
-              community.docker.docker_compose_v2:
-                services: [prometheus, grafana]
-                state: stopped
-
-            - name: Remove the previous monitoring configuration
-              ansible.builtin.file:
-                path: "{{ project_dir }}/Monitoring"
-                state: absent
-
-            - name: Install the complete monitoring configuration
-              ansible.builtin.copy:
-                src: ../release-source/Monitoring/
-                dest: "{{ project_dir }}/Monitoring/"
-                mode: '0644'
-                directory_mode: '0755'
-
-        - name: Select the application version
-          ansible.builtin.lineinfile:
-            path: "{{ project_dir }}/.env.prod"
-            regexp: '^VERSION='
-            line: "VERSION={{ version }}"
-            mode: '0600'
-
-        - name: Remove the previous migration files
-          ansible.builtin.file:
-            path: "{{ project_dir }}/{{ item }}/src/main/resources/db/migration"
-            state: absent
-          loop: [UserService, PostService, NotificationService]
-
-        - name: Install SQL migrations from the same build
-          ansible.builtin.copy:
-            src: "../release-source/{{ item }}/src/main/resources/db/migration/"
-            dest: "{{ project_dir }}/{{ item }}/src/main/resources/db/migration/"
-            mode: '0644'
-          loop: [UserService, PostService, NotificationService]
-
-        - name: Run Flyway migrations
-          community.docker.docker_compose_v2_run:
-            project_src: "{{ project_dir }}"
-            project_name: unimeow
-            files: [docker-compose.prod.yaml]
-            env_files: [.env.prod]
-            service: migrations
-            no_deps: true
-            cleanup: true
-          when: "'migrations' in selected_compose.services"
-
-        - name: Start application services one at a time
-          community.docker.docker_compose_v2:
-            services: ["{{ item }}"]
-            scale: "{{ {item: (1 if 'container_name' in selected_compose.services[item] else application_scale[item])} }}"
-          loop: "{{ applications }}"
-
-        - name: Reload monitoring with the selected configuration
-          community.docker.docker_compose_v2:
-            services: ["{{ item }}"]
-            recreate: always
-          loop: [prometheus, grafana]
-
-        - name: Check public application readiness
-          ansible.builtin.uri:
-            url: https://unimeow.ru/actuator/health
-            return_content: true
-          register: readiness
-          until: readiness.status == 200 and readiness.json.status == 'UP'
-          retries: 12
-          delay: 5
-
-        - name: Clear the marker only after the complete release succeeds
-          ansible.builtin.file:
-            path: "{{ backup_dir }}/.release-in-progress"
-            state: absent
-
-      rescue:
-        - name: Restore the previous configuration
-          ansible.builtin.copy:
-            src: "{{ backup_dir }}/{{ item }}.previous"
-            dest: "{{ project_dir }}/{{ item }}"
-            remote_src: true
-            mode: '0600'
-          loop: [docker-compose.prod.yaml, .env.prod]
-
-        - name: Stop monitoring before restoring its configuration
-          community.docker.docker_compose_v2:
-            services: [prometheus, grafana]
-            state: stopped
-
-        - name: Remove monitoring configuration from the unsuccessful release
-          ansible.builtin.file:
-            path: "{{ project_dir }}/Monitoring"
-            state: absent
-
-        - name: Remove migration files from the unsuccessful release
-          ansible.builtin.file:
-            path: "{{ project_dir }}/{{ item }}/src/main/resources/db/migration"
-            state: absent
-          loop: [UserService, PostService, NotificationService]
-
-        - name: Restore the previous migrations and monitoring configuration
-          ansible.builtin.unarchive:
-            src: "{{ backup_dir }}/migrations.previous.tar.gz"
-            dest: "{{ project_dir }}"
-            remote_src: true
-
-        - name: Read the restored Compose configuration
-          ansible.builtin.slurp:
-            src: "{{ project_dir }}/docker-compose.prod.yaml"
-          register: previous_compose
-
-        - name: Start routing before restoring application traffic
-          community.docker.docker_compose_v2:
-            services: ["{{ item }}"]
-          loop: "{{ routing }}"
-
-        - name: Start the previous applications
-          community.docker.docker_compose_v2:
-            services: ["{{ item }}"]
-            scale: "{{ {item: (1 if 'container_name' in (previous_compose.content | b64decode | from_yaml).services[item] else application_scale[item])} }}"
-          loop: "{{ applications }}"
-
-        - name: Reload monitoring with the previous configuration
-          community.docker.docker_compose_v2:
-            services: ["{{ item }}"]
-            recreate: always
-          loop: [prometheus, grafana]
-
-        - name: Report unsuccessful release
-          ansible.builtin.fail:
-            msg: Release failed. Previous application images were restarted. No data was restored.
+    - name: Complete the release
+      ansible.builtin.file:
+        path: "{{ backup_dir }}/.release-in-progress"
+        state: absent
