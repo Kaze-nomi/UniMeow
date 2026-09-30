@@ -87,9 +87,6 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          for service in $SERVICES; do
-            docker push "ghcr.io/kaze-nomi/unimeow-$service:$VERSION"
-          done
-          printf 'Production версия %s\n' "${VERSION#v}" > release-notes.txt
+          docker compose -f docker-compose.dev.yaml push
           gh release create "$VERSION" --repo "$GITHUB_REPOSITORY" \
-            --target "$GITHUB_SHA" --title "$VERSION" --notes-file release-notes.txt
+            --target "$GITHUB_SHA" --title "$VERSION" --notes "Production версия ${VERSION#v}"

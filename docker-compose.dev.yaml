@@ -378,10 +378,9 @@ services:
       - '--entrypoints.web.address=:8080'
       - '--entrypoints.web.forwardedheaders.trustedips=${TRUSTED_PROXY_IPS:-127.0.0.1/32}'
       - '--providers.docker.endpoint=tcp://socket-proxy:2375'
-      - '--providers.docker.exposedbydefault=true'
-      - '--providers.docker.constraints=Label(`com.docker.compose.project`, `${COMPOSE_PROJECT_NAME}`) && Label(`com.docker.compose.service`, `api-gateway`)'
+      - '--providers.docker.exposedbydefault=false'
+      - '--providers.docker.constraints=Label(`com.docker.compose.project`, `${COMPOSE_PROJECT_NAME}`)'
       - '--providers.docker.network=${COMPOSE_PROJECT_NAME}_uni-network'
-      - '--providers.docker.defaultrule=PathPrefix(`/`)'
       - '--ping=true'
       - '--ping.entrypoint=web'
       - '--log.format=json'
@@ -434,6 +433,7 @@ services:
     networks:
       - uni-network
     labels:
+      traefik.enable: "true"
       traefik.http.routers.gateway.rule: PathPrefix(`/`)
       traefik.http.routers.gateway.entrypoints: web
       traefik.http.routers.gateway.service: gateway

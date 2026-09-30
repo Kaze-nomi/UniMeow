@@ -47,6 +47,6 @@ dependencies {
     testImplementation("org.springframework.boot:spring-boot-starter-test")
 }
 
-tasks.named<Test>("test") {
+tasks.withType<Test> {
     useJUnitPlatform()
 }

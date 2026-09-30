@@ -60,7 +60,6 @@ app:
   kafka:
     topics:
       user-events: user-events
-      user-events-dlq: user-events.dlq
   outbox:
     publish-delay-ms: 1500
   idempotency:
