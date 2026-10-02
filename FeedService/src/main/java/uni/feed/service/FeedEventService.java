@@ -11,9 +11,10 @@ import uni.feed.repository.FeedRedisRepository;
 
 import java.time.Duration;
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 import java.util.Objects;
-import java.util.Set;
 
 @Service
 @RequiredArgsConstructor
@@ -42,6 +43,12 @@ public class FeedEventService {
 
 	public void processRaw(String raw) {
 		EventEnvelope event = parse(raw);
+		if (event == null)
+			throw new IllegalArgumentException("Event envelope is missing");
+		if (event.eventType() == null || event.eventType().isBlank() || event.payload() == null
+				|| !event.payload().isObject()) {
+			throw new IllegalArgumentException("Event type or payload is invalid");
+		}
 		if (event.eventId() == null || event.eventId().isBlank()) {
 			throw new IllegalArgumentException("eventId is missing");
 		}
@@ -51,17 +58,17 @@ public class FeedEventService {
 		}
 
 		switch (event.eventType()) {
-			case "POST_CREATED" -> onPostCreated(event);
-			case "POST_DELETED" -> onPostDeleted(event);
-			case "POST_LIKED" -> onPostLiked(event);
-			case "POST_UNLIKED" -> onPostUnliked(event);
-			case "USER_FOLLOWED" -> onUserFollowed(event);
-			case "USER_UNFOLLOWED" -> onUserUnfollowed(event);
+			case "POST_CREATED", "POST_DELETED", "POST_LIKED", "POST_UNLIKED" -> onPostEvent(event);
+			case "USER_FOLLOWED", "USER_UNFOLLOWED" -> onFollowingEvent(event);
 			case "USER_DELETED", "USER_PERMANENT_BANNED" -> onUserDeleted(event);
-			default -> log.debug("Ignore event type {}", event.eventType());
+			default -> log.atDebug().addKeyValue("event", "event_ignored").addKeyValue("eventId", event.eventId())
+					.addKeyValue("eventType", event.eventType()).log("Ignoring event type");
 		}
 
 		redisRepository.markEventProcessed(event.eventId(), DEDUP_TTL);
+		log.atInfo().addKeyValue("event", "event_applied").addKeyValue("eventId", event.eventId())
+				.addKeyValue("eventType", event.eventType()).addKeyValue("aggregateId", event.aggregateId())
+				.log("Feed event applied");
 	}
 
 	private EventEnvelope parse(String raw) {
@@ -72,164 +79,78 @@ public class FeedEventService {
 		}
 	}
 
-	private void onPostCreated(EventEnvelope event) {
-		String authorId = text(event.payload(), "authorId");
+	private void onPostEvent(EventEnvelope event) {
 		String postId = text(event.payload(), "postId");
-		Long universityId = parseNullableLong(text(event.payload(), "authorUniversityId"));
-		if (universityId == null) {
-			universityId = parseNullableLong(text(event.payload(), "universityId"));
-		}
-		Long topicId = parseNullableLong(text(event.payload(), "topicId"));
-		Long parentTopicId = parseNullableLong(text(event.payload(), "parentTopicId"));
-		Long facultyId = parseNullableLong(text(event.payload(), "facultyId"));
-		Long programId = parseNullableLong(text(event.payload(), "programId"));
-		if (authorId == null || postId == null) {
-			throw new IllegalArgumentException("POST_CREATED payload is incomplete");
-		}
-
-		double score = score(event.occurredAt());
-
-		redisRepository.addPostToAuthorFeed(authorId, postId, score);
-		redisRepository.trimAuthorFeed(authorId, authorWindowSize);
-		addScopedChronological(postId, score, universityId, facultyId, programId, topicId, parentTopicId);
-		if (universityId == null) {
-			redisRepository.addPostToOutsideFeed(postId, score);
-			redisRepository.trimOutsideFeed(uniWindowSize);
-		}
-
-		double trendingScore = trendingScore(score, 0);
-		redisRepository.addPostToPopularFeed(postId, trendingScore);
-		redisRepository.trimPopularFeed(popularWindowSize);
-		addScopedPopular(postId, trendingScore, universityId, facultyId, programId, topicId, parentTopicId);
-		if (universityId == null) {
-			redisRepository.addPostToOutsidePopularFeed(postId, trendingScore);
-			redisRepository.trimOutsidePopularFeed(popularWindowSize);
-		}
-
-		Set<String> followers = redisRepository.findFollowers(authorId);
-		for (String followerId : followers) {
-			redisRepository.addPostToUserFeed(followerId, postId, score);
-			redisRepository.trimUserFeed(followerId, userWindowSize);
-		}
-	}
-
-	private void onPostDeleted(EventEnvelope event) {
 		String authorId = text(event.payload(), "authorId");
-		String postId = text(event.payload(), "postId");
-		Long universityId = parseNullableLong(text(event.payload(), "authorUniversityId"));
-		if (universityId == null) {
-			universityId = parseNullableLong(text(event.payload(), "universityId"));
+		boolean created = "POST_CREATED".equals(event.eventType());
+		boolean deleted = "POST_DELETED".equals(event.eventType());
+		if (postId == null || (created && authorId == null)) {
+			throw new IllegalArgumentException(event.eventType() + " payload is incomplete");
 		}
-		Long topicId = parseNullableLong(text(event.payload(), "topicId"));
-		Long parentTopicId = parseNullableLong(text(event.payload(), "parentTopicId"));
-		Long facultyId = parseNullableLong(text(event.payload(), "facultyId"));
-		Long programId = parseNullableLong(text(event.payload(), "programId"));
-		if (postId == null) {
-			throw new IllegalArgumentException("POST_DELETED payload is incomplete");
-		}
+		if (deleted)
+			redisRepository.markPostDeleted(postId, DEDUP_TTL);
 
-		redisRepository.removePostFromPopularFeed(postId);
-		removeScopedChronological(postId, universityId, facultyId, programId, topicId, parentTopicId);
-		removeScopedPopular(postId, universityId, facultyId, programId, topicId, parentTopicId);
-		if (universityId == null) {
-			redisRepository.removePostFromOutsideFeed(postId);
-			redisRepository.removePostFromOutsidePopularFeed(postId);
+		String createdAtMs = text(event.payload(), "createdAtMs");
+		double chronological = created || createdAtMs == null ? score(event.occurredAt()) : parseLong(createdAtMs);
+		String likes = text(event.payload(), "likesCount");
+		double popular = trendingScore(chronological, created || likes == null ? 0 : parseLong(likes));
+		applyPost(event, "feed:popular", postId, authorId, null, popular, popularWindowSize);
+		for (String feed : scopedFeeds(event)) {
+			applyPost(event, feed + ":popular", postId, authorId, null, popular, popularWindowSize);
+			if (created || deleted)
+				applyPost(event, feed, postId, authorId, null, chronological, uniWindowSize);
 		}
-		if (authorId != null) {
-			redisRepository.removePostFromAuthorFeed(authorId, postId);
+		if ((created || deleted) && authorId != null) {
+			applyPost(event, "feed:author:" + authorId, postId, authorId, null, chronological, authorWindowSize);
 			for (String followerId : redisRepository.findFollowers(authorId)) {
-				redisRepository.removePostsFromUserFeed(followerId, Set.of(postId));
+				applyPost(event, "feed:user:" + followerId, postId, authorId, followerId, chronological,
+						userWindowSize);
 			}
 		}
 	}
 
-	private void onPostLiked(EventEnvelope event) {
-		String postId = text(event.payload(), "postId");
-		String likesCountStr = text(event.payload(), "likesCount");
-		String createdAtMsStr = text(event.payload(), "createdAtMs");
+	private List<String> scopedFeeds(EventEnvelope event) {
 		Long universityId = parseNullableLong(text(event.payload(), "authorUniversityId"));
-		if (universityId == null) {
+		if (universityId == null)
 			universityId = parseNullableLong(text(event.payload(), "universityId"));
-		}
-		Long topicId = parseNullableLong(text(event.payload(), "topicId"));
-		Long parentTopicId = parseNullableLong(text(event.payload(), "parentTopicId"));
+		if (universityId == null)
+			return List.of("feed:outside");
+		String university = "feed:uni:" + universityId;
+		List<String> feeds = new ArrayList<>(List.of(university));
 		Long facultyId = parseNullableLong(text(event.payload(), "facultyId"));
+		Long parentTopicId = parseNullableLong(text(event.payload(), "parentTopicId"));
+		if (facultyId == null)
+			facultyId = parentTopicId;
+		if (facultyId != null)
+			feeds.add(university + ":topic:" + facultyId);
 		Long programId = parseNullableLong(text(event.payload(), "programId"));
-		if (postId == null) {
-			throw new IllegalArgumentException("POST_LIKED payload is incomplete");
+		Long topicId = parseNullableLong(text(event.payload(), "topicId"));
+		if (programId == null && topicId != null && parentTopicId != null && !topicId.equals(parentTopicId)) {
+			programId = topicId;
 		}
-
-		long likesCount = likesCountStr != null ? parseLong(likesCountStr) : 0L;
-		double createdAtMs = createdAtMsStr != null ? parseLong(createdAtMsStr) : score(event.occurredAt());
-		double ts = trendingScore(createdAtMs, likesCount);
-
-		redisRepository.addPostToPopularFeed(postId, ts);
-		redisRepository.trimPopularFeed(popularWindowSize);
-		addScopedPopular(postId, ts, universityId, facultyId, programId, topicId, parentTopicId);
-		if (universityId == null) {
-			redisRepository.addPostToOutsidePopularFeed(postId, ts);
-			redisRepository.trimOutsidePopularFeed(popularWindowSize);
-		}
+		if (programId != null)
+			feeds.add(university + ":subtopic:" + programId);
+		return feeds;
 	}
 
-	private void onPostUnliked(EventEnvelope event) {
-		String postId = text(event.payload(), "postId");
-		String likesCountStr = text(event.payload(), "likesCount");
-		String createdAtMsStr = text(event.payload(), "createdAtMs");
-		Long universityId = parseNullableLong(text(event.payload(), "authorUniversityId"));
-		if (universityId == null) {
-			universityId = parseNullableLong(text(event.payload(), "universityId"));
-		}
-		Long topicId = parseNullableLong(text(event.payload(), "topicId"));
-		Long parentTopicId = parseNullableLong(text(event.payload(), "parentTopicId"));
-		Long facultyId = parseNullableLong(text(event.payload(), "facultyId"));
-		Long programId = parseNullableLong(text(event.payload(), "programId"));
-		if (postId == null) {
-			throw new IllegalArgumentException("POST_UNLIKED payload is incomplete");
-		}
-
-		long likesCount = likesCountStr != null ? parseLong(likesCountStr) : 0L;
-		double createdAtMs = createdAtMsStr != null ? parseLong(createdAtMsStr) : score(event.occurredAt());
-		double ts = trendingScore(createdAtMs, likesCount);
-
-		redisRepository.addPostToPopularFeed(postId, ts);
-		addScopedPopular(postId, ts, universityId, facultyId, programId, topicId, parentTopicId);
-		if (universityId == null) {
-			redisRepository.addPostToOutsidePopularFeed(postId, ts);
-		}
-	}
-
-	private void onUserFollowed(EventEnvelope event) {
+	private void onFollowingEvent(EventEnvelope event) {
 		String subscriberId = text(event.payload(), "subscriberId");
 		String targetUserId = text(event.payload(), "targetUserId");
-
 		if (subscriberId == null || targetUserId == null || Objects.equals(subscriberId, targetUserId)) {
-			throw new IllegalArgumentException("USER_FOLLOWED payload is invalid");
+			throw new IllegalArgumentException(event.eventType() + " payload is invalid");
 		}
-
-		redisRepository.addFollowingRelation(subscriberId, targetUserId);
-
-		Map<String, Double> latestPosts = redisRepository.findLatestAuthorPostsWithScores(targetUserId, 0, 99);
-		for (Map.Entry<String, Double> entry : latestPosts.entrySet()) {
-			redisRepository.addPostToUserFeed(subscriberId, entry.getKey(), entry.getValue());
+		redisRepository.applyFollowingEvent(event, subscriberId, targetUserId, DEDUP_TTL);
+		long last = "USER_FOLLOWED".equals(event.eventType()) ? 99 : -1;
+		for (Map.Entry<String, Double> post : redisRepository.findLatestAuthorPostsWithScores(targetUserId, 0, last)
+				.entrySet()) {
+			applyPost(event, "feed:user:" + subscriberId, post.getKey(), targetUserId, subscriberId, post.getValue(),
+					userWindowSize);
 		}
-		redisRepository.trimUserFeed(subscriberId, userWindowSize);
 	}
 
-	private void onUserUnfollowed(EventEnvelope event) {
-		String subscriberId = text(event.payload(), "subscriberId");
-		String targetUserId = text(event.payload(), "targetUserId");
-
-		if (subscriberId == null || targetUserId == null || Objects.equals(subscriberId, targetUserId)) {
-			throw new IllegalArgumentException("USER_UNFOLLOWED payload is invalid");
-		}
-
-		redisRepository.removeFollowingRelation(subscriberId, targetUserId);
-
-		Map<String, Double> latestPosts = redisRepository.findLatestAuthorPostsWithScores(targetUserId, 0, -1);
-		if (!latestPosts.isEmpty()) {
-			redisRepository.removePostsFromUserFeed(subscriberId, latestPosts.keySet());
-		}
+	private void applyPost(EventEnvelope event, String feed, String postId, String authorId, String followerId,
+			double score, long maxSize) {
+		redisRepository.applyPostProjection(event, feed, postId, authorId, followerId, score, maxSize, DEDUP_TTL);
 	}
 
 	private void onUserDeleted(EventEnvelope event) {
@@ -240,6 +161,7 @@ public class FeedEventService {
 		if (userId == null || userId.isBlank()) {
 			throw new IllegalArgumentException("USER_DELETED payload is invalid");
 		}
+		redisRepository.markUserDeleted(userId, DEDUP_TTL);
 		redisRepository.removeUserFromAllFeeds(userId);
 	}
 
@@ -281,85 +203,4 @@ public class FeedEventService {
 		return createdAtMs + likesCount * trendingLikeBoostMs;
 	}
 
-	private void addScopedChronological(String postId, double score, Long universityId, Long facultyId, Long programId,
-			Long topicId, Long parentTopicId) {
-		if (universityId == null) {
-			return;
-		}
-		redisRepository.addPostToUniversityFeed(universityId, postId, score);
-		if (facultyId != null) {
-			redisRepository.addPostToUniversityTopicFeed(universityId, facultyId, postId, score);
-			redisRepository.trimUniversityTopicFeed(universityId, facultyId, uniWindowSize);
-		} else if (parentTopicId != null) {
-			redisRepository.addPostToUniversityTopicFeed(universityId, parentTopicId, postId, score);
-			redisRepository.trimUniversityTopicFeed(universityId, parentTopicId, uniWindowSize);
-		}
-		if (programId != null) {
-			redisRepository.addPostToUniversitySubtopicFeed(universityId, programId, postId, score);
-			redisRepository.trimUniversitySubtopicFeed(universityId, programId, uniWindowSize);
-		} else if (topicId != null && parentTopicId != null && !topicId.equals(parentTopicId)) {
-			redisRepository.addPostToUniversitySubtopicFeed(universityId, topicId, postId, score);
-			redisRepository.trimUniversitySubtopicFeed(universityId, topicId, uniWindowSize);
-		}
-		redisRepository.trimUniversityFeed(universityId, uniWindowSize);
-	}
-
-	private void removeScopedChronological(String postId, Long universityId, Long facultyId, Long programId,
-			Long topicId, Long parentTopicId) {
-		if (universityId == null) {
-			return;
-		}
-		redisRepository.removePostFromUniversityFeed(universityId, postId);
-		if (facultyId != null) {
-			redisRepository.removePostFromUniversityTopicFeed(universityId, facultyId, postId);
-		} else if (parentTopicId != null) {
-			redisRepository.removePostFromUniversityTopicFeed(universityId, parentTopicId, postId);
-		}
-		if (programId != null) {
-			redisRepository.removePostFromUniversitySubtopicFeed(universityId, programId, postId);
-		} else if (topicId != null && parentTopicId != null && !topicId.equals(parentTopicId)) {
-			redisRepository.removePostFromUniversitySubtopicFeed(universityId, topicId, postId);
-		}
-	}
-
-	private void addScopedPopular(String postId, double trendingScore, Long universityId, Long facultyId,
-			Long programId, Long topicId, Long parentTopicId) {
-		if (universityId == null) {
-			return;
-		}
-		redisRepository.addPostToUniversityPopularFeed(universityId, postId, trendingScore);
-		if (facultyId != null) {
-			redisRepository.addPostToUniversityTopicPopularFeed(universityId, facultyId, postId, trendingScore);
-			redisRepository.trimUniversityTopicPopularFeed(universityId, facultyId, popularWindowSize);
-		} else if (parentTopicId != null) {
-			redisRepository.addPostToUniversityTopicPopularFeed(universityId, parentTopicId, postId, trendingScore);
-			redisRepository.trimUniversityTopicPopularFeed(universityId, parentTopicId, popularWindowSize);
-		}
-		if (programId != null) {
-			redisRepository.addPostToUniversitySubtopicPopularFeed(universityId, programId, postId, trendingScore);
-			redisRepository.trimUniversitySubtopicPopularFeed(universityId, programId, popularWindowSize);
-		} else if (topicId != null && parentTopicId != null && !topicId.equals(parentTopicId)) {
-			redisRepository.addPostToUniversitySubtopicPopularFeed(universityId, topicId, postId, trendingScore);
-			redisRepository.trimUniversitySubtopicPopularFeed(universityId, topicId, popularWindowSize);
-		}
-		redisRepository.trimUniversityPopularFeed(universityId, popularWindowSize);
-	}
-
-	private void removeScopedPopular(String postId, Long universityId, Long facultyId, Long programId, Long topicId,
-			Long parentTopicId) {
-		if (universityId == null) {
-			return;
-		}
-		redisRepository.removePostFromUniversityPopularFeed(universityId, postId);
-		if (facultyId != null) {
-			redisRepository.removePostFromUniversityTopicPopularFeed(universityId, facultyId, postId);
-		} else if (parentTopicId != null) {
-			redisRepository.removePostFromUniversityTopicPopularFeed(universityId, parentTopicId, postId);
-		}
-		if (programId != null) {
-			redisRepository.removePostFromUniversitySubtopicPopularFeed(universityId, programId, postId);
-		} else if (topicId != null && parentTopicId != null && !topicId.equals(parentTopicId)) {
-			redisRepository.removePostFromUniversitySubtopicPopularFeed(universityId, topicId, postId);
-		}
-	}
 }

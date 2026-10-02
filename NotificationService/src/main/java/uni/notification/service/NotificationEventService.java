@@ -7,7 +7,6 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import uni.notification.entity.Notification;
-import uni.notification.entity.ProcessedEvent;
 import uni.notification.kafka.EventEnvelope;
 import uni.notification.repository.NotificationRepository;
 import uni.notification.repository.ProcessedEventRepository;
@@ -29,11 +28,14 @@ public class NotificationEventService {
 	@Transactional
 	public void processRaw(String raw) {
 		EventEnvelope event = parse(raw);
-		if (event.eventId() == null || event.eventId().isBlank()) {
-			log.warn("Event with blank eventId skipped");
-			return;
+		if (event == null || event.eventId() == null || event.eventId().isBlank() || event.eventType() == null
+				|| event.eventType().isBlank() || event.payload() == null || !event.payload().isObject()) {
+			throw new IllegalArgumentException("Event must have eventId, eventType and an object payload");
 		}
-		if (processedEventRepository.existsByEventId(event.eventId())) {
+		if (event.eventId().codePointCount(0, event.eventId().length()) > 100) {
+			throw new IllegalArgumentException("eventId must not exceed 100 characters");
+		}
+		if (processedEventRepository.claim(event.eventId(), LocalDateTime.now()) == 0) {
 			return;
 		}
 
@@ -63,9 +65,6 @@ public class NotificationEventService {
 			}
 			notificationRepository.saveAll(toSave);
 		}
-
-		processedEventRepository
-				.save(ProcessedEvent.builder().eventId(event.eventId()).processedAt(LocalDateTime.now()).build());
 	}
 
 	private static final long DEDUP_WINDOW_DAYS = 30;

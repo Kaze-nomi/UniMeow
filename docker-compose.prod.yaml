@@ -2,12 +2,11 @@ services:
 
   postgres-user:
     image: postgres:16-alpine
-    container_name: uni-postgres-user
     restart: unless-stopped
     environment:
       POSTGRES_DB:       user_db
-      POSTGRES_USER:     ${DB_USERNAME:-postgres}
-      POSTGRES_PASSWORD: ${DB_PASSWORD:-postgres}
+      POSTGRES_USER:     ${DB_USERNAME:?DB_USERNAME is required}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD is required}
     volumes:
       - postgres_user_data:/var/lib/postgresql/data
     ports:
@@ -15,7 +14,7 @@ services:
     networks:
       - uni-network
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${DB_USERNAME:-postgres} -d user_db"]
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USERNAME:?DB_USERNAME is required} -d user_db"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -23,12 +22,11 @@ services:
 
   postgres-notification:
     image: postgres:16-alpine
-    container_name: uni-postgres-notification
     restart: unless-stopped
     environment:
       POSTGRES_DB:       notification_db
-      POSTGRES_USER:     ${DB_USERNAME:-postgres}
-      POSTGRES_PASSWORD: ${DB_PASSWORD:-postgres}
+      POSTGRES_USER:     ${DB_USERNAME:?DB_USERNAME is required}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD is required}
     volumes:
       - postgres_notification_data:/var/lib/postgresql/data
     ports:
@@ -36,7 +34,7 @@ services:
     networks:
       - uni-network
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${DB_USERNAME:-postgres} -d notification_db"]
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USERNAME:?DB_USERNAME is required} -d notification_db"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -44,12 +42,11 @@ services:
 
   postgres-post:
     image: postgres:16-alpine
-    container_name: uni-postgres-post
     restart: unless-stopped
     environment:
       POSTGRES_DB:       post_db
-      POSTGRES_USER:     ${DB_USERNAME:-postgres}
-      POSTGRES_PASSWORD: ${DB_PASSWORD:-postgres}
+      POSTGRES_USER:     ${DB_USERNAME:?DB_USERNAME is required}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD is required}
     volumes:
       - postgres_post_data:/var/lib/postgresql/data
     ports:
@@ -57,7 +54,7 @@ services:
     networks:
       - uni-network
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${DB_USERNAME:-postgres} -d post_db"]
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USERNAME:?DB_USERNAME is required} -d post_db"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -65,7 +62,6 @@ services:
 
   redis:
     image: redis:7.4-alpine
-    container_name: uni-redis
     restart: unless-stopped
     command: redis-server --appendonly yes --appendfsync everysec
     ports:
@@ -82,13 +78,12 @@ services:
       start_period: 10s
 
   minio:
-    image: minio/minio:latest
-    container_name: uni-minio
+    image: ghcr.io/coollabsio/minio:RELEASE.2025-10-15T17-29-55Z
     restart: unless-stopped
     command: server /data --console-address ":9001"
     environment:
-      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-admin}
-      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-changeme}
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:?MINIO_ROOT_USER is required}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?MINIO_ROOT_PASSWORD is required}
     volumes:
       - minio_data:/data
     ports:
@@ -97,7 +92,7 @@ services:
     networks:
       - uni-network
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      test: ["CMD", "mc", "ready", "local"]
       interval: 15s
       timeout: 5s
       retries: 8
@@ -105,7 +100,6 @@ services:
 
   kafka:
     image: apache/kafka:4.0.0
-    container_name: uni-kafka
     restart: unless-stopped
     environment:
       KAFKA_NODE_ID: 1
@@ -137,7 +131,6 @@ services:
 
   kafka-ui:
     image: provectuslabs/kafka-ui:v0.7.2
-    container_name: uni-kafka-ui
     restart: unless-stopped
     depends_on:
       kafka:
@@ -151,11 +144,34 @@ services:
     networks:
       - uni-network
 
+  migrations:
+    image: flyway/flyway:11.14.1
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - >-
+        flyway -url=jdbc:postgresql://postgres-user:5432/user_db -locations=filesystem:/flyway/sql/user migrate &&
+        flyway -url=jdbc:postgresql://postgres-post:5432/post_db -locations=filesystem:/flyway/sql/post migrate &&
+        flyway -url=jdbc:postgresql://postgres-notification:5432/notification_db -locations=filesystem:/flyway/sql/notification migrate
+    environment:
+      FLYWAY_USER: ${DB_USERNAME:?DB_USERNAME is required}
+      FLYWAY_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD is required}
+    volumes:
+      - ./UserService/src/main/resources/db/migration:/flyway/sql/user:ro
+      - ./PostService/src/main/resources/db/migration:/flyway/sql/post:ro
+      - ./NotificationService/src/main/resources/db/migration:/flyway/sql/notification:ro
+    depends_on:
+      postgres-user:
+        condition: service_healthy
+      postgres-post:
+        condition: service_healthy
+      postgres-notification:
+        condition: service_healthy
+    networks:
+      - uni-network
+
   eureka-server:
-    build:
-      context: ./Eureka
-      dockerfile: Dockerfile
-    container_name: uni-eureka
+    image: ghcr.io/kaze-nomi/unimeow-eureka-server:${VERSION:?VERSION is required}
+    stop_grace_period: 40s
     restart: unless-stopped
     ports:
       - "127.0.0.1:8761:8761"
@@ -169,12 +185,12 @@ services:
       start_period: 180s
 
   user-service:
-    build:
-      context: .
-      dockerfile: UserService/Dockerfile
-    container_name: uni-user-service
+    image: ghcr.io/kaze-nomi/unimeow-user-service:${VERSION:?VERSION is required}
+    stop_grace_period: 40s
     restart: unless-stopped
     depends_on:
+      migrations:
+        condition: service_completed_successfully
       postgres-user:
         condition: service_healthy
       eureka-server:
@@ -184,17 +200,16 @@ services:
       media-service:
         condition: service_healthy
     environment:
+      EUREKA_INSTANCE_PREFER_IP_ADDRESS: "true"
+      SPRING_FLYWAY_ENABLED: "false"
       SPRING_DATASOURCE_URL:      jdbc:postgresql://postgres-user:5432/user_db
-      SPRING_DATASOURCE_USERNAME: ${DB_USERNAME:-postgres}
-      SPRING_DATASOURCE_PASSWORD: ${DB_PASSWORD:-postgres}
+      SPRING_DATASOURCE_USERNAME: ${DB_USERNAME:?DB_USERNAME is required}
+      SPRING_DATASOURCE_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD is required}
       EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://eureka-server:8761/eureka/
       SPRING_MAIL_USERNAME: ${MAIL_USERNAME}
       SPRING_MAIL_PASSWORD: ${MAIL_PASSWORD}
       SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:9092
-      APP_FRONTEND_URL: ${APP_PUBLIC_URL:-http://localhost:5173}
-    ports:
-      - "127.0.0.1:9004:9000"
-      - "127.0.0.1:9090:9090"
+      APP_FRONTEND_URL: ${APP_PUBLIC_URL:?APP_PUBLIC_URL is required}
     networks:
       - uni-network
     healthcheck:
@@ -205,10 +220,8 @@ services:
       start_period: 180s
 
   media-service:
-    build:
-      context: .
-      dockerfile: MediaService/Dockerfile
-    container_name: uni-media-service
+    image: ghcr.io/kaze-nomi/unimeow-media-service:${VERSION:?VERSION is required}
+    stop_grace_period: 40s
     restart: unless-stopped
     depends_on:
       minio:
@@ -216,14 +229,12 @@ services:
       eureka-server:
         condition: service_healthy
     environment:
+      EUREKA_INSTANCE_PREFER_IP_ADDRESS: "true"
       MINIO_ENDPOINT: http://minio:9000
-      MINIO_ACCESS_KEY: ${MINIO_ROOT_USER:-admin}
-      MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD:-changeme}
-      MINIO_PUBLIC_URL: ${APP_MINIO_PUBLIC_URL:-http://localhost:9000}
+      MINIO_ACCESS_KEY: ${MINIO_ROOT_USER:?MINIO_ROOT_USER is required}
+      MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD:?MINIO_ROOT_PASSWORD is required}
+      MINIO_PUBLIC_URL: ${APP_MINIO_PUBLIC_URL:?APP_MINIO_PUBLIC_URL is required}
       EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://eureka-server:8761/eureka/
-    ports:
-      - "127.0.0.1:9003:9003"
-      - "127.0.0.1:9093:9093"
     networks:
       - uni-network
     healthcheck:
@@ -234,12 +245,12 @@ services:
       start_period: 180s
 
   post-service:
-    build:
-      context: .
-      dockerfile: PostService/Dockerfile
-    container_name: uni-post-service
+    image: ghcr.io/kaze-nomi/unimeow-post-service:${VERSION:?VERSION is required}
+    stop_grace_period: 40s
     restart: unless-stopped
     depends_on:
+      migrations:
+        condition: service_completed_successfully
       postgres-post:
         condition: service_healthy
       eureka-server:
@@ -247,14 +258,13 @@ services:
       kafka:
         condition: service_healthy
     environment:
+      EUREKA_INSTANCE_PREFER_IP_ADDRESS: "true"
+      SPRING_FLYWAY_ENABLED: "false"
       SPRING_DATASOURCE_URL:      jdbc:postgresql://postgres-post:5432/post_db
-      SPRING_DATASOURCE_USERNAME: ${DB_USERNAME:-postgres}
-      SPRING_DATASOURCE_PASSWORD: ${DB_PASSWORD:-postgres}
+      SPRING_DATASOURCE_USERNAME: ${DB_USERNAME:?DB_USERNAME is required}
+      SPRING_DATASOURCE_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD is required}
       EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://eureka-server:8761/eureka/
       SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:9092
-    ports:
-      - "127.0.0.1:9005:9001"
-      - "127.0.0.1:9091:9091"
     networks:
       - uni-network
     healthcheck:
@@ -265,10 +275,8 @@ services:
       start_period: 180s
 
   feed-service:
-    build:
-      context: .
-      dockerfile: FeedService/Dockerfile
-    container_name: uni-feed-service
+    image: ghcr.io/kaze-nomi/unimeow-feed-service:${VERSION:?VERSION is required}
+    stop_grace_period: 40s
     restart: unless-stopped
     depends_on:
       eureka-server:
@@ -278,13 +286,11 @@ services:
       kafka:
         condition: service_healthy
     environment:
+      EUREKA_INSTANCE_PREFER_IP_ADDRESS: "true"
       EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://eureka-server:8761/eureka/
       SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:9092
       SPRING_DATA_REDIS_HOST: redis
       SPRING_DATA_REDIS_PORT: 6379
-    ports:
-      - "127.0.0.1:9002:9002"
-      - "127.0.0.1:9092:9092"
     networks:
       - uni-network
     healthcheck:
@@ -295,12 +301,12 @@ services:
       start_period: 180s
 
   notification-service:
-    build:
-      context: .
-      dockerfile: NotificationService/Dockerfile
-    container_name: uni-notification-service
+    image: ghcr.io/kaze-nomi/unimeow-notification-service:${VERSION:?VERSION is required}
+    stop_grace_period: 40s
     restart: unless-stopped
     depends_on:
+      migrations:
+        condition: service_completed_successfully
       postgres-notification:
         condition: service_healthy
       eureka-server:
@@ -308,14 +314,13 @@ services:
       kafka:
         condition: service_healthy
     environment:
+      EUREKA_INSTANCE_PREFER_IP_ADDRESS: "true"
+      SPRING_FLYWAY_ENABLED: "false"
       SPRING_DATASOURCE_URL:      jdbc:postgresql://postgres-notification:5432/notification_db
-      SPRING_DATASOURCE_USERNAME: ${DB_USERNAME:-postgres}
-      SPRING_DATASOURCE_PASSWORD: ${DB_PASSWORD:-postgres}
+      SPRING_DATASOURCE_USERNAME: ${DB_USERNAME:?DB_USERNAME is required}
+      SPRING_DATASOURCE_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD is required}
       EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://eureka-server:8761/eureka/
       SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:9092
-    ports:
-      - "127.0.0.1:9007:9006"
-      - "127.0.0.1:9095:9095"
     networks:
       - uni-network
     healthcheck:
@@ -325,13 +330,65 @@ services:
       retries: 12
       start_period: 180s
 
+  socket-proxy:
+    image: tecnativa/docker-socket-proxy:v0.5.0
+    restart: unless-stopped
+    environment:
+      CONTAINERS: "1"
+      EVENTS: "1"
+      PING: "1"
+      VERSION: "1"
+      POST: "0"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks:
+      - docker-control
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:2375/_ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  traefik:
+    image: traefik:v3.7.13
+    restart: unless-stopped
+    stop_grace_period: 40s
+    depends_on:
+      socket-proxy:
+        condition: service_healthy
+    command:
+      - '--entrypoints.web.address=:8080'
+      - '--entrypoints.web.forwardedheaders.trustedips=${TRUSTED_PROXY_IPS:-127.0.0.1/32}'
+      - '--providers.docker.endpoint=tcp://socket-proxy:2375'
+      - '--providers.docker.exposedbydefault=false'
+      - '--providers.docker.constraints=Label(`com.docker.compose.project`, `${COMPOSE_PROJECT_NAME}`)'
+      - '--providers.docker.network=${COMPOSE_PROJECT_NAME}_uni-network'
+      - '--ping=true'
+      - '--ping.entrypoint=web'
+      - '--log.format=json'
+      - '--accesslog.format=json'
+      - '--accesslog.fields.defaultmode=drop'
+      - '--accesslog.fields.names.RequestMethod=keep'
+      - '--accesslog.fields.names.DownstreamStatus=keep'
+      - '--accesslog.fields.names.ServiceAddr=keep'
+    ports:
+      - "127.0.0.1:8082:8080"
+    networks:
+      - uni-network
+      - docker-control
+    healthcheck:
+      test: ["CMD", "traefik", "healthcheck", "--ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
   api-gateway:
-    build:
-      context: .
-      dockerfile: APIGateway/Dockerfile
-    container_name: uni-api-gateway
+    image: ghcr.io/kaze-nomi/unimeow-api-gateway:${VERSION:?VERSION is required}
+    stop_grace_period: 40s
     restart: unless-stopped
     depends_on:
+      redis:
+        condition: service_healthy
       eureka-server:
         condition: service_healthy
       user-service:
@@ -343,17 +400,27 @@ services:
       notification-service:
         condition: service_healthy
     environment:
-      GOOGLE_CLIENT_ID:                       ${GOOGLE_CLIENT_ID}
-      GOOGLE_CLIENT_SECRET:                   ${GOOGLE_CLIENT_SECRET}
-      JWT_SECRET:                             ${JWT_SECRET}
-      APP_SECURITY_SECURE_COOKIE:             ${APP_SECURITY_SECURE_COOKIE:-false}
-      APP_SECURITY_ALLOWED_ORIGINS:           ${APP_SECURITY_ALLOWED_ORIGINS:-http://localhost:*,null}
-      APP_SECURITY_OAUTH2_SUCCESS_REDIRECT:   ${APP_PUBLIC_URL:-http://localhost:5173}/
+      EUREKA_INSTANCE_PREFER_IP_ADDRESS: "true"
+      SPRING_DATA_REDIS_HOST: redis
+      GOOGLE_CLIENT_ID:                       ${GOOGLE_CLIENT_ID:?GOOGLE_CLIENT_ID is required}
+      GOOGLE_CLIENT_SECRET:                   ${GOOGLE_CLIENT_SECRET:?GOOGLE_CLIENT_SECRET is required}
+      JWT_SECRET:                             ${JWT_SECRET:?JWT_SECRET is required}
+      APP_SECURITY_SECURE_COOKIE:             ${APP_SECURITY_SECURE_COOKIE:?APP_SECURITY_SECURE_COOKIE is required}
+      APP_SECURITY_ALLOWED_ORIGINS:           ${APP_SECURITY_ALLOWED_ORIGINS:?APP_SECURITY_ALLOWED_ORIGINS is required}
+      APP_SECURITY_OAUTH2_SUCCESS_REDIRECT:   ${APP_PUBLIC_URL:?APP_PUBLIC_URL is required}/
       EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://eureka-server:8761/eureka/
-    ports:
-      - "127.0.0.1:8081:8080"
     networks:
       - uni-network
+    labels:
+      traefik.enable: "true"
+      traefik.http.routers.gateway.rule: PathPrefix(`/`)
+      traefik.http.routers.gateway.entrypoints: web
+      traefik.http.routers.gateway.service: gateway
+      traefik.http.services.gateway.loadbalancer.server.port: "8080"
+      traefik.http.services.gateway.loadbalancer.healthcheck.path: /actuator/health
+      traefik.http.services.gateway.loadbalancer.healthcheck.status: "200"
+      traefik.http.services.gateway.loadbalancer.healthcheck.interval: 5s
+      traefik.http.services.gateway.loadbalancer.healthcheck.timeout: 2s
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://localhost:8080/actuator/health || exit 1"]
       interval: 15s
@@ -362,26 +429,40 @@ services:
       start_period: 180s
 
   frontend:
-    build:
-      context: .
-      dockerfile: Frontend/Dockerfile
-      args:
-        VITE_API_BASE: ${APP_PUBLIC_URL:-http://localhost:8081}
-        MINIO_PUBLIC_URL: ${APP_MINIO_PUBLIC_URL:-http://localhost:9000}
-    container_name: uni-frontend
+    image: ghcr.io/kaze-nomi/unimeow-frontend:${VERSION:?VERSION is required}
+    stop_grace_period: 40s
+    environment:
+      FRONTEND_API_BASE: ${FRONTEND_API_BASE:-${APP_PUBLIC_URL:?APP_PUBLIC_URL is required}}
+      MINIO_PUBLIC_URL: ${APP_MINIO_PUBLIC_URL:?APP_MINIO_PUBLIC_URL is required}
     restart: unless-stopped
-    depends_on:
-      api-gateway:
-        condition: service_healthy
     ports:
       - "127.0.0.1:5173:80"
     networks:
       - uni-network
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1/runtime-config.json"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+
+  node-exporter:
+    image: prom/node-exporter:v1.10.2
+    restart: unless-stopped
+    network_mode: host
+    pid: host
+    extra_hosts:
+      - host.docker.internal:host-gateway
+    command:
+      - '--path.rootfs=/host'
+      - '--web.listen-address=host.docker.internal:9100'
+    volumes:
+      - /:/host:ro,rslave
 
   prometheus:
     image: prom/prometheus:v2.53.4
-    container_name: uni-prometheus
     restart: unless-stopped
+    extra_hosts:
+      - host.docker.internal:host-gateway
     volumes:
       - ./Monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
       - prometheus_data:/prometheus
@@ -396,7 +477,6 @@ services:
 
   grafana:
     image: grafana/grafana:11.6.1
-    container_name: uni-grafana
     restart: unless-stopped
     depends_on:
       - prometheus
@@ -425,3 +505,5 @@ volumes:
 networks:
   uni-network:
     driver: bridge
+  docker-control:
+    internal: true

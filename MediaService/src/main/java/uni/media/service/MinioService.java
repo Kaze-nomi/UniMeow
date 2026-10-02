@@ -7,6 +7,7 @@ import io.minio.MinioClient;
 import io.minio.PutObjectArgs;
 import io.minio.RemoveObjectArgs;
 import io.minio.SetBucketPolicyArgs;
+import io.minio.errors.ErrorResponseException;
 import io.minio.http.Method;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -68,7 +69,8 @@ public class MinioService {
 			throw new IllegalStateException("Failed to upload file", e);
 		}
 
-		log.info("Uploaded file {}/{}", bucket, normalizedFileName);
+		log.atInfo().addKeyValue("event", "file_uploaded").addKeyValue("bucket", bucket)
+				.addKeyValue("object", normalizedFileName).log("Uploaded file");
 		return publicObjectUrl(bucket, normalizedFileName);
 	}
 
@@ -81,7 +83,8 @@ public class MinioService {
 		} catch (Exception e) {
 			throw new IllegalStateException("Failed to delete file", e);
 		}
-		log.info("Deleted file {}/{}", bucket, normalizedFileName);
+		log.atInfo().addKeyValue("event", "file_deleted").addKeyValue("bucket", bucket)
+				.addKeyValue("object", normalizedFileName).log("Deleted file");
 	}
 
 	public PresignResult generatePresignedUploadUrl(String bucket, String filename, String contentType,
@@ -160,12 +163,20 @@ public class MinioService {
 		return base + "/" + bucket + "/" + objectName;
 	}
 
+	@SuppressWarnings("PMD.ExceptionAsFlowControl")
 	private void createBucketIfMissing(String bucketName) {
 		try {
 			boolean exists = minioClient.bucketExists(BucketExistsArgs.builder().bucket(bucketName).build());
 			if (!exists) {
-				minioClient.makeBucket(MakeBucketArgs.builder().bucket(bucketName).build());
-				log.info("Created MinIO bucket: {}", bucketName);
+				try {
+					minioClient.makeBucket(MakeBucketArgs.builder().bucket(bucketName).build());
+					log.atInfo().addKeyValue("event", "bucket_created").addKeyValue("bucket", bucketName)
+							.log("Created MinIO bucket");
+				} catch (ErrorResponseException e) {
+					if (!"BucketAlreadyOwnedByYou".equals(e.errorResponse().code())) {
+						throw e;
+					}
+				}
 			}
 			minioClient.setBucketPolicy(
 					SetBucketPolicyArgs.builder().bucket(bucketName).config(publicReadPolicy(bucketName)).build());

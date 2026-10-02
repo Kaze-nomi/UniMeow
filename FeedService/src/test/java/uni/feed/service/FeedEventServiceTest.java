@@ -15,8 +15,7 @@ import java.util.Map;
 import java.util.Set;
 
 import static org.assertj.core.api.Assertions.*;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
@@ -36,6 +35,11 @@ class FeedEventServiceTest {
 		ReflectionTestUtils.setField(feedEventService, "uniWindowSize", 5000L);
 		ReflectionTestUtils.setField(feedEventService, "popularWindowSize", 1000L);
 		ReflectionTestUtils.setField(feedEventService, "trendingLikeBoostMs", 1L);
+	}
+
+	private void projection(String feed, String postId, Double score) {
+		verify(redisRepository).applyPostProjection(any(), eq(feed), eq(postId), nullable(String.class),
+				nullable(String.class), score == null ? anyDouble() : eq(score.doubleValue()), anyLong(), any());
 	}
 
 	private static final String EVENT_ID = "event-123";
@@ -94,7 +98,8 @@ class FeedEventServiceTest {
 
 		feedEventService.processRaw(json);
 
-		verify(redisRepository, never()).addPostToAuthorFeed(any(), any(), anyDouble());
+		verify(redisRepository, never()).applyPostProjection(any(), any(), any(), any(), any(), anyDouble(), anyLong(),
+				any());
 		verify(redisRepository, never()).markEventProcessed(any(), any());
 	}
 
@@ -112,9 +117,9 @@ class FeedEventServiceTest {
 
 		feedEventService.processRaw(json);
 
-		verify(redisRepository).addPostToAuthorFeed(eq(AUTHOR_ID), eq(POST_ID), anyDouble());
-		verify(redisRepository).addPostToOutsideFeed(eq(POST_ID), anyDouble());
-		verify(redisRepository).addPostToOutsidePopularFeed(eq(POST_ID), anyDouble());
+		projection("feed:author:" + AUTHOR_ID, POST_ID, null);
+		projection("feed:outside", POST_ID, null);
+		projection("feed:outside:popular", POST_ID, null);
 	}
 
 	@Test
@@ -130,10 +135,11 @@ class FeedEventServiceTest {
 
 		feedEventService.processRaw(json);
 
-		verify(redisRepository).addPostToUniversityFeed(eq(7L), eq(POST_ID), anyDouble());
-		verify(redisRepository).addPostToUniversityTopicFeed(eq(7L), eq(5L), eq(POST_ID), anyDouble());
-		verify(redisRepository).addPostToUniversitySubtopicFeed(eq(7L), eq(11L), eq(POST_ID), anyDouble());
-		verify(redisRepository, never()).addPostToOutsideFeed(any(), anyDouble());
+		projection("feed:uni:7", POST_ID, null);
+		projection("feed:uni:7:topic:5", POST_ID, null);
+		projection("feed:uni:7:subtopic:11", POST_ID, null);
+		verify(redisRepository, never()).applyPostProjection(any(), eq("feed:outside"), any(), any(), any(),
+				anyDouble(), anyLong(), any());
 	}
 
 	@Test
@@ -161,6 +167,7 @@ class FeedEventServiceTest {
 	}
 
 	@Test
+	@SuppressWarnings("PMD.UnitTestShouldIncludeAssert")
 	void onPostCreated_adds_post_to_all_follower_feeds() {
 		ReflectionTestUtils.setField(feedEventService, "authorWindowSize", 1000L);
 
@@ -174,9 +181,9 @@ class FeedEventServiceTest {
 
 		feedEventService.processRaw(json);
 
-		followers.forEach(
-				followerId -> verify(redisRepository).addPostToUserFeed(eq(followerId), eq(POST_ID), anyDouble()));
-		followers.forEach(followerId -> verify(redisRepository).trimUserFeed(followerId, 1000L));
+		followers
+				.forEach(followerId -> verify(redisRepository).applyPostProjection(any(), eq("feed:user:" + followerId),
+						eq(POST_ID), eq(AUTHOR_ID), eq(followerId), anyDouble(), eq(1000L), any()));
 	}
 
 	@Test
@@ -205,8 +212,8 @@ class FeedEventServiceTest {
 
 		feedEventService.processRaw(json);
 
-		verify(redisRepository).removePostFromAuthorFeed(AUTHOR_ID, POST_ID);
-		verify(redisRepository).removePostFromPopularFeed(POST_ID);
+		projection("feed:author:" + AUTHOR_ID, POST_ID, null);
+		projection("feed:popular", POST_ID, null);
 	}
 
 	@Test
@@ -219,10 +226,11 @@ class FeedEventServiceTest {
 
 		feedEventService.processRaw(json);
 
-		verify(redisRepository).removePostFromPopularFeed(POST_ID);
-		verify(redisRepository).removePostFromOutsideFeed(POST_ID);
-		verify(redisRepository).removePostFromOutsidePopularFeed(POST_ID);
-		verify(redisRepository, never()).removePostFromAuthorFeed(any(), any());
+		projection("feed:popular", POST_ID, null);
+		projection("feed:outside", POST_ID, null);
+		projection("feed:outside:popular", POST_ID, null);
+		verify(redisRepository, never()).applyPostProjection(any(), startsWith("feed:author:"), any(), any(), any(),
+				anyDouble(), anyLong(), any());
 	}
 
 	@Test
@@ -235,9 +243,8 @@ class FeedEventServiceTest {
 
 		feedEventService.processRaw(json);
 
-		verify(redisRepository).addPostToPopularFeed(POST_ID, 1005.0);
-		verify(redisRepository).trimPopularFeed(1000L);
-		verify(redisRepository).addPostToOutsidePopularFeed(POST_ID, 1005.0);
+		projection("feed:popular", POST_ID, 1005.0);
+		projection("feed:outside:popular", POST_ID, 1005.0);
 	}
 
 	@Test
@@ -251,9 +258,9 @@ class FeedEventServiceTest {
 
 		feedEventService.processRaw(json);
 
-		verify(redisRepository).addPostToUniversityPopularFeed(7L, POST_ID, 1005.0);
-		verify(redisRepository).addPostToUniversityTopicPopularFeed(7L, 5L, POST_ID, 1005.0);
-		verify(redisRepository).addPostToUniversitySubtopicPopularFeed(7L, 11L, POST_ID, 1005.0);
+		projection("feed:uni:7:popular", POST_ID, 1005.0);
+		projection("feed:uni:7:topic:5:popular", POST_ID, 1005.0);
+		projection("feed:uni:7:subtopic:11:popular", POST_ID, 1005.0);
 	}
 
 	@Test
@@ -266,7 +273,7 @@ class FeedEventServiceTest {
 
 		feedEventService.processRaw(json);
 
-		verify(redisRepository).addPostToPopularFeed(POST_ID, 1003.0);
+		projection("feed:popular", POST_ID, 1003.0);
 	}
 
 	@Test
@@ -291,7 +298,7 @@ class FeedEventServiceTest {
 
 		feedEventService.processRaw(json);
 
-		verify(redisRepository).addPostToPopularFeed(POST_ID, 1004.0);
+		projection("feed:popular", POST_ID, 1004.0);
 	}
 
 	@Test
@@ -304,7 +311,7 @@ class FeedEventServiceTest {
 
 		feedEventService.processRaw(json);
 
-		verify(redisRepository).addPostToPopularFeed(POST_ID, 1000.0);
+		projection("feed:popular", POST_ID, 1000.0);
 	}
 
 	@Test
@@ -316,10 +323,10 @@ class FeedEventServiceTest {
 
 		feedEventService.processRaw(json);
 
-		verify(redisRepository).removePostFromUniversityFeed(7L, POST_ID);
-		verify(redisRepository).removePostFromUniversityTopicFeed(7L, 5L, POST_ID);
-		verify(redisRepository).removePostFromUniversitySubtopicFeed(7L, 11L, POST_ID);
-		verify(redisRepository).removePostFromUniversityPopularFeed(7L, POST_ID);
+		projection("feed:uni:7", POST_ID, null);
+		projection("feed:uni:7:topic:5", POST_ID, null);
+		projection("feed:uni:7:subtopic:11", POST_ID, null);
+		projection("feed:uni:7:popular", POST_ID, null);
 	}
 
 	@Test
@@ -336,9 +343,8 @@ class FeedEventServiceTest {
 
 		feedEventService.processRaw(json);
 
-		verify(redisRepository).addFollowingRelation(SUBSCRIBER_ID, TARGET_USER_ID);
-		latestPosts.forEach((postId, score) -> verify(redisRepository).addPostToUserFeed(SUBSCRIBER_ID, postId, score));
-		verify(redisRepository).trimUserFeed(SUBSCRIBER_ID, 1000L);
+		verify(redisRepository).applyFollowingEvent(any(), eq(SUBSCRIBER_ID), eq(TARGET_USER_ID), any());
+		latestPosts.forEach((postId, score) -> projection("feed:user:" + SUBSCRIBER_ID, postId, score));
 	}
 
 	@Test
@@ -365,8 +371,8 @@ class FeedEventServiceTest {
 
 		feedEventService.processRaw(json);
 
-		verify(redisRepository).removeFollowingRelation(SUBSCRIBER_ID, TARGET_USER_ID);
-		verify(redisRepository).removePostsFromUserFeed(SUBSCRIBER_ID, latestPosts.keySet());
+		verify(redisRepository).applyFollowingEvent(any(), eq(SUBSCRIBER_ID), eq(TARGET_USER_ID), any());
+		latestPosts.forEach((postId, score) -> projection("feed:user:" + SUBSCRIBER_ID, postId, score));
 	}
 
 	@Test

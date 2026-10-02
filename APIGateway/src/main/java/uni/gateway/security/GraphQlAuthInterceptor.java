@@ -48,12 +48,6 @@ public class GraphQlAuthInterceptor implements WebGraphQlInterceptor {
 		}
 
 		long start = System.nanoTime();
-		String op = request.getOperationName();
-		String preview = request.getDocument();
-		if (preview != null && preview.length() > 80) {
-			preview = preview.substring(0, 80).replaceAll("\\s+", " ") + "…";
-		}
-		String tag = (op != null && !op.isBlank()) ? op : preview;
 
 		Set<String> restrictedMutations = restrictedMutationFields(request);
 		Mono<WebGraphQlResponse> chainMono;
@@ -71,11 +65,16 @@ public class GraphQlAuthInterceptor implements WebGraphQlInterceptor {
 		return chainMono.doOnSuccess(r -> {
 			long ms = (System.nanoTime() - start) / 1_000_000L;
 			if (ms >= 1_000L) {
-				log.warn("Slow GraphQL request '{}' took {}ms", tag, ms);
+				log.atWarn().addKeyValue("event", "graphql_request_slow").addKeyValue("requestId", request.getId())
+						.addKeyValue("operationName", request.getOperationName()).addKeyValue("userId", userId)
+						.addKeyValue("status", "completed").addKeyValue("durationMs", ms).log("Slow GraphQL request");
 			}
 		}).doOnError(e -> {
 			long ms = (System.nanoTime() - start) / 1_000_000L;
-			log.warn("Failed GraphQL request '{}' after {}ms: {}", tag, ms, e.toString());
+			log.atWarn().addKeyValue("event", "graphql_request_failed").addKeyValue("requestId", request.getId())
+					.addKeyValue("operationName", request.getOperationName()).addKeyValue("userId", userId)
+					.addKeyValue("status", "failed").addKeyValue("durationMs", ms).setCause(e)
+					.log("Failed GraphQL request");
 		});
 	}
 

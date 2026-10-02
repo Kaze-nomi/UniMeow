@@ -56,7 +56,6 @@ app:
     topics:
       user-events: user-events
       post-events: post-events
-      post-events-dlq: post-events.dlq
   outbox:
     publish-delay-ms: 1500
   idempotency:
@@ -98,3 +97,11 @@ management:
     export:
       prometheus:
         enabled: true
+
+logging:
+  structured:
+    format:
+      console: logstash
+    json:
+      add:
+        service: ${spring.application.name}

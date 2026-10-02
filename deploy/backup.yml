@@ -1,0 +1,93 @@
+- name: Create private backup directory
+  ansible.builtin.file: {path: "{{ backup_dir }}", state: directory, owner: root, group: root, mode: '0700'}
+- name: Create a separate backup candidate
+  ansible.builtin.tempfile:
+    state: directory
+    path: "{{ backup_dir }}"
+    prefix: unimeow-backup-
+  register: backup_work
+- name: Back up PostgreSQL, Redis and MinIO
+  vars:
+    backup_dump: "/tmp/{{ backup_work.path | basename }}.dump"
+  block:
+    - name: Read running stores
+      ansible.builtin.command: "{{ compose }} ps --services --status running"
+      register: backup_running
+      changed_when: false
+    - name: Require all five stores to be running
+      ansible.builtin.assert:
+        that: "['postgres-user', 'postgres-post', 'postgres-notification', 'redis', 'minio'] | difference(backup_running.stdout_lines) | length == 0"
+
+    - name: Dump each PostgreSQL database
+      ansible.builtin.command: >-
+        {{ compose }} exec -T postgres-{{ item }} sh -c
+        'exec pg_dump --format=custom --create --username="$POSTGRES_USER" --file="$1" "$POSTGRES_DB"'
+        pg_dump {{ backup_dump | quote }}
+      loop: [user, post, notification]
+      no_log: true
+    - name: Read every dump without restoring data
+      ansible.builtin.command: >-
+        {{ compose }} exec -T postgres-{{ item }}
+        pg_restore --file=/dev/null {{ backup_dump | quote }}
+      loop: [user, post, notification]
+      changed_when: false
+      no_log: true
+    - name: Copy the PostgreSQL dumps
+      ansible.builtin.command: >-
+        {{ compose }} cp postgres-{{ item }}:{{ backup_dump }}
+        {{ (backup_work.path ~ '/' ~ item ~ '.dump') | quote }}
+      loop: [user, post, notification]
+    - name: Save Redis to disk
+      ansible.builtin.command: "{{ compose }} exec -T redis redis-cli SAVE"
+      register: backup_redis_save
+      failed_when: backup_redis_save.rc != 0 or backup_redis_save.stdout != 'OK'
+
+    - name: Copy Redis and MinIO while stopped
+      block:
+        - name: Stop Redis and MinIO
+          ansible.builtin.command: "{{ compose }} stop --timeout 60 redis minio"
+        - name: Copy complete data directories
+          ansible.builtin.command: >-
+            {{ compose }} cp --archive {{ item }}:/data/.
+            {{ (backup_work.path ~ '/' ~ item) | quote }}
+          loop: [redis, minio]
+          no_log: true
+      always:
+        - name: Start the existing Redis and MinIO containers
+          ansible.builtin.command: "{{ compose }} start --wait --wait-timeout 1200 redis minio"
+
+    - name: Package the five stores
+      ansible.builtin.command: >-
+        tar --numeric-owner -czf {{ (backup_work.path ~ '/latest.tar.gz') | quote }}
+        -C {{ backup_work.path | quote }} user.dump post.dump notification.dump redis minio
+    - name: Restrict access to the archive
+      ansible.builtin.file:
+        path: "{{ backup_work.path }}/latest.tar.gz"
+        mode: '0600'
+    - name: Check compressed archive integrity
+      ansible.builtin.command: "gzip -t {{ (backup_work.path ~ '/latest.tar.gz') | quote }}"
+      changed_when: false
+    - name: Check archive readability
+      ansible.builtin.command: "tar -tzf {{ (backup_work.path ~ '/latest.tar.gz') | quote }}"
+      changed_when: false
+      no_log: true
+    - name: Flush the archive before publication
+      ansible.builtin.command: "sync -f {{ (backup_work.path ~ '/latest.tar.gz') | quote }}"
+    - name: Atomically replace the last successful backup
+      ansible.builtin.command: >-
+        mv -fT -- {{ (backup_work.path ~ '/latest.tar.gz') | quote }}
+        {{ (backup_dir ~ '/latest.tar.gz') | quote }}
+    - name: Flush the published backup
+      ansible.builtin.command: "sync -f {{ backup_dir | quote }}"
+
+  always:
+    - name: Clean up this backup attempt
+      block:
+        - name: Remove only this run's temporary PostgreSQL dumps
+          ansible.builtin.command: >-
+            {{ compose }} exec -T postgres-{{ item }} rm -f -- {{ backup_dump | quote }}
+          loop: [user, post, notification]
+          no_log: true
+      always:
+        - name: Remove only this run's candidate directory
+          ansible.builtin.file: {path: "{{ backup_work.path }}", state: absent}

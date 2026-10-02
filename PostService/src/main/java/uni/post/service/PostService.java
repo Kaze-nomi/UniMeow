@@ -51,7 +51,10 @@ public class PostService {
 			throw new IllegalArgumentException("Post content cannot be empty");
 		}
 
+		postRepository.lockContentMutation();
+
 		if (clientRequestId != null && !clientRequestId.isBlank()) {
+			idempotencyKeyRepository.lockRequest(clientRequestId);
 			var existing = idempotencyKeyRepository.findById(clientRequestId);
 			if (existing.isPresent()) {
 				UUID existingPostId = UUID.fromString(existing.get().getEntityId());
@@ -147,6 +150,7 @@ public class PostService {
 	@Transactional
 	public PostResult editPost(UUID postId, UUID requesterId, boolean hasContent, String content,
 			boolean updateMediaUrls, List<String> mediaUrls) {
+		lockPostMutation(postId);
 		Post post = findOrThrow(postId);
 
 		if (!post.getAuthorId().equals(requesterId)) {
@@ -178,6 +182,7 @@ public class PostService {
 
 	@Transactional
 	public void deletePost(UUID postId, UUID requesterId, boolean adminOverride) {
+		lockPostMutation(postId);
 		Post post = findOrThrow(postId);
 
 		if (!adminOverride && !post.getAuthorId().equals(requesterId)) {
@@ -198,6 +203,7 @@ public class PostService {
 
 	@Transactional
 	public void deleteAllContentByAuthor(UUID authorId) {
+		postRepository.lockContentCleanup();
 		List<UUID> likedPostIds = likeRepository.findPostIdsByUserId(authorId);
 		List<UUID> likedCommentIds = commentLikeRepository.findCommentIdsByUserId(authorId);
 		List<Comment> ownComments = commentRepository.findByAuthorId(authorId);
@@ -299,6 +305,7 @@ public class PostService {
 
 	@Transactional
 	public void likePost(UUID postId, UUID userId) {
+		lockPostMutation(postId);
 		Post post = findOrThrow(postId);
 
 		if (likeRepository.existsByPostIdAndUserId(postId, userId)) {
@@ -324,6 +331,7 @@ public class PostService {
 
 	@Transactional
 	public void unlikePost(UUID postId, UUID userId) {
+		lockPostMutation(postId);
 		Post post = findOrThrow(postId);
 
 		if (!likeRepository.existsByPostIdAndUserId(postId, userId)) {
@@ -356,6 +364,11 @@ public class PostService {
 		appendFeedScopePayload(payload, post);
 
 		outboxService.enqueuePostEvent("POST_UNLIKED", post.getAuthorId().toString(), post.getId().toString(), payload);
+	}
+
+	private void lockPostMutation(UUID postId) {
+		postRepository.lockContentMutation();
+		postRepository.lockPost(postId);
 	}
 
 	private Post findOrThrow(UUID postId) {

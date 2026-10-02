@@ -34,10 +34,13 @@ build
 ### Mac OS ###
 .DS_Store
 
-.env
-
 xNotes
 
 # Frontend build output
 Frontend/dist/
 Frontend/node_modules/
+__pycache__/
+*.pyc
+.pytest_cache/
+.venv/
+release-source/

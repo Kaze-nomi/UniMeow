@@ -508,7 +508,7 @@ class UserServiceTest {
 		userService.banUser(moderatorId, TARGET_ID, null, "Permanent ban");
 
 		verify(bannedGoogleAccountRepository).save(
-				argThat(ban -> ban.getEmailGoogle().equals("ivan@gmail.com") && "Permanent ban".equals(ban.getReason())
+				argThat(ban -> "ivan@gmail.com".equals(ban.getEmailGoogle()) && "Permanent ban".equals(ban.getReason())
 						&& moderatorId.equals(ban.getModeratorId()) && ban.getBannedAt() != null));
 		verify(outboxService).enqueueUserEvent(eq("USER_PERMANENT_BANNED"), eq(TARGET_ID.toString()),
 				eq(TARGET_ID.toString()), any());

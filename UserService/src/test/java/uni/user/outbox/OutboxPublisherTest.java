@@ -1,15 +1,13 @@
 package uni.user.outbox;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
-import org.mockito.Spy;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.kafka.core.KafkaTemplate;
-import org.springframework.test.util.ReflectionTestUtils;
+import org.springframework.kafka.core.KafkaOperations;
 
 import java.time.LocalDateTime;
 import java.util.List;
@@ -17,7 +15,6 @@ import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 
 import static org.assertj.core.api.Assertions.*;
-import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
@@ -29,187 +26,169 @@ class OutboxPublisherTest {
 	@Mock
 	KafkaTemplate<String, String> kafkaTemplate;
 
-	@Spy
-	ObjectMapper objectMapper = new ObjectMapper();
-
 	@InjectMocks
 	OutboxPublisher outboxPublisher;
 
-	private OutboxEvent buildOutboxEvent(UUID id, String topic, String eventKey, String payload) {
-		return OutboxEvent.builder().id(id).topic(topic).eventKey(eventKey).payload(payload)
-				.createdAt(LocalDateTime.now()).publishedAt(null).build();
+	@BeforeEach
+	void transactions() {
+		lenient().when(kafkaTemplate.executeInTransaction(any())).thenAnswer(call -> {
+			KafkaOperations.OperationsCallback<String, String, ?> callback = call.getArgument(0);
+			return callback.doInOperations(kafkaTemplate);
+		});
+	}
+
+	private OutboxEvent event(String key) {
+		return OutboxEvent.builder().id(UUID.randomUUID()).topic("user-events").eventKey(key)
+				.payload("{\"eventId\":\"" + key + "\"}").createdAt(LocalDateTime.now()).build();
+	}
+
+	private void pending(OutboxEvent... events) {
+		when(outboxEventRepository.tryLockPublisher()).thenReturn(true);
+		when(outboxEventRepository.existsByPublishedAtIsNull()).thenReturn(events.length > 0);
+		if (events.length > 0) {
+			when(outboxEventRepository.findTop100ByPublishedAtIsNullOrderByCreatedAtAscIdAsc())
+					.thenReturn(List.of(events));
+		}
 	}
 
 	@Test
-	void publishPendingEvents_sends_unpublished_events_to_kafka() {
-		OutboxEvent event = buildOutboxEvent(UUID.randomUUID(), "user-events", "key-1",
-				"{\"eventId\": \"evt-1\", \"eventType\": \"USER_REGISTERED\"}");
+	void skips_batch_when_another_publisher_holds_lock() {
+		outboxPublisher.publishPendingEvents();
 
-		when(outboxEventRepository.findTop100ByPublishedAtIsNullOrderByCreatedAtAsc()).thenReturn(List.of(event));
-		when(kafkaTemplate.send(event.getTopic(), event.getEventKey(), event.getPayload()))
+		verify(outboxEventRepository).tryLockPublisher();
+		verifyNoMoreInteractions(outboxEventRepository);
+		verifyNoInteractions(kafkaTemplate);
+	}
+
+	@Test
+	void handles_empty_batch() {
+		pending();
+
+		outboxPublisher.publishPendingEvents();
+
+		verifyNoInteractions(kafkaTemplate);
+	}
+
+	@Test
+	void locks_before_reading_and_publishes_in_repository_order() {
+		OutboxEvent first = event("first");
+		OutboxEvent second = event("second");
+		pending(first, second);
+		when(kafkaTemplate.send(first.getTopic(), first.getEventKey(), first.getPayload())).thenAnswer(call -> {
+			assertThat(first.getPublishedAt()).isNull();
+			return CompletableFuture.completedFuture(null);
+		});
+		when(kafkaTemplate.send(second.getTopic(), second.getEventKey(), second.getPayload())).thenAnswer(call -> {
+			assertThat(first.getPublishedAt()).isNull();
+			assertThat(second.getPublishedAt()).isNull();
+			return CompletableFuture.completedFuture(null);
+		});
+
+		outboxPublisher.publishPendingEvents();
+
+		var order = inOrder(outboxEventRepository, kafkaTemplate);
+		order.verify(outboxEventRepository).tryLockPublisher();
+		order.verify(outboxEventRepository).existsByPublishedAtIsNull();
+		order.verify(kafkaTemplate).executeInTransaction(any());
+		order.verify(outboxEventRepository).tryLockPublisher();
+		order.verify(outboxEventRepository).findTop100ByPublishedAtIsNullOrderByCreatedAtAscIdAsc();
+		order.verify(kafkaTemplate).send(first.getTopic(), first.getEventKey(), first.getPayload());
+		order.verify(kafkaTemplate).send(second.getTopic(), second.getEventKey(), second.getPayload());
+		order.verifyNoMoreInteractions();
+		assertThat(second.getPublishedAt()).isNotNull();
+	}
+
+	@Test
+	void failed_confirmation_stops_batch_and_keeps_unsent_events_pending() {
+		OutboxEvent first = event("first");
+		OutboxEvent failed = event("failed");
+		OutboxEvent later = event("later");
+		pending(first, failed, later);
+		when(kafkaTemplate.send(first.getTopic(), first.getEventKey(), first.getPayload()))
+				.thenReturn(CompletableFuture.completedFuture(null));
+		when(kafkaTemplate.send(failed.getTopic(), failed.getEventKey(), failed.getPayload()))
+				.thenReturn(CompletableFuture.failedFuture(new RuntimeException("Kafka unavailable")));
+
+		outboxPublisher.publishPendingEvents();
+
+		assertThat(first.getPublishedAt()).isNull();
+		assertThat(failed.getPublishedAt()).isNull();
+		assertThat(later.getPublishedAt()).isNull();
+		verify(kafkaTemplate).send(first.getTopic(), first.getEventKey(), first.getPayload());
+		verify(kafkaTemplate).send(failed.getTopic(), failed.getEventKey(), failed.getPayload());
+		verify(kafkaTemplate).executeInTransaction(any());
+		verifyNoMoreInteractions(kafkaTemplate);
+	}
+
+	@Test
+	void synchronous_send_failure_keeps_batch_pending() {
+		OutboxEvent first = event("first");
+		OutboxEvent later = event("later");
+		pending(first, later);
+		when(kafkaTemplate.send(first.getTopic(), first.getEventKey(), first.getPayload()))
+				.thenThrow(new RuntimeException("Kafka unavailable"));
+
+		outboxPublisher.publishPendingEvents();
+
+		assertThat(first.getPublishedAt()).isNull();
+		assertThat(later.getPublishedAt()).isNull();
+		verify(kafkaTemplate).send(first.getTopic(), first.getEventKey(), first.getPayload());
+		verify(kafkaTemplate).executeInTransaction(any());
+		verifyNoMoreInteractions(kafkaTemplate);
+	}
+
+	@Test
+	void retries_same_event_before_later_events_on_next_batch() {
+		OutboxEvent first = event("first");
+		OutboxEvent later = event("later");
+		pending(first, later);
+		when(kafkaTemplate.send(first.getTopic(), first.getEventKey(), first.getPayload())).thenReturn(
+				CompletableFuture.failedFuture(new RuntimeException("Kafka unavailable")),
+				CompletableFuture.completedFuture(null));
+		when(kafkaTemplate.send(later.getTopic(), later.getEventKey(), later.getPayload()))
 				.thenReturn(CompletableFuture.completedFuture(null));
 
 		outboxPublisher.publishPendingEvents();
+		outboxPublisher.publishPendingEvents();
 
-		verify(kafkaTemplate).send("user-events", "key-1", event.getPayload());
+		var order = inOrder(kafkaTemplate);
+		order.verify(kafkaTemplate).executeInTransaction(any());
+		order.verify(kafkaTemplate).send(first.getTopic(), first.getEventKey(), first.getPayload());
+		order.verify(kafkaTemplate).executeInTransaction(any());
+		order.verify(kafkaTemplate).send(first.getTopic(), first.getEventKey(), first.getPayload());
+		order.verify(kafkaTemplate).send(later.getTopic(), later.getEventKey(), later.getPayload());
+		order.verifyNoMoreInteractions();
+		verify(outboxEventRepository, times(4)).tryLockPublisher();
+		assertThat(first.getPublishedAt()).isNotNull();
+		assertThat(later.getPublishedAt()).isNotNull();
 	}
-
 	@Test
-	void publishPendingEvents_marks_event_as_published_after_sending() {
-		OutboxEvent event = buildOutboxEvent(UUID.randomUUID(), "user-events", "key-1", "{\"eventId\": \"evt-1\"}");
-
-		when(outboxEventRepository.findTop100ByPublishedAtIsNullOrderByCreatedAtAsc()).thenReturn(List.of(event));
-		when(kafkaTemplate.send(anyString(), anyString(), anyString()))
-				.thenReturn(CompletableFuture.completedFuture(null));
+	void lost_lock_after_kafka_initialization_does_not_read_or_send_batch() {
+		when(outboxEventRepository.tryLockPublisher()).thenReturn(true, false);
+		when(outboxEventRepository.existsByPublishedAtIsNull()).thenReturn(true);
 
 		outboxPublisher.publishPendingEvents();
 
-		assertThat(event.getPublishedAt()).isNotNull();
-	}
-
-	@Test
-	void publishPendingEvents_sends_to_dlq_on_kafka_failure() {
-		ReflectionTestUtils.setField(outboxPublisher, "userEventsDlqTopic", "user-events.dlq");
-
-		OutboxEvent event = buildOutboxEvent(UUID.randomUUID(), "user-events", "key-1", "{\"eventId\": \"evt-1\"}");
-
-		RuntimeException kafkaError = new RuntimeException("Kafka unavailable");
-		when(outboxEventRepository.findTop100ByPublishedAtIsNullOrderByCreatedAtAsc()).thenReturn(List.of(event));
-		when(kafkaTemplate.send(event.getTopic(), event.getEventKey(), event.getPayload())).thenThrow(kafkaError);
-		when(kafkaTemplate.send(eq("user-events.dlq"), eq(event.getEventKey()), anyString()))
-				.thenReturn(CompletableFuture.completedFuture(null));
-
-		outboxPublisher.publishPendingEvents();
-
-		verify(kafkaTemplate).send(eq("user-events.dlq"), eq("key-1"), anyString());
-		assertThat(event.getPublishedAt()).isNotNull();
-	}
-
-	@Test
-	void publishPendingEvents_stops_on_dlq_failure() {
-		ReflectionTestUtils.setField(outboxPublisher, "userEventsDlqTopic", "user-events.dlq");
-
-		OutboxEvent event1 = buildOutboxEvent(UUID.randomUUID(), "user-events", "key-1", "{}");
-		OutboxEvent event2 = buildOutboxEvent(UUID.randomUUID(), "user-events", "key-2", "{}");
-
-		when(outboxEventRepository.findTop100ByPublishedAtIsNullOrderByCreatedAtAsc())
-				.thenReturn(List.of(event1, event2));
-		when(kafkaTemplate.send(event1.getTopic(), event1.getEventKey(), event1.getPayload()))
-				.thenThrow(new RuntimeException("Kafka error"));
-		when(kafkaTemplate.send(eq("user-events.dlq"), anyString(), anyString()))
-				.thenThrow(new RuntimeException("DLQ error"));
-
-		outboxPublisher.publishPendingEvents();
-
-		assertThat(event1.getPublishedAt()).isNull();
-		assertThat(event2.getPublishedAt()).isNull();
-	}
-
-	@Test
-	void publishPendingEvents_processes_multiple_events() {
-		OutboxEvent event1 = buildOutboxEvent(UUID.randomUUID(), "user-events", "key-1", "{}");
-		OutboxEvent event2 = buildOutboxEvent(UUID.randomUUID(), "user-events", "key-2", "{}");
-		OutboxEvent event3 = buildOutboxEvent(UUID.randomUUID(), "user-events", "key-3", "{}");
-
-		when(outboxEventRepository.findTop100ByPublishedAtIsNullOrderByCreatedAtAsc())
-				.thenReturn(List.of(event1, event2, event3));
-		when(kafkaTemplate.send(anyString(), anyString(), anyString()))
-				.thenReturn(CompletableFuture.completedFuture(null));
-
-		outboxPublisher.publishPendingEvents();
-
-		assertThat(event1.getPublishedAt()).isNotNull();
-		assertThat(event2.getPublishedAt()).isNotNull();
-		assertThat(event3.getPublishedAt()).isNotNull();
-	}
-
-	@Test
-	void publishPendingEvents_handles_no_pending_events() {
-		when(outboxEventRepository.findTop100ByPublishedAtIsNullOrderByCreatedAtAsc()).thenReturn(List.of());
-
-		outboxPublisher.publishPendingEvents();
-
+		verify(outboxEventRepository, never()).findTop100ByPublishedAtIsNullOrderByCreatedAtAscIdAsc();
 		verify(kafkaTemplate, never()).send(anyString(), anyString(), anyString());
 	}
 
 	@Test
-	void publishPendingEvents_includes_error_details_in_dlq_message() {
-		ReflectionTestUtils.setField(outboxPublisher, "userEventsDlqTopic", "user-events.dlq");
-
-		OutboxEvent event = buildOutboxEvent(UUID.randomUUID(), "user-events", "key-1", "{\"eventId\": \"evt-1\"}");
-
-		RuntimeException kafkaError = new RuntimeException("Connection timeout");
-		when(outboxEventRepository.findTop100ByPublishedAtIsNullOrderByCreatedAtAsc()).thenReturn(List.of(event));
-		when(kafkaTemplate.send(event.getTopic(), event.getEventKey(), event.getPayload())).thenThrow(kafkaError);
-		when(kafkaTemplate.send(eq("user-events.dlq"), eq("key-1"), anyString()))
+	void kafka_commit_failure_leaves_confirmed_sends_unpublished() {
+		OutboxEvent first = event("first");
+		pending(first);
+		when(kafkaTemplate.send(first.getTopic(), first.getEventKey(), first.getPayload()))
 				.thenReturn(CompletableFuture.completedFuture(null));
+		doAnswer(call -> {
+			KafkaOperations.OperationsCallback<String, String, ?> callback = call.getArgument(0);
+			callback.doInOperations(kafkaTemplate);
+			assertThat(first.getPublishedAt()).isNull();
+			throw new IllegalStateException("Kafka commit failed");
+		}).when(kafkaTemplate).executeInTransaction(any());
 
 		outboxPublisher.publishPendingEvents();
 
-		ArgumentCaptor<String> dlqPayloadCaptor = ArgumentCaptor.forClass(String.class);
-		verify(kafkaTemplate).send(eq("user-events.dlq"), eq("key-1"), dlqPayloadCaptor.capture());
-
-		String dlqPayload = dlqPayloadCaptor.getValue();
-		assertThat(dlqPayload).contains("Connection timeout");
-		assertThat(dlqPayload).contains("java.lang.RuntimeException");
-		assertThat(dlqPayload).contains("user-events");
+		assertThat(first.getPublishedAt()).isNull();
 	}
 
-	@Test
-	void publishPendingEvents_preserves_original_payload_in_dlq() {
-		ReflectionTestUtils.setField(outboxPublisher, "userEventsDlqTopic", "user-events.dlq");
-
-		String originalPayload = "{\"eventId\": \"evt-1\", \"userId\": \"u1\"}";
-		OutboxEvent event = buildOutboxEvent(UUID.randomUUID(), "user-events", "key-1", originalPayload);
-
-		when(outboxEventRepository.findTop100ByPublishedAtIsNullOrderByCreatedAtAsc()).thenReturn(List.of(event));
-		when(kafkaTemplate.send(event.getTopic(), event.getEventKey(), event.getPayload()))
-				.thenThrow(new RuntimeException("Error"));
-		when(kafkaTemplate.send(eq("user-events.dlq"), eq("key-1"), anyString()))
-				.thenReturn(CompletableFuture.completedFuture(null));
-
-		outboxPublisher.publishPendingEvents();
-
-		ArgumentCaptor<String> dlqPayloadCaptor = ArgumentCaptor.forClass(String.class);
-		verify(kafkaTemplate).send(eq("user-events.dlq"), eq("key-1"), dlqPayloadCaptor.capture());
-
-		assertThat(dlqPayloadCaptor.getValue()).contains("evt-1").contains("u1");
-	}
-
-	@Test
-	void publishPendingEvents_handles_invalid_json_in_dlq_message() {
-		ReflectionTestUtils.setField(outboxPublisher, "userEventsDlqTopic", "user-events.dlq");
-
-		String invalidPayload = "not a json";
-		OutboxEvent event = buildOutboxEvent(UUID.randomUUID(), "user-events", "key-1", invalidPayload);
-
-		when(outboxEventRepository.findTop100ByPublishedAtIsNullOrderByCreatedAtAsc()).thenReturn(List.of(event));
-		when(kafkaTemplate.send(event.getTopic(), event.getEventKey(), event.getPayload()))
-				.thenThrow(new RuntimeException("Error"));
-		when(kafkaTemplate.send(eq("user-events.dlq"), eq("key-1"), anyString()))
-				.thenReturn(CompletableFuture.completedFuture(null));
-
-		outboxPublisher.publishPendingEvents();
-
-		ArgumentCaptor<String> dlqPayloadCaptor = ArgumentCaptor.forClass(String.class);
-		verify(kafkaTemplate).send(eq("user-events.dlq"), eq("key-1"), dlqPayloadCaptor.capture());
-
-		assertThat(dlqPayloadCaptor.getValue()).contains("not a json");
-	}
-
-	@Test
-	void publishPendingEvents_limits_to_100_events() {
-		List<OutboxEvent> events = new java.util.ArrayList<>();
-		for (int i = 0; i < 100; i++) {
-			events.add(buildOutboxEvent(UUID.randomUUID(), "user-events", "key-" + i, "{}"));
-		}
-
-		when(outboxEventRepository.findTop100ByPublishedAtIsNullOrderByCreatedAtAsc()).thenReturn(events);
-		when(kafkaTemplate.send(anyString(), anyString(), anyString()))
-				.thenReturn(CompletableFuture.completedFuture(null));
-
-		outboxPublisher.publishPendingEvents();
-
-		verify(kafkaTemplate, times(100)).send(anyString(), anyString(), anyString());
-	}
 }

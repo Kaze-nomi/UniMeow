@@ -1,6 +1,8 @@
 package uni.media.service;
 
 import io.minio.MinioClient;
+import io.minio.errors.ErrorResponseException;
+import io.minio.messages.ErrorResponse;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -13,6 +15,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -102,5 +106,29 @@ class MinioServiceTest {
 		minioService.ensureBuckets();
 
 		verify(minioClient, times(4)).setBucketPolicy(any());
+	}
+
+	@Test
+	void ensureBuckets_accepts_a_bucket_created_by_another_replica() throws Exception {
+		ErrorResponse response = mock(ErrorResponse.class);
+		ErrorResponseException failure = mock(ErrorResponseException.class);
+		when(response.code()).thenReturn("BucketAlreadyOwnedByYou");
+		when(failure.errorResponse()).thenReturn(response);
+		doThrow(failure).when(minioClient).makeBucket(any());
+
+		minioService.ensureBuckets();
+
+		verify(minioClient, times(4)).setBucketPolicy(any());
+	}
+
+	@Test
+	void ensureBuckets_does_not_hide_a_real_storage_error() throws Exception {
+		ErrorResponse response = mock(ErrorResponse.class);
+		ErrorResponseException failure = mock(ErrorResponseException.class);
+		when(response.code()).thenReturn("AccessDenied");
+		when(failure.errorResponse()).thenReturn(response);
+		doThrow(failure).when(minioClient).makeBucket(any());
+
+		assertThatThrownBy(minioService::ensureBuckets).isInstanceOf(IllegalStateException.class).hasCause(failure);
 	}
 }

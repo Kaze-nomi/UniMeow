@@ -13,6 +13,15 @@ import java.util.List;
 import java.util.UUID;
 
 public interface PostRepository extends JpaRepository<Post, UUID> {
+	@Query(value = "SELECT 1 FROM pg_advisory_xact_lock_shared(1300, 0)", nativeQuery = true)
+	int lockContentMutation();
+
+	@Query(value = "SELECT 1 FROM pg_advisory_xact_lock(1300, 0)", nativeQuery = true)
+	int lockContentCleanup();
+
+	@Query(value = "SELECT 1 FROM pg_advisory_xact_lock(1301, hashtext(CAST(:postId AS text)))", nativeQuery = true)
+	int lockPost(UUID postId);
+
 	Page<Post> findByAuthorIdOrderByCreatedAtDesc(UUID authorId, Pageable pageable);
 
 	List<Post> findByAuthorId(UUID authorId);

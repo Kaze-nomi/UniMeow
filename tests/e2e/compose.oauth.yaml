@@ -1,0 +1,10 @@
+services:
+  api-gateway:
+    extra_hosts:
+      - host.docker.internal:host-gateway
+    environment:
+      GOOGLE_CLIENT_ID: synthetic-e2e-client
+      GOOGLE_CLIENT_SECRET: synthetic-e2e-secret
+      SPRING_SECURITY_OAUTH2_CLIENT_PROVIDER_GOOGLE_AUTHORIZATION_URI: http://localhost:18080/authorize
+      SPRING_SECURITY_OAUTH2_CLIENT_PROVIDER_GOOGLE_TOKEN_URI: http://host.docker.internal:18080/token
+      SPRING_SECURITY_OAUTH2_CLIENT_PROVIDER_GOOGLE_USER_INFO_URI: http://host.docker.internal:18080/userinfo

@@ -43,3 +43,11 @@ management:
     export:
       prometheus:
         enabled: true
+
+logging:
+  structured:
+    format:
+      console: logstash
+    json:
+      add:
+        service: ${spring.application.name}

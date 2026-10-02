@@ -39,8 +39,12 @@ public class GraphQlExceptionAdvice {
 		String description = status.getDescription();
 
 		if (grpc == Status.Code.INTERNAL || grpc == Status.Code.UNAVAILABLE || grpc == Status.Code.UNKNOWN) {
-			log.warn("Upstream gRPC transport error on {}: code={} description={}",
-					env.getField() != null ? env.getField().getName() : "?", grpc, description, ex);
+			log.atWarn().addKeyValue("event", "graphql_upstream_failed")
+					.addKeyValue("executionId", env.getExecutionId() != null ? env.getExecutionId().toString() : null)
+					.addKeyValue("operationName",
+							env.getOperationDefinition() != null ? env.getOperationDefinition().getName() : null)
+					.addKeyValue("field", env.getField() != null ? env.getField().getName() : null)
+					.addKeyValue("status", grpc.name()).setCause(ex).log("Upstream gRPC transport error");
 		}
 
 		String msg = (description != null && !description.isBlank()) ? description : defaultMessage(grpc);
@@ -61,6 +65,12 @@ public class GraphQlExceptionAdvice {
 
 	@GraphQlExceptionHandler(Exception.class)
 	public GraphQLError handleAny(Exception ex, DataFetchingEnvironment env) {
+		log.atError().addKeyValue("event", "graphql_resolver_failed")
+				.addKeyValue("executionId", env.getExecutionId() != null ? env.getExecutionId().toString() : null)
+				.addKeyValue("operationName",
+						env.getOperationDefinition() != null ? env.getOperationDefinition().getName() : null)
+				.addKeyValue("field", env.getField() != null ? env.getField().getName() : null)
+				.addKeyValue("status", "INTERNAL_ERROR").setCause(ex).log("GraphQL resolver failed");
 		return build(env, "Internal error", ErrorType.INTERNAL_ERROR, 500, "INTERNAL_ERROR", null);
 	}
 

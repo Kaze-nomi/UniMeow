@@ -41,63 +41,6 @@ class FeedRedisRepositoryTest {
 	FeedRedisRepository feedRedisRepository;
 
 	@Test
-	void addPostToAuthorFeed_adds_post_with_score() {
-		when(redis.opsForZSet()).thenReturn(zSetOps);
-
-		feedRedisRepository.addPostToAuthorFeed("author-123", "post-456", 1000.0);
-
-		verify(zSetOps).add("feed:author:author-123", "post-456", 1000.0);
-	}
-
-	@Test
-	void addPostToUserFeed_adds_post_with_score() {
-		when(redis.opsForZSet()).thenReturn(zSetOps);
-
-		feedRedisRepository.addPostToUserFeed("user-123", "post-456", 3000.0);
-
-		verify(zSetOps).add("feed:user:user-123", "post-456", 3000.0);
-	}
-
-	@Test
-	void removePostFromAuthorFeed_removes_post() {
-		when(redis.opsForZSet()).thenReturn(zSetOps);
-
-		feedRedisRepository.removePostFromAuthorFeed("author-123", "post-456");
-
-		verify(zSetOps).remove("feed:author:author-123", "post-456");
-	}
-
-	@Test
-	void trimAuthorFeed_removes_excess_posts() {
-		when(redis.opsForZSet()).thenReturn(zSetOps);
-		when(zSetOps.zCard("feed:author:author-123")).thenReturn(1500L);
-
-		feedRedisRepository.trimAuthorFeed("author-123", 1000);
-
-		verify(zSetOps).removeRange("feed:author:author-123", 0, 499);
-	}
-
-	@Test
-	void trimAuthorFeed_does_nothing_when_feed_is_within_limit() {
-		when(redis.opsForZSet()).thenReturn(zSetOps);
-		when(zSetOps.zCard("feed:author:author-123")).thenReturn(500L);
-
-		feedRedisRepository.trimAuthorFeed("author-123", 1000);
-
-		verify(zSetOps, never()).removeRange(any(), anyLong(), anyLong());
-	}
-
-	@Test
-	void trimUserFeed_removes_excess_posts() {
-		when(redis.opsForZSet()).thenReturn(zSetOps);
-		when(zSetOps.zCard("feed:user:user-123")).thenReturn(1200L);
-
-		feedRedisRepository.trimUserFeed("user-123", 1000);
-
-		verify(zSetOps).removeRange("feed:user:user-123", 0, 199);
-	}
-
-	@Test
 	void findFollowers_returns_set_of_followers() {
 		when(redis.opsForSet()).thenReturn(setOps);
 		when(setOps.members("feed:followers:author-123")).thenReturn(Set.of("follower-1", "follower-2"));
@@ -115,24 +58,6 @@ class FeedRedisRepositoryTest {
 		Set<String> result = feedRedisRepository.findFollowers("author-123");
 
 		assertThat(result).isEmpty();
-	}
-
-	@Test
-	void addFollowingRelation_adds_to_followers_set() {
-		when(redis.opsForSet()).thenReturn(setOps);
-
-		feedRedisRepository.addFollowingRelation("subscriber-123", "target-456");
-
-		verify(setOps).add("feed:followers:target-456", "subscriber-123");
-	}
-
-	@Test
-	void removeFollowingRelation_removes_from_followers_set() {
-		when(redis.opsForSet()).thenReturn(setOps);
-
-		feedRedisRepository.removeFollowingRelation("subscriber-123", "target-456");
-
-		verify(setOps).remove("feed:followers:target-456", "subscriber-123");
 	}
 
 	@Test
@@ -219,44 +144,6 @@ class FeedRedisRepositoryTest {
 	}
 
 	@Test
-	void addPostToPopularFeed_adds_with_likes_score() {
-		when(redis.opsForZSet()).thenReturn(zSetOps);
-
-		feedRedisRepository.addPostToPopularFeed("post-1", 42.0);
-
-		verify(zSetOps).add("feed:popular", "post-1", 42.0);
-	}
-
-	@Test
-	void removePostFromPopularFeed_removes_post() {
-		when(redis.opsForZSet()).thenReturn(zSetOps);
-
-		feedRedisRepository.removePostFromPopularFeed("post-1");
-
-		verify(zSetOps).remove("feed:popular", "post-1");
-	}
-
-	@Test
-	void trimPopularFeed_removes_excess_posts() {
-		when(redis.opsForZSet()).thenReturn(zSetOps);
-		when(zSetOps.zCard("feed:popular")).thenReturn(1500L);
-
-		feedRedisRepository.trimPopularFeed(1000);
-
-		verify(zSetOps).removeRange("feed:popular", 0, 499);
-	}
-
-	@Test
-	void trimPopularFeed_does_nothing_when_within_limit() {
-		when(redis.opsForZSet()).thenReturn(zSetOps);
-		when(zSetOps.zCard("feed:popular")).thenReturn(500L);
-
-		feedRedisRepository.trimPopularFeed(1000);
-
-		verify(zSetOps, never()).removeRange(any(), anyLong(), anyLong());
-	}
-
-	@Test
 	void countPopular_returns_count() {
 		when(redis.opsForZSet()).thenReturn(zSetOps);
 		when(zSetOps.zCard("feed:popular")).thenReturn(55L);
@@ -274,24 +161,6 @@ class FeedRedisRepositoryTest {
 		long result = feedRedisRepository.countPopular();
 
 		assertThat(result).isZero();
-	}
-
-	@Test
-	void addPostToUniversityTopicFeed_uses_topic_key() {
-		when(redis.opsForZSet()).thenReturn(zSetOps);
-
-		feedRedisRepository.addPostToUniversityTopicFeed(7L, 5L, "post-1", 123.0);
-
-		verify(zSetOps).add("feed:uni:7:topic:5", "post-1", 123.0);
-	}
-
-	@Test
-	void addPostToUniversitySubtopicPopularFeed_uses_subtopic_popular_key() {
-		when(redis.opsForZSet()).thenReturn(zSetOps);
-
-		feedRedisRepository.addPostToUniversitySubtopicPopularFeed(7L, 11L, "post-1", 9.0);
-
-		verify(zSetOps).add("feed:uni:7:subtopic:11:popular", "post-1", 9.0);
 	}
 
 	@Test

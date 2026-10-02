@@ -4,6 +4,8 @@ import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.ZSetOperations;
 import org.springframework.data.redis.connection.zset.Aggregate;
 import org.springframework.stereotype.Repository;
+import org.springframework.data.redis.core.script.DefaultRedisScript;
+import uni.feed.events.EventEnvelope;
 
 import java.time.Duration;
 import java.util.Collection;
@@ -15,10 +17,96 @@ import java.util.Set;
 @Repository
 public class FeedRedisRepository {
 
+	private static final DefaultRedisScript<Long> APPLY_POST = new DefaultRedisScript<>("""
+			if redis.call('EXISTS', KEYS[2], KEYS[3]) > 0 then return 0 end
+			local allowed = true
+			if ARGV[4] ~= 'remove' and redis.call('EXISTS', KEYS[4], KEYS[5], KEYS[6]) > 0 then
+			    allowed = false
+			end
+			if ARGV[5] ~= '' and ARGV[7] ~= 'any' then
+			    local following = redis.call('SISMEMBER', KEYS[7], ARGV[5]) == 1
+			    if (ARGV[4] == 'remove' and following) or (ARGV[4] ~= 'remove' and not following) then
+			        allowed = false
+			    end
+			end
+			if allowed then
+			    if ARGV[4] == 'remove' then
+			        redis.call('ZREM', KEYS[1], ARGV[1])
+			    elseif ARGV[4] == 'create' then
+			        redis.call('ZADD', KEYS[1], 'NX', ARGV[2], ARGV[1])
+			    else
+			        redis.call('ZADD', KEYS[1], ARGV[2], ARGV[1])
+			    end
+			    if tonumber(ARGV[6]) > 0 then
+			        redis.call('ZREMRANGEBYRANK', KEYS[1], 0, -tonumber(ARGV[6]) - 1)
+			    end
+			end
+			redis.call('SET', KEYS[2], '1', 'EX', ARGV[3])
+			return 1
+			""", Long.class);
+
+	private static final DefaultRedisScript<Long> APPLY_RELATION = new DefaultRedisScript<>("""
+			if redis.call('EXISTS', KEYS[1], KEYS[2]) > 0 then return 0 end
+			if ARGV[3] == 'remove' then
+			    redis.call('SREM', KEYS[3], ARGV[1])
+			    redis.call('SREM', KEYS[4], ARGV[2])
+			elseif redis.call('EXISTS', KEYS[5], KEYS[6]) == 0 then
+			    redis.call('SADD', KEYS[3], ARGV[1])
+			    redis.call('SADD', KEYS[4], ARGV[2])
+			end
+			redis.call('SET', KEYS[1], '1', 'EX', ARGV[4])
+			return 1
+			""", Long.class);
+
 	private final StringRedisTemplate redis;
 
 	public FeedRedisRepository(StringRedisTemplate redis) {
 		this.redis = redis;
+	}
+
+	public void applyPostProjection(EventEnvelope event, String feedKey, String postId, String authorId,
+			String followerId, double score, long maxSize, Duration ttl) {
+		String action = switch (event.eventType()) {
+			case "POST_DELETED", "USER_UNFOLLOWED" -> "remove";
+			case "POST_CREATED", "USER_FOLLOWED" -> "create";
+			default -> "update";
+		};
+		String receipt = "feed:receipt:" + event.eventId() + ":" + feedKey + ":" + postId;
+		Long result = redis.execute(APPLY_POST,
+				List.of(feedKey, receipt, processedEventKey(event.eventId()), deletedPostKey(postId),
+						deletedUserKey(authorId), deletedUserKey(followerId), followersKey(authorId)),
+				postId, Double.toString(score), Long.toString(ttl.toSeconds()), action,
+				followerId == null ? "" : followerId, Long.toString(maxSize),
+				"POST_DELETED".equals(event.eventType()) ? "any" : "relation");
+		if (result == null)
+			throw new IllegalStateException("Feed projection was not applied");
+	}
+
+	public void applyFollowingEvent(EventEnvelope event, String subscriberId, String targetUserId, Duration ttl) {
+		Long result = redis.execute(APPLY_RELATION,
+				List.of("feed:receipt:" + event.eventId() + ":relation", processedEventKey(event.eventId()),
+						followersKey(targetUserId), followingKey(subscriberId), deletedUserKey(subscriberId),
+						deletedUserKey(targetUserId)),
+				subscriberId, targetUserId, "USER_UNFOLLOWED".equals(event.eventType()) ? "remove" : "add",
+				Long.toString(ttl.toSeconds()));
+		if (result == null)
+			throw new IllegalStateException("Following relation was not applied");
+	}
+
+	public void markPostDeleted(String postId, Duration ttl) {
+		redis.opsForValue().set(deletedPostKey(postId), "1", ttl);
+	}
+
+	public void markUserDeleted(String userId, Duration ttl) {
+		redis.opsForValue().set(deletedUserKey(userId), "1", ttl);
+	}
+
+	private static String deletedPostKey(String postId) {
+		return "feed:deleted:post:" + postId;
+	}
+
+	private static String deletedUserKey(String userId) {
+		return "feed:deleted:user:" + (userId == null ? "" : userId);
 	}
 
 	public List<String> findPopularPostIdsByCursor(long minLikesScore, int size) {
@@ -54,139 +142,6 @@ public class FeedRedisRepository {
 	public long countPopular() {
 		Long count = redis.opsForZSet().zCard(popularFeedKey());
 		return count == null ? 0L : count;
-	}
-
-	public void addPostToAuthorFeed(String authorId, String postId, double score) {
-		redis.opsForZSet().add(authorFeedKey(authorId), postId, score);
-	}
-
-	public void addPostToUserFeed(String userId, String postId, double score) {
-		redis.opsForZSet().add(userFeedKey(userId), postId, score);
-	}
-
-	public void addPostToPopularFeed(String postId, double likesCount) {
-		redis.opsForZSet().add(popularFeedKey(), postId, likesCount);
-	}
-
-	public void addPostToOutsideFeed(String postId, double score) {
-		redis.opsForZSet().add(outsideFeedKey(), postId, score);
-	}
-
-	public void addPostToOutsidePopularFeed(String postId, double likesCount) {
-		redis.opsForZSet().add(outsidePopularFeedKey(), postId, likesCount);
-	}
-
-	public void addPostToUniversityFeed(long universityId, String postId, double score) {
-		redis.opsForZSet().add(universityFeedKey(universityId), postId, score);
-	}
-
-	public void addPostToUniversityTopicFeed(long universityId, long topicId, String postId, double score) {
-		redis.opsForZSet().add(universityTopicFeedKey(universityId, topicId), postId, score);
-	}
-
-	public void addPostToUniversitySubtopicFeed(long universityId, long subtopicId, String postId, double score) {
-		redis.opsForZSet().add(universitySubtopicFeedKey(universityId, subtopicId), postId, score);
-	}
-
-	public void addPostToUniversityPopularFeed(long universityId, String postId, double likesCount) {
-		redis.opsForZSet().add(universityPopularFeedKey(universityId), postId, likesCount);
-	}
-
-	public void addPostToUniversityTopicPopularFeed(long universityId, long topicId, String postId, double likesCount) {
-		redis.opsForZSet().add(universityTopicPopularFeedKey(universityId, topicId), postId, likesCount);
-	}
-
-	public void addPostToUniversitySubtopicPopularFeed(long universityId, long subtopicId, String postId,
-			double likesCount) {
-		redis.opsForZSet().add(universitySubtopicPopularFeedKey(universityId, subtopicId), postId, likesCount);
-	}
-
-	public void incrementPopularScore(String postId, double delta) {
-		redis.opsForZSet().incrementScore(popularFeedKey(), postId, delta);
-	}
-
-	public void removePostFromAuthorFeed(String authorId, String postId) {
-		redis.opsForZSet().remove(authorFeedKey(authorId), postId);
-	}
-
-	public void removePostFromPopularFeed(String postId) {
-		redis.opsForZSet().remove(popularFeedKey(), postId);
-	}
-
-	public void removePostFromOutsideFeed(String postId) {
-		redis.opsForZSet().remove(outsideFeedKey(), postId);
-	}
-
-	public void removePostFromOutsidePopularFeed(String postId) {
-		redis.opsForZSet().remove(outsidePopularFeedKey(), postId);
-	}
-
-	public void removePostFromUniversityFeed(long universityId, String postId) {
-		redis.opsForZSet().remove(universityFeedKey(universityId), postId);
-	}
-
-	public void removePostFromUniversityTopicFeed(long universityId, long topicId, String postId) {
-		redis.opsForZSet().remove(universityTopicFeedKey(universityId, topicId), postId);
-	}
-
-	public void removePostFromUniversitySubtopicFeed(long universityId, long subtopicId, String postId) {
-		redis.opsForZSet().remove(universitySubtopicFeedKey(universityId, subtopicId), postId);
-	}
-
-	public void removePostFromUniversityPopularFeed(long universityId, String postId) {
-		redis.opsForZSet().remove(universityPopularFeedKey(universityId), postId);
-	}
-
-	public void removePostFromUniversityTopicPopularFeed(long universityId, long topicId, String postId) {
-		redis.opsForZSet().remove(universityTopicPopularFeedKey(universityId, topicId), postId);
-	}
-
-	public void removePostFromUniversitySubtopicPopularFeed(long universityId, long subtopicId, String postId) {
-		redis.opsForZSet().remove(universitySubtopicPopularFeedKey(universityId, subtopicId), postId);
-	}
-
-	public void trimAuthorFeed(String authorId, long maxSize) {
-		trim(authorFeedKey(authorId), maxSize);
-	}
-
-	public void trimUserFeed(String userId, long maxSize) {
-		trim(userFeedKey(userId), maxSize);
-	}
-
-	public void trimPopularFeed(long maxSize) {
-		trim(popularFeedKey(), maxSize);
-	}
-
-	public void trimOutsideFeed(long maxSize) {
-		trim(outsideFeedKey(), maxSize);
-	}
-
-	public void trimOutsidePopularFeed(long maxSize) {
-		trim(outsidePopularFeedKey(), maxSize);
-	}
-
-	public void trimUniversityFeed(long universityId, long maxSize) {
-		trim(universityFeedKey(universityId), maxSize);
-	}
-
-	public void trimUniversityTopicFeed(long universityId, long topicId, long maxSize) {
-		trim(universityTopicFeedKey(universityId, topicId), maxSize);
-	}
-
-	public void trimUniversitySubtopicFeed(long universityId, long subtopicId, long maxSize) {
-		trim(universitySubtopicFeedKey(universityId, subtopicId), maxSize);
-	}
-
-	public void trimUniversityPopularFeed(long universityId, long maxSize) {
-		trim(universityPopularFeedKey(universityId), maxSize);
-	}
-
-	public void trimUniversityTopicPopularFeed(long universityId, long topicId, long maxSize) {
-		trim(universityTopicPopularFeedKey(universityId, topicId), maxSize);
-	}
-
-	public void trimUniversitySubtopicPopularFeed(long universityId, long subtopicId, long maxSize) {
-		trim(universitySubtopicPopularFeedKey(universityId, subtopicId), maxSize);
 	}
 
 	public Map<String, Double> findUniversityFeedPostsWithScoresByCursor(long universityId, long maxScore, int size) {
@@ -282,16 +237,6 @@ public class FeedRedisRepository {
 		return followers == null ? Set.of() : followers;
 	}
 
-	public void addFollowingRelation(String subscriberId, String targetUserId) {
-		redis.opsForSet().add(followersKey(targetUserId), subscriberId);
-		redis.opsForSet().add(followingKey(subscriberId), targetUserId);
-	}
-
-	public void removeFollowingRelation(String subscriberId, String targetUserId) {
-		redis.opsForSet().remove(followersKey(targetUserId), subscriberId);
-		redis.opsForSet().remove(followingKey(subscriberId), targetUserId);
-	}
-
 	public void removeUserFromAllFeeds(String userId) {
 		Map<String, Double> authoredPosts = findLatestAuthorPostsWithScores(userId, 0, -1);
 		Set<String> followers = redis.opsForSet().members(followersKey(userId));
@@ -328,13 +273,6 @@ public class FeedRedisRepository {
 
 	public void markEventProcessed(String eventId, Duration ttl) {
 		redis.opsForValue().set(processedEventKey(eventId), "1", ttl);
-	}
-
-	private void trim(String key, long maxSize) {
-		Long size = redis.opsForZSet().zCard(key);
-		if (size != null && size > maxSize) {
-			redis.opsForZSet().removeRange(key, 0, size - maxSize - 1);
-		}
 	}
 
 	private static Map<String, Double> tuplesToMap(Set<ZSetOperations.TypedTuple<String>> tuples) {

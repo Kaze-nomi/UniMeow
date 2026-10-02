@@ -49,6 +49,7 @@ public class AdministrationService {
 		if (clientRequestId == null || clientRequestId.isBlank()) {
 			return false;
 		}
+		idempotencyKeyRepository.lockRequest(clientRequestId);
 		return idempotencyKeyRepository.findById(clientRequestId).isPresent();
 	}
 

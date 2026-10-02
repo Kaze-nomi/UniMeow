@@ -41,10 +41,13 @@ public class GrpcDeadlineInterceptor implements ClientInterceptor {
 					public void onClose(Status status, Metadata trailers) {
 						long durMs = (System.nanoTime() - start) / 1_000_000L;
 						if (!status.isOk()) {
-							log.warn("gRPC call {} failed in {}ms: code={} desc={}", methodName, durMs,
-									status.getCode(), status.getDescription());
+							log.atWarn().addKeyValue("event", "grpc_call_failed").addKeyValue("method", methodName)
+									.addKeyValue("status", status.getCode().name()).addKeyValue("durationMs", durMs)
+									.setCause(status.getCause()).log("gRPC call failed");
 						} else if (durMs >= slowThresholdMs) {
-							log.warn("gRPC slow call {} took {}ms", methodName, durMs);
+							log.atWarn().addKeyValue("event", "grpc_call_slow").addKeyValue("method", methodName)
+									.addKeyValue("status", status.getCode().name()).addKeyValue("durationMs", durMs)
+									.log("Slow gRPC call");
 						}
 						super.onClose(status, trailers);
 					}

@@ -4,13 +4,14 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.test.util.ReflectionTestUtils;
 import uni.notification.entity.Notification;
-import uni.notification.entity.ProcessedEvent;
 import uni.notification.repository.NotificationRepository;
 import uni.notification.repository.ProcessedEventRepository;
 
@@ -62,7 +63,7 @@ class NotificationEventServiceTest {
 
 	@Test
 	void processRaw_skips_when_already_processed() {
-		when(processedEventRepository.existsByEventId(EVENT_ID)).thenReturn(true);
+		when(processedEventRepository.claim(eq(EVENT_ID), any())).thenReturn(0);
 
 		notificationEventService.processRaw(event("POST_CREATED", """
 				{"postId":"%s","authorId":"%s","mentionedUserIds":["%s"]}
@@ -72,33 +73,54 @@ class NotificationEventServiceTest {
 	}
 
 	@Test
-	void processRaw_skips_and_logs_when_event_id_blank() {
+	void processRaw_rejects_event_id_blank() {
 		String json = """
 				{"eventId":"  ","eventType":"POST_CREATED","occurredAt":"%s","payload":{}}
 				""".formatted(Instant.now());
 
-		notificationEventService.processRaw(json);
+		assertThatThrownBy(() -> notificationEventService.processRaw(json))
+				.isInstanceOf(IllegalArgumentException.class);
 
-		verify(notificationRepository, never()).saveAll(any());
-		verify(processedEventRepository, never()).save(any());
+		verifyNoInteractions(notificationRepository, processedEventRepository);
 	}
 
 	@Test
-	void processRaw_saves_processed_event_after_handling() {
-		when(processedEventRepository.existsByEventId(EVENT_ID)).thenReturn(false);
+	void processRaw_claims_event_before_writing_effects() {
+		when(processedEventRepository.claim(eq(EVENT_ID), any())).thenReturn(1);
 
 		notificationEventService.processRaw(event("USER_FOLLOWED", """
 				{"subscriberId":"%s","targetUserId":"%s"}
 				""".formatted(USER_A, USER_B)));
 
-		ArgumentCaptor<ProcessedEvent> captor = ArgumentCaptor.forClass(ProcessedEvent.class);
-		verify(processedEventRepository).save(captor.capture());
-		assertThat(captor.getValue().getEventId()).isEqualTo(EVENT_ID);
+		var order = inOrder(processedEventRepository, notificationRepository);
+		order.verify(processedEventRepository).claim(eq(EVENT_ID), any());
+		order.verify(notificationRepository).saveAll(any());
+	}
+
+	@ParameterizedTest
+	@ValueSource(strings = {"a", "\uD83D\uDE00"})
+	void processRaw_rejects_event_id_over_database_limit(String character) {
+		String raw = eventWithId(character.repeat(101), "POST_CREATED", "{}");
+
+		assertThatThrownBy(() -> notificationEventService.processRaw(raw)).isInstanceOf(IllegalArgumentException.class)
+				.hasMessageContaining("100");
+
+		verifyNoInteractions(notificationRepository, processedEventRepository);
+	}
+
+	@ParameterizedTest
+	@ValueSource(strings = {"a", "\uD83D\uDE00"})
+	void processRaw_accepts_event_id_at_database_limit(String character) {
+		String eventId = character.repeat(100);
+
+		notificationEventService.processRaw(eventWithId(eventId, "POST_CREATED", "{}"));
+
+		verify(processedEventRepository).claim(eq(eventId), any());
 	}
 
 	@Test
 	void onPostCreated_creates_mention_notification_for_each_mentioned_user() {
-		when(processedEventRepository.existsByEventId(EVENT_ID)).thenReturn(false);
+		when(processedEventRepository.claim(eq(EVENT_ID), any())).thenReturn(1);
 
 		notificationEventService.processRaw(event("POST_CREATED", """
 				{"postId":"%s","authorId":"%s","mentionedUserIds":["%s","%s"]}
@@ -108,13 +130,13 @@ class NotificationEventServiceTest {
 		verify(notificationRepository).saveAll(captor.capture());
 		List<Notification> saved = captor.getValue();
 		assertThat(saved).hasSize(2);
-		assertThat(saved).allMatch(n -> n.getType().equals("MENTION_IN_POST"));
-		assertThat(saved).allMatch(n -> n.getEntityId().equals(POST_ID));
+		assertThat(saved).allMatch(n -> "MENTION_IN_POST".equals(n.getType()));
+		assertThat(saved).allMatch(n -> POST_ID.equals(n.getEntityId()));
 	}
 
 	@Test
 	void onPostCreated_deduplicates_repeated_mentioned_user_ids_in_same_event() {
-		when(processedEventRepository.existsByEventId(EVENT_ID)).thenReturn(false);
+		when(processedEventRepository.claim(eq(EVENT_ID), any())).thenReturn(1);
 
 		notificationEventService.processRaw(event("POST_CREATED", """
 				{"postId":"%s","authorId":"%s","mentionedUserIds":["%s","%s"]}
@@ -128,7 +150,7 @@ class NotificationEventServiceTest {
 
 	@Test
 	void onPostCreated_skips_mention_if_author_is_mentioned() {
-		when(processedEventRepository.existsByEventId(EVENT_ID)).thenReturn(false);
+		when(processedEventRepository.claim(eq(EVENT_ID), any())).thenReturn(1);
 
 		notificationEventService.processRaw(event("POST_CREATED", """
 				{"postId":"%s","authorId":"%s","mentionedUserIds":["%s"]}
@@ -139,7 +161,7 @@ class NotificationEventServiceTest {
 
 	@Test
 	void onPostCreated_produces_no_notifications_when_no_mentions() {
-		when(processedEventRepository.existsByEventId(EVENT_ID)).thenReturn(false);
+		when(processedEventRepository.claim(eq(EVENT_ID), any())).thenReturn(1);
 
 		notificationEventService.processRaw(event("POST_CREATED", """
 				{"postId":"%s","authorId":"%s","mentionedUserIds":[]}
@@ -150,7 +172,7 @@ class NotificationEventServiceTest {
 
 	@Test
 	void onPostLiked_creates_like_notification_for_author() {
-		when(processedEventRepository.existsByEventId(EVENT_ID)).thenReturn(false);
+		when(processedEventRepository.claim(eq(EVENT_ID), any())).thenReturn(1);
 
 		notificationEventService.processRaw(event("POST_LIKED", """
 				{"postId":"%s","authorId":"%s","actorId":"%s"}
@@ -166,7 +188,7 @@ class NotificationEventServiceTest {
 
 	@Test
 	void onPostLiked_merges_existing_like_notification_in_dedup_window() {
-		when(processedEventRepository.existsByEventId(EVENT_ID)).thenReturn(false);
+		when(processedEventRepository.claim(eq(EVENT_ID), any())).thenReturn(1);
 		Notification existing = Notification.builder().id(UUID.randomUUID()).userId(UUID.fromString(USER_A))
 				.actorId(UUID.fromString(USER_B)).type("LIKE_POST").entityId(POST_ID).entityType("POST").isRead(true)
 				.createdAt(LocalDateTime.now().minusDays(1)).build();
@@ -187,7 +209,7 @@ class NotificationEventServiceTest {
 
 	@Test
 	void onPostLiked_skips_self_like() {
-		when(processedEventRepository.existsByEventId(EVENT_ID)).thenReturn(false);
+		when(processedEventRepository.claim(eq(EVENT_ID), any())).thenReturn(1);
 
 		notificationEventService.processRaw(event("POST_LIKED", """
 				{"postId":"%s","authorId":"%s","actorId":"%s"}
@@ -198,7 +220,7 @@ class NotificationEventServiceTest {
 
 	@Test
 	void onCommentCreated_notifies_post_author_when_no_parent() {
-		when(processedEventRepository.existsByEventId(EVENT_ID)).thenReturn(false);
+		when(processedEventRepository.claim(eq(EVENT_ID), any())).thenReturn(1);
 
 		notificationEventService.processRaw(event("COMMENT_CREATED", """
 				{"commentId":"%s","postId":"%s","authorId":"%s","postAuthorId":"%s"}
@@ -213,8 +235,8 @@ class NotificationEventServiceTest {
 
 	@Test
 	void onCommentCreated_merges_duplicate_comment_notification_with_new_event_id() {
-		when(processedEventRepository.existsByEventId("event-001")).thenReturn(false);
-		when(processedEventRepository.existsByEventId("event-002")).thenReturn(false);
+		when(processedEventRepository.claim(eq("event-001"), any())).thenReturn(1);
+		when(processedEventRepository.claim(eq("event-002"), any())).thenReturn(1);
 
 		notificationEventService.processRaw(eventWithId("event-001", "COMMENT_CREATED", """
 				{"commentId":"%s","postId":"%s","authorId":"%s","postAuthorId":"%s"}
@@ -239,7 +261,7 @@ class NotificationEventServiceTest {
 
 	@Test
 	void onCommentCreated_notifies_parent_author_on_reply() {
-		when(processedEventRepository.existsByEventId(EVENT_ID)).thenReturn(false);
+		when(processedEventRepository.claim(eq(EVENT_ID), any())).thenReturn(1);
 
 		notificationEventService.processRaw(event("COMMENT_CREATED", """
 				{"commentId":"%s","postId":"%s","authorId":"%s","postAuthorId":"%s",
@@ -255,7 +277,7 @@ class NotificationEventServiceTest {
 
 	@Test
 	void onCommentCreated_skips_comment_on_own_post() {
-		when(processedEventRepository.existsByEventId(EVENT_ID)).thenReturn(false);
+		when(processedEventRepository.claim(eq(EVENT_ID), any())).thenReturn(1);
 
 		notificationEventService.processRaw(event("COMMENT_CREATED", """
 				{"commentId":"%s","postId":"%s","authorId":"%s","postAuthorId":"%s"}
@@ -266,7 +288,7 @@ class NotificationEventServiceTest {
 
 	@Test
 	void onCommentCreated_adds_mention_and_comment_notification_without_duplicating_already_notified_user() {
-		when(processedEventRepository.existsByEventId(EVENT_ID)).thenReturn(false);
+		when(processedEventRepository.claim(eq(EVENT_ID), any())).thenReturn(1);
 
 		notificationEventService.processRaw(event("COMMENT_CREATED", """
 				{"commentId":"%s","postId":"%s","authorId":"%s","postAuthorId":"%s",
@@ -278,14 +300,14 @@ class NotificationEventServiceTest {
 		List<Notification> saved = captor.getValue();
 		assertThat(saved).hasSize(2);
 		assertThat(saved)
-				.anyMatch(n -> n.getType().equals("COMMENT_ON_POST") && n.getUserId().toString().equals(USER_A));
+				.anyMatch(n -> "COMMENT_ON_POST".equals(n.getType()) && USER_A.equals(n.getUserId().toString()));
 		assertThat(saved)
-				.anyMatch(n -> n.getType().equals("MENTION_IN_COMMENT") && n.getUserId().toString().equals(USER_C));
+				.anyMatch(n -> "MENTION_IN_COMMENT".equals(n.getType()) && USER_C.equals(n.getUserId().toString()));
 	}
 
 	@Test
 	void onCommentLiked_creates_like_notification_for_comment_author() {
-		when(processedEventRepository.existsByEventId(EVENT_ID)).thenReturn(false);
+		when(processedEventRepository.claim(eq(EVENT_ID), any())).thenReturn(1);
 
 		notificationEventService.processRaw(event("COMMENT_LIKED", """
 				{"commentId":"%s","commentAuthorId":"%s","actorId":"%s"}
@@ -301,7 +323,7 @@ class NotificationEventServiceTest {
 
 	@Test
 	void onCommentLiked_skips_self_like() {
-		when(processedEventRepository.existsByEventId(EVENT_ID)).thenReturn(false);
+		when(processedEventRepository.claim(eq(EVENT_ID), any())).thenReturn(1);
 
 		notificationEventService.processRaw(event("COMMENT_LIKED", """
 				{"commentId":"%s","commentAuthorId":"%s","actorId":"%s"}
@@ -312,7 +334,7 @@ class NotificationEventServiceTest {
 
 	@Test
 	void onUserFollowed_creates_follow_notification() {
-		when(processedEventRepository.existsByEventId(EVENT_ID)).thenReturn(false);
+		when(processedEventRepository.claim(eq(EVENT_ID), any())).thenReturn(1);
 
 		notificationEventService.processRaw(event("USER_FOLLOWED", """
 				{"subscriberId":"%s","targetUserId":"%s"}
@@ -328,7 +350,7 @@ class NotificationEventServiceTest {
 
 	@Test
 	void onUserFollowed_skips_self_follow() {
-		when(processedEventRepository.existsByEventId(EVENT_ID)).thenReturn(false);
+		when(processedEventRepository.claim(eq(EVENT_ID), any())).thenReturn(1);
 
 		notificationEventService.processRaw(event("USER_FOLLOWED", """
 				{"subscriberId":"%s","targetUserId":"%s"}
@@ -339,7 +361,7 @@ class NotificationEventServiceTest {
 
 	@Test
 	void onAdminGranted_creates_admin_granted_notification() {
-		when(processedEventRepository.existsByEventId(EVENT_ID)).thenReturn(false);
+		when(processedEventRepository.claim(eq(EVENT_ID), any())).thenReturn(1);
 
 		notificationEventService.processRaw(event("ADMIN_GRANTED", """
 				{"targetUserId":"%s","granterId":"%s"}
@@ -352,7 +374,7 @@ class NotificationEventServiceTest {
 
 	@Test
 	void onUserBanned_creates_banned_notification() {
-		when(processedEventRepository.existsByEventId(EVENT_ID)).thenReturn(false);
+		when(processedEventRepository.claim(eq(EVENT_ID), any())).thenReturn(1);
 
 		notificationEventService.processRaw(event("USER_BANNED", """
 				{"targetUserId":"%s","moderatorId":"%s"}
@@ -365,14 +387,35 @@ class NotificationEventServiceTest {
 
 	@Test
 	void processRaw_ignores_unknown_event_type() {
-		when(processedEventRepository.existsByEventId(EVENT_ID)).thenReturn(false);
+		when(processedEventRepository.claim(eq(EVENT_ID), any())).thenReturn(1);
 
 		notificationEventService.processRaw(event("UNKNOWN_TYPE", """
 				{"foo":"bar"}
 				"""));
 
 		verify(notificationRepository, never()).saveAll(any());
-		verify(processedEventRepository).save(any());
+		verify(processedEventRepository).claim(eq(EVENT_ID), any());
+	}
+
+	@Test
+	void repeated_user_deletion_only_applies_effect_once() {
+		when(processedEventRepository.claim(eq(EVENT_ID), any())).thenReturn(1, 0);
+		String raw = event("USER_DELETED", "{\"userId\":\"" + USER_A + "\"}");
+
+		notificationEventService.processRaw(raw);
+		notificationEventService.processRaw(raw);
+
+		verify(notificationRepository).deleteAllForUser(UUID.fromString(USER_A), USER_A);
+	}
+
+	@Test
+	void malformed_envelope_is_rejected_before_database_access() {
+		for (String raw : List.of("null", "{}", "{\"eventId\":\"x\",\"payload\":{}}",
+				"{\"eventId\":\"x\",\"eventType\":\"POST_LIKED\"}")) {
+			assertThatThrownBy(() -> notificationEventService.processRaw(raw))
+					.isInstanceOf(IllegalArgumentException.class);
+		}
+		verifyNoInteractions(processedEventRepository, notificationRepository);
 	}
 
 	@Test

@@ -75,15 +75,19 @@ UniMeow — университетская социальная сеть с по
 
 ### Конфигурация окружения (env)
 
-Файл `.env` в корне проекта содержит два блока — PROD и DEV. Раскомментируйте нужный, второй закомментируйте, и выполните `docker compose up -d --build`. Frontend и MinIO public-URL встраиваются на этапе сборки Vite, поэтому смена окружения требует пересборки контейнера `frontend` (флаг `--build`).
+Для разработки используются `docker-compose.dev.yaml` и сохранённый в репозитории `.env.example` с тестовыми значениями. Локально и в CI задано `COMPOSE_ENV_FILES=.env.example`, отдельный `.env` не создаётся. Собственные настройки хранятся вне репозитория; путь к файлу задаётся в `COMPOSE_ENV_FILES`. После последовательной сборки образов по инструкции в [README.md](README.md) стек запускается командой `docker compose -f docker-compose.dev.yaml up -d`. На сервере Release использует `docker-compose.prod.yaml` и приватный `.env.prod`; production Compose запускает готовые образы без сборки.
+
+GitHub собирает образы без production-секретов. Серверный Compose читает `.env.prod` во время запуска и передаёт настройки контейнерам; файл остаётся на сервере и не включается в образы. Frontend читает публичные адреса из `/runtime-config.json`, который создаётся при запуске контейнера; пересборка при смене адресов не требуется.
+
+Временная OAuth-сессия Gateway хранится в общем Redis через Spring Session и истекает через 10 минут. Gateway проверяет JWT каждого запроса, не хранит авторизацию в памяти экземпляра и инвалидирует общую WebSession при logout. Refresh tokens, как и раньше, находятся в UserService.
 
 Базовые env-переменные для переключения окружения:
 
-- `APP_PUBLIC_URL` — публичный URL фронтенда / gateway (предполагается единый домен, обратный прокси раздаёт frontend и API). Из этой переменной в `docker-compose.yml` производятся:
+- `APP_PUBLIC_URL` — публичный URL фронтенда / gateway (предполагается единый домен, обратный прокси раздаёт frontend и API). Из этой переменной в Compose-файлах производятся:
   - `APP_FRONTEND_URL` для UserService — используется в email-ссылках (`MailService.frontendUrl`).
   - `APP_SECURITY_OAUTH2_SUCCESS_REDIRECT` для APIGateway — куда редиректить браузер после успешной Google OAuth2 авторизации.
-  - `VITE_API_BASE` (build-arg для frontend) — базовый URL, в который встраиваются HTTP-вызовы из `Frontend/api.js` (`/graphql`, `/api/upload`, `/api/auth/*`, `/oauth2/authorization/google`).
-- `APP_MINIO_PUBLIC_URL` — публичный URL MinIO (хранилище медиа). Используется MediaService для генерации `mediaUrl` в gRPC-ответах и frontend-сборкой через `__MINIO_PUBLIC_URL__` для отображения изображений по абсолютным ссылкам.
+  - Базовый URL API frontend, если не указан `FRONTEND_API_BASE`. Для локального запуска `FRONTEND_API_BASE=http://localhost:8082`, поскольку frontend слушает другой порт.
+- `APP_MINIO_PUBLIC_URL` — публичный URL MinIO. Используется MediaService для генерации `mediaUrl` и передаётся frontend при запуске контейнера.
 - `APP_SECURITY_SECURE_COOKIE` (default `false`) — выставляет `Secure` флаг на cookies `ACCESS_TOKEN` и `REFRESH_TOKEN`. В production с HTTPS должно быть `true`; иначе cookies не отправятся браузером по HTTP.
 - `APP_SECURITY_ALLOWED_ORIGINS` (default `http://localhost:*,null`) — список разрешённых CORS origin'ов через запятую.
 
@@ -358,7 +362,7 @@ GraphQL-запросы ленты: `trendingFeed` (рекомендации с t
 - `POST_DELETED` — удаляет пост из всех feeds.
 - `POST_LIKED` / `POST_UNLIKED` — пересчитывает trending score поста.
 - `USER_FOLLOWED` — backfill последних 100 постов автора в personal feed подписчика.
-- `USER_UNFOLLOWED` — удаляет последние 500 постов автора из personal feed подписчика.
+- `USER_UNFOLLOWED` — удаляет доступные в author feed посты автора из personal feed подписчика.
 - `USER_DELETED` — убирает подписки, связанные с аккаунтом, и чистит Redis-следы пользователя.
 - `USER_PERMANENT_BANNED` — убирает подписки, связанные с аккаунтом, и чистит Redis-следы пользователя.
 
@@ -380,14 +384,20 @@ GraphQL-запросы ленты: `trendingFeed` (рекомендации с t
 - `USER_BANNED` — уведомление о блокировке.
 - `USER_DELETED` и `USER_PERMANENT_BANNED` — очистка уведомлений, связанных с аккаунтом.
 
+Outbox остаётся частью UserService и PostService. Блокировка PostgreSQL выбирает один publisher среди экземпляров сервиса. Он открывает штатную транзакцию Kafka, перепроверяет блокировку БД, читает до 100 событий по `createdAt, id` и отправляет их последовательно. Все экземпляры одного сервиса используют одинаковый Kafka transactional ID; `DefaultTransactionIdSuffixStrategy(1)` сохраняет его при пересоздании отправителя. Поэтому Kafka блокирует устаревшего отправителя при смене владельца (fencing).
+
+Только после успешного Kafka commit пачка отмечается опубликованной в PostgreSQL. При ошибке вся пачка остаётся для повторной обработки. Consumers используют `read_committed` и не видят отменённые Kafka-транзакции. Сбой между Kafka commit и PostgreSQL commit всё ещё допускает повтор: доставка at-least-once, не exactly-once. Отдельного сервиса или общего модуля Outbox нет.
+
+В Feed эффект и отметка обработки для каждой ленты выполняются атомарно в Redis; незавершённая рассылка продолжается при повторе. Срок защиты от повторов — 7 дней. Notification сохраняет отметку события и уведомления в одной транзакции PostgreSQL; срок хранения отметки — 90 дней. Старый произвольный replay после этих сроков требует отдельной проверки порядка и восстановления проекций.
+
 **DLQ-топики:**
 
 | Источник | DLQ topic | Когда используется |
 |---|---|---|
-| `UserService` outbox publisher | `user-events.dlq` | Ошибка публикации события `user-events` в Kafka |
-| `PostService` outbox publisher | `post-events.dlq` | Ошибка публикации события `post-events` в Kafka |
-| `FeedService` Kafka consumer | `feed-events.dlq` | Ошибка обработки события из `post-events` или `user-events` |
-| `NotificationService` Kafka consumer | `notification-events.dlq` | Ошибка обработки события из `post-events` или `user-events` |
+| `FeedService` Kafka consumer | `feed-events.dlq` | Некорректное содержимое события из `post-events` или `user-events` |
+| `NotificationService` Kafka consumer | `notification-events.dlq` | Некорректное содержимое события из `post-events` или `user-events` |
+
+Временная ошибка Redis/БД повторяется штатным обработчиком Spring Kafka с интервалом 1 секунда; offset не подтверждается. Некорректное событие подтверждается только после успешной записи в DLQ.
 
 Gateway получает список post IDs из `FeedService` по gRPC, затем заполняет посты через `PostService`.
 
@@ -765,8 +775,6 @@ markAllNotificationsRead: Boolean!
 | `UserService` | `user-events` | `PostService` | Очистка контента при удалении аккаунта и бессрочной блокировке |
 | `PostService` | `post-events` | `FeedService` | Создание/удаление постов, пересчёт рейтинга при лайках |
 | `PostService` | `post-events` | `NotificationService` | Лайки, комментарии, ответы, упоминания |
-| `UserService` | `user-events.dlq` | — | Ошибки публикации `user-events` |
-| `PostService` | `post-events.dlq` | — | Ошибки публикации `post-events` |
 | `FeedService` | `feed-events.dlq` | — | Ошибки обработки событий ленты |
 | `NotificationService` | `notification-events.dlq` | — | Ошибки обработки событий уведомлений |
 
@@ -798,20 +806,29 @@ Kafka-события сохраняются в outbox-таблицах серв�
 
 ## 15. Docker / local окружение
 
-`docker-compose.yml` поднимает все сервисы и инфраструктуру.
+`docker-compose.dev.yaml` поднимает локальные сервисы и инфраструктуру с настройками из `.env.example` либо приватного файла вне репозитория, выбранного через `COMPOSE_ENV_FILES`. `docker-compose.prod.yaml` описывает серверное окружение с приватным `.env.prod` и использует готовые образы приложения из GHCR. Сборка выполняется в GitHub, установка опубликованной версии — отдельным ручным workflow Release через Ansible.
+
+Одноразовый контейнер `migrations` запускает готовый Flyway для трёх PostgreSQL-баз и завершает работу. UserService, PostService и NotificationService ждут его успешного завершения; внутри этих приложений Flyway отключён. Release запускает ту же операцию отдельно перед обновлением приложений.
 
 ### Порты
 
+Frontend работает в одном экземпляре и раздаёт статические файлы через порт 5173. React в браузере отправляет API-запросы через отдельный Traefik на порту 8082; frontend-контейнер в обработке API не участвует. На production серверный Nginx сохраняет домены и HTTPS, направляет API к Traefik, а сайт и MinIO — по их прежним маршрутам. Traefik обнаруживает экземпляры Gateway через Docker API, учитывает Docker healthcheck и дополнительно проверяет `/actuator/health`. Доступ к Docker проходит через `socket-proxy` в отдельной внутренней сети, без опубликованного порта и разрешений на изменение контейнеров.
+
+Остальные прикладные HTTP/gRPC-порты доступны только внутри Docker-сети. Имена контейнеров назначает Compose; фиксированных `container_name` нет. gRPC-клиенты получают адреса из Eureka; Prometheus обнаруживает реплики через Docker DNS. Ansible определяет доверенный адрес серверного Nginx и сохраняет его в установленном Compose, чтобы HTTPS и OAuth продолжали работать после ручного перезапуска. Количество экземпляров при Release задаётся `deploy.replicas` в production Compose, по умолчанию один.
+
+На входе API серверный Nginx задаёт `X-Forwarded-Host` и `X-Forwarded-Port`, удаляет клиентские `Forwarded` и `X-Forwarded-Prefix`. При первоначальной настройке, выполненной вручную через Ansible, проверено, что OAuth-запросы с поддельными заголовками сохраняют публичный HTTPS URL возврата. Последующие выпуски выполняются через Action Release и эту проверку не запускают.
+
 | Сервис | HTTP | gRPC |
 |---|---|---|
-| API Gateway | 8081 | — |
+| Traefik → API Gateway | 8082 | — |
+| API Gateway (внутри сети) | 8080 | — |
 | Frontend | 5173 | — |
 | Eureka | 8761 | — |
-| UserService | 9004 | 9090 |
-| PostService | 9005 | 9091 |
-| FeedService | 9002 | 9092 |
-| MediaService | 9003 | 9093 |
-| NotificationService | 9007 | 9095 |
+| UserService (внутри сети) | 9000 | 9090 |
+| PostService (внутри сети) | 9001 | 9091 |
+| FeedService (внутри сети) | 9002 | 9092 |
+| MediaService (внутри сети) | 9003 | 9093 |
+| NotificationService (внутри сети) | 9006 | 9095 |
 | MinIO API | 9000 | — |
 | MinIO Console | 9001 | — |
 | Kafka external | 9094 | — |
@@ -830,6 +847,8 @@ Kafka-события сохраняются в outbox-таблицах серв�
 ---
 
 ## 16. Мониторинг и метрики
+
+Java-сервисы пишут JSON-логи в stdout штатным structured logging Spring Boot; поле `service` содержит имя приложения. Graceful shutdown даёт запросам до 30 секунд на завершение, Compose ждёт остановки до 40 секунд.
 
 Сервисы приложения предоставляют actuator endpoints:
 
@@ -856,9 +875,9 @@ Prometheus собирает стандартные Micrometer/Spring Boot мет
 - **Доступность targets:** `up`, `scrape_duration_seconds`, `scrape_samples_scraped`, `scrape_samples_post_metric_relabeling`.
 - **JVM:** `jvm_memory_used_bytes`, `jvm_memory_committed_bytes`, `jvm_memory_max_bytes`, `jvm_gc_pause_seconds`, `jvm_threads_*`, `jvm_classes_loaded_classes`, `jvm_classes_unloaded_classes`.
 - **HTTP:** `http_server_requests_seconds_*` с лейблами `uri`, `method`, `status`, `exception`.
-- **gRPC:** `grpc_server_calls_*` для серверных gRPC-вызовов.
+- **gRPC:** `grpc_server_seconds_count` и `grpc_server_seconds_sum` для количества и длительности вызовов, с полями `rpc_service`, `rpc_method` и `grpc_status_code`. Их собирает стандартный Micrometer interceptor.
 - **Kafka:** `kafka_producer_*`, `kafka_consumer_*`, `spring_kafka_listener_*` для producers, consumers и listener-контейнеров.
-- **Redis:** `spring_data_redis_*` и Redis client metrics для FeedService.
+- **Redis-клиент:** `lettuce_seconds_count`, `lettuce_seconds_sum` и `lettuce_active_seconds_count` с полями `db_operation` и `error`. Показывают команды приложения, их длительность и ошибки; CPU и память сервера Redis сюда не входят.
 - **PostgreSQL/HikariCP:** `hikaricp_*`, `jdbc_connections_*` для сервисов с базой данных.
 - **Процесс и система:** `process_cpu_usage`, `process_uptime_seconds`, `process_start_time_seconds`, `system_cpu_usage`, `system_load_average_1m`, `disk_free_bytes`, `disk_total_bytes`.
 
@@ -902,14 +921,25 @@ Prometheus собирает стандартные Micrometer/Spring Boot мет
 
 - **Prometheus** (`localhost:9700`) — хранит time-series метрики сервисов. Конфиг: `Monitoring/prometheus.yml`.
 - **Grafana** (`localhost:3000`) — визуализация метрик. Credentials берутся из env `GRAFANA_USER`/`GRAFANA_PASSWORD` (default: `admin/admin`). Prometheus datasource подключён через provisioning: `Monitoring/grafana/provisioning/datasources/`.
-- **UniMeow Spring Overview** — dashboard технического состояния сервисов: availability, latency, HTTP/gRPC, JVM, Kafka, Redis, PostgreSQL/HikariCP, process/system metrics.
+- **UniMeow Spring Services Overview** — доступность сервисов, HTTP-запросы, JVM, CPU процесса, GC, подключения HikariCP и обработчики Kafka.
 - **UniMeow Platform Metrics** — dashboard продуктовых показателей: пользователи, верификация, подписки, ВУЗы/факультеты/программы, посты, комментарии, лайки, уведомления.
+- **UniMeow gRPC** — количество и частота вызовов, ошибки, средняя длительность и распределение запросов по экземплярам. Фильтры: сервис, экземпляр, метод.
+- **UniMeow Kafka** — скорость и длительность обработки событий, отставание активных потребителей, отправки, ошибки и повторы Kafka-клиентов. Lag считается от позиции чтения, а не от подтверждённого offset группы; остановленные потребители не отдают эти метрики.
+- **UniMeow Server** — доступность сборщика, uptime, CPU, память, нагрузка, заполнение файловых систем, дисковый I/O и сеть нашего сервера UniMeow.
+
+Дашборды загружаются автоматически из `Monitoring/grafana/provisioning/dashboards/`. Панели gRPC и Kafka используют существующие метрики без новых Java-счётчиков. Некоторые серии появляются после первого вызова или отправки. Средняя длительность без запросов не определена; отсутствие метрик не означает нулевую нагрузку. Перцентили p95/p99 не показываются, поскольку необходимые гистограммы не включены.
+
+Метрики Linux-сервера собирает стандартный `prom/node-exporter:v1.10.2` в production Compose. Host network/PID и чтение `/:/host:ro,rslave` нужны для измерения хоста. HTTP-сборщик слушает только внутренний адрес Docker через `host.docker.internal:host-gateway`, порт 9100 на публичный интерфейс не открывается. Release запускает его перед Prometheus, если сервис присутствует в выбранном выпуске.
+
+Сбор настроен только для текущего сервера: один адрес `host.docker.internal:9100`, без выбора хоста в dashboard. В dev Compose Node Exporter не запускается: серверный dashboard не содержит данных, а его target в Prometheus будет `DOWN`. Локальная проверка в Docker Desktop показывает метрики Linux VM Docker, а не физического Windows/macOS-хоста.
 
 ---
 
 ## 17. Логирование
 
 Все сервисы используют SLF4J + Logback (стандартный Spring Boot). `@Slf4j` (Lombok) расставлен на сервисах.
+
+Семь Java-приложений выводят JSON в stdout: время, уровень, `service`, logger, сообщение и `stack_trace` при переданном исключении. Формат включает штатная настройка Spring Boot `logging.structured.format.console: logstash`. У событий Gateway, outbox, Feed, Kafka consumers и MinIO дополнительные поля передаются через SLF4J `addKeyValue`: например, `requestId`, `eventId`, `status`, `durationMs`. Набор полей зависит от события; тексты GraphQL-запросов в журнал не записываются.
 
 | Сервис | Событие | Уровень |
 |---|---|---|

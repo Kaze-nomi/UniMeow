@@ -5,6 +5,18 @@ import { createPortal } from 'react-dom';
 window.React = React;
 window.ReactDOM = { createRoot, createPortal };
 
+const response = await fetch('/runtime-config.json', { cache: 'no-store' });
+if (!response.ok) throw new Error('Application configuration is unavailable');
+const config = await response.json();
+for (const key of ['apiBase', 'minioPublicUrl']) {
+  const url = new URL(config[key]);
+  if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password || url.search || url.hash) {
+    throw new Error(`Invalid application URL: ${key}`);
+  }
+  config[key] = config[key].replace(/\/+$/, '');
+}
+window.UM_CONFIG = Object.freeze({ apiBase: config.apiBase, minioPublicUrl: config.minioPublicUrl });
+
 await import('../mock.js');
 await import('../api.js');
 await import('../components/ui.jsx');
