@@ -135,7 +135,7 @@
       community.docker.docker_compose_v2:
         services: ["{{ item }}"]
         recreate: always
-      loop: "{{ applications + ['prometheus', 'grafana'] }}"
+      loop: "{{ applications + (['node-exporter', 'prometheus', 'grafana'] | select('in', selected_compose.services) | list) }}"
 
     - name: Check application readiness
       ansible.builtin.uri:

@@ -877,7 +877,7 @@ Prometheus собирает стандартные Micrometer/Spring Boot мет
 - **HTTP:** `http_server_requests_seconds_*` с лейблами `uri`, `method`, `status`, `exception`.
 - **gRPC:** `grpc_server_seconds_count` и `grpc_server_seconds_sum` для количества и длительности вызовов, с полями `rpc_service`, `rpc_method` и `grpc_status_code`. Их собирает стандартный Micrometer interceptor.
 - **Kafka:** `kafka_producer_*`, `kafka_consumer_*`, `spring_kafka_listener_*` для producers, consumers и listener-контейнеров.
-- **Redis:** `spring_data_redis_*` и Redis client metrics для FeedService.
+- **Redis-клиент:** `lettuce_seconds_count`, `lettuce_seconds_sum` и `lettuce_active_seconds_count` с полями `db_operation` и `error`. Показывают команды приложения, их длительность и ошибки; CPU и память сервера Redis сюда не входят.
 - **PostgreSQL/HikariCP:** `hikaricp_*`, `jdbc_connections_*` для сервисов с базой данных.
 - **Процесс и система:** `process_cpu_usage`, `process_uptime_seconds`, `process_start_time_seconds`, `system_cpu_usage`, `system_load_average_1m`, `disk_free_bytes`, `disk_total_bytes`.
 
@@ -921,8 +921,17 @@ Prometheus собирает стандартные Micrometer/Spring Boot мет
 
 - **Prometheus** (`localhost:9700`) — хранит time-series метрики сервисов. Конфиг: `Monitoring/prometheus.yml`.
 - **Grafana** (`localhost:3000`) — визуализация метрик. Credentials берутся из env `GRAFANA_USER`/`GRAFANA_PASSWORD` (default: `admin/admin`). Prometheus datasource подключён через provisioning: `Monitoring/grafana/provisioning/datasources/`.
-- **UniMeow Spring Overview** — dashboard технического состояния сервисов: availability, latency, HTTP/gRPC, JVM, Kafka, Redis, PostgreSQL/HikariCP, process/system metrics.
+- **UniMeow Spring Services Overview** — доступность сервисов, HTTP-запросы, JVM, CPU процесса, GC, подключения HikariCP и обработчики Kafka.
 - **UniMeow Platform Metrics** — dashboard продуктовых показателей: пользователи, верификация, подписки, ВУЗы/факультеты/программы, посты, комментарии, лайки, уведомления.
+- **UniMeow gRPC** — количество и частота вызовов, ошибки, средняя длительность и распределение запросов по экземплярам. Фильтры: сервис, экземпляр, метод.
+- **UniMeow Kafka** — скорость и длительность обработки событий, отставание активных потребителей, отправки, ошибки и повторы Kafka-клиентов. Lag считается от позиции чтения, а не от подтверждённого offset группы; остановленные потребители не отдают эти метрики.
+- **UniMeow Server** — доступность сборщика, uptime, CPU, память, нагрузка, заполнение файловых систем, дисковый I/O и сеть нашего сервера UniMeow.
+
+Дашборды загружаются автоматически из `Monitoring/grafana/provisioning/dashboards/`. Панели gRPC и Kafka используют существующие метрики без новых Java-счётчиков. Некоторые серии появляются после первого вызова или отправки. Средняя длительность без запросов не определена; отсутствие метрик не означает нулевую нагрузку. Перцентили p95/p99 не показываются, поскольку необходимые гистограммы не включены.
+
+Метрики Linux-сервера собирает стандартный `prom/node-exporter:v1.10.2` в production Compose. Host network/PID и чтение `/:/host:ro,rslave` нужны для измерения хоста. HTTP-сборщик слушает только внутренний адрес Docker через `host.docker.internal:host-gateway`, порт 9100 на публичный интерфейс не открывается. Release запускает его перед Prometheus, если сервис присутствует в выбранном выпуске.
+
+Сбор настроен только для текущего сервера: один адрес `host.docker.internal:9100`, без выбора хоста в dashboard. В dev Compose Node Exporter не запускается: серверный dashboard не содержит данных, а его target в Prometheus будет `DOWN`. Локальная проверка в Docker Desktop показывает метрики Linux VM Docker, а не физического Windows/macOS-хоста.
 
 ---
 

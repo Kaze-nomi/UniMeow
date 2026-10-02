@@ -1,0 +1,526 @@
+{
+  "uid": "unimeow-kafka",
+  "title": "UniMeow Kafka",
+  "description": "Метрики Kafka-клиентов приложения и обработчиков событий. Это не мониторинг брокера. Нет данных означает отсутствие серии, а не нулевую нагрузку или исправность клиента.",
+  "tags": [
+    "unimeow",
+    "kafka",
+    "prometheus"
+  ],
+  "schemaVersion": 39,
+  "version": 1,
+  "editable": true,
+  "timezone": "browser",
+  "refresh": "15s",
+  "time": {
+    "from": "now-1h",
+    "to": "now"
+  },
+  "timepicker": {},
+  "graphTooltip": 1,
+  "links": [],
+  "templating": {
+    "list": [
+      {
+        "name": "service",
+        "label": "Service",
+        "type": "query",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "prometheus"
+        },
+        "definition": "label_values({__name__=~\"spring_kafka_listener_seconds_count|kafka_consumer_fetch_manager_records_consumed_total|kafka_producer_record_send_total\"}, job)",
+        "query": {
+          "query": "label_values({__name__=~\"spring_kafka_listener_seconds_count|kafka_consumer_fetch_manager_records_consumed_total|kafka_producer_record_send_total\"}, job)",
+          "refId": "StandardVariableQuery"
+        },
+        "current": {
+          "selected": true,
+          "text": "All",
+          "value": "$__all"
+        },
+        "includeAll": true,
+        "multi": true,
+        "allValue": ".*",
+        "refresh": 2,
+        "sort": 1,
+        "options": []
+      },
+      {
+        "name": "instance",
+        "label": "Instance",
+        "type": "query",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "prometheus"
+        },
+        "definition": "label_values({__name__=~\"spring_kafka_listener_seconds_count|kafka_consumer_fetch_manager_records_consumed_total|kafka_producer_record_send_total\",job=~\"$service\"}, instance)",
+        "query": {
+          "query": "label_values({__name__=~\"spring_kafka_listener_seconds_count|kafka_consumer_fetch_manager_records_consumed_total|kafka_producer_record_send_total\",job=~\"$service\"}, instance)",
+          "refId": "StandardVariableQuery"
+        },
+        "current": {
+          "selected": true,
+          "text": "All",
+          "value": "$__all"
+        },
+        "includeAll": true,
+        "multi": true,
+        "allValue": ".*",
+        "refresh": 2,
+        "sort": 1,
+        "options": []
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "title": "Listener attempts",
+      "description": "Завершившиеся вызовы обработчиков в секунду. Повторная доставка учитывается снова. success означает возврат без исключения: сюда входит и успешная отправка невалидного события в DLQ.",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 0
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops",
+          "min": 0,
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "linear",
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "showPoints": "never",
+            "spanNulls": false
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (job, instance, name, result) (rate(spring_kafka_listener_seconds_count{job=~\"$service\",instance=~\"$instance\"}[$__rate_interval]))",
+          "legendFormat": "{{job}} · {{instance}} · {{name}} · {{result}}",
+          "range": true
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "title": "Listener duration",
+      "description": "Среднее время одной завершившейся попытки обработки. Не включает ожидание события в Kafka и паузу между повторами. При отсутствии попыток среднее не определено.",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 0
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "min": 0,
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "linear",
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "showPoints": "never",
+            "spanNulls": false
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (job, instance, name, result) (rate(spring_kafka_listener_seconds_sum{job=~\"$service\",instance=~\"$instance\"}[$__rate_interval])) / (sum by (job, instance, name, result) (rate(spring_kafka_listener_seconds_count{job=~\"$service\",instance=~\"$instance\"}[$__rate_interval])) > 0)",
+          "legendFormat": "{{job}} · {{instance}} · {{name}} · {{result}}",
+          "range": true
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "title": "Consumer partition lag",
+      "description": "Последний lag активного Kafka-клиента по partition. Рассчитывается от позиции чтения, не от подтверждённого offset группы. После остановки клиента серия исчезает; это не мониторинг отставания остановленной группы или состояния брокера.",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "min": 0,
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "linear",
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "showPoints": "never",
+            "spanNulls": false
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "max by (job, instance, client_id, topic, partition) (kafka_consumer_fetch_manager_records_lag{job=~\"$service\",instance=~\"$instance\"})",
+          "legendFormat": "{{job}} · {{instance}} · {{client_id}} · {{topic}} / {{partition}}",
+          "range": true
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "title": "Records fetched",
+      "description": "Записи, полученные Kafka-клиентом, в секунду. Это не число уникальных успешно применённых событий. После возврата позиции чтения записи могут быть получены повторно. Метрики topic появляются после чтения.",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops",
+          "min": 0,
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "linear",
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "showPoints": "never",
+            "spanNulls": false
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (job, instance, topic) (rate(kafka_consumer_fetch_manager_records_consumed_total{job=~\"$service\",instance=~\"$instance\",topic!=\"\"}[$__rate_interval]))",
+          "legendFormat": "{{job}} · {{instance}} · {{topic}}",
+          "range": true
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "title": "Producer sends",
+      "description": "Отправленные записи каждого producer в секунду по всем его topic, включая DLQ. Успешная отправка отдельной записи не подтверждает commit всей Kafka-транзакции или обновление outbox в PostgreSQL.",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 16
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops",
+          "min": 0,
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "linear",
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "showPoints": "never",
+            "spanNulls": false
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (job, instance, client_id) (rate(kafka_producer_record_send_total{job=~\"$service\",instance=~\"$instance\"}[$__rate_interval]))",
+          "legendFormat": "{{job}} · {{instance}} · {{client_id}}",
+          "range": true
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "title": "Producer send errors",
+      "description": "Ошибки отправки записей, зарегистрированные Kafka-клиентом, в секунду. Это не число ошибок всей outbox-транзакции. Producer создаётся при первой отправке, до этого серия может отсутствовать.",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 16
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops",
+          "min": 0,
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "linear",
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "showPoints": "never",
+            "spanNulls": false
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (job, instance, client_id) (rate(kafka_producer_record_error_total{job=~\"$service\",instance=~\"$instance\"}[$__rate_interval]))",
+          "legendFormat": "{{job}} · {{instance}} · {{client_id}}",
+          "range": true
+        }
+      ]
+    },
+    {
+      "id": 7,
+      "title": "Producer retries",
+      "description": "Повторные отправки внутри Kafka-клиента в секунду. Не учитывает повторный запуск outbox-пакета приложением как retry клиента.",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 24
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops",
+          "min": 0,
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "linear",
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "showPoints": "never",
+            "spanNulls": false
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (job, instance, client_id) (rate(kafka_producer_record_retry_total{job=~\"$service\",instance=~\"$instance\"}[$__rate_interval]))",
+          "legendFormat": "{{job}} · {{instance}} · {{client_id}}",
+          "range": true
+        }
+      ]
+    },
+    {
+      "id": 8,
+      "title": "Producer request latency",
+      "description": "Средняя задержка запросов к брокеру в миллисекундах, рассчитанная каждым producer в его окне измерения. Это gauge Kafka-клиента, не длительность всей обработки события.",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 24
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ms",
+          "min": 0,
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "linear",
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "showPoints": "never",
+            "spanNulls": false
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "max by (job, instance, client_id) (kafka_producer_request_latency_avg{job=~\"$service\",instance=~\"$instance\"})",
+          "legendFormat": "{{job}} · {{instance}} · {{client_id}}",
+          "range": true
+        }
+      ]
+    }
+  ]
+}

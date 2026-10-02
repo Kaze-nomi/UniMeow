@@ -445,9 +445,24 @@ services:
       timeout: 5s
       retries: 12
 
+  node-exporter:
+    image: prom/node-exporter:v1.10.2
+    restart: unless-stopped
+    network_mode: host
+    pid: host
+    extra_hosts:
+      - host.docker.internal:host-gateway
+    command:
+      - '--path.rootfs=/host'
+      - '--web.listen-address=host.docker.internal:9100'
+    volumes:
+      - /:/host:ro,rslave
+
   prometheus:
     image: prom/prometheus:v2.53.4
     restart: unless-stopped
+    extra_hosts:
+      - host.docker.internal:host-gateway
     volumes:
       - ./Monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
       - prometheus_data:/prometheus
