@@ -34,22 +34,13 @@ build
 ### Mac OS ###
 .DS_Store
 
-.env*
-!.env.example
-
 xNotes
 
 # Frontend build output
 Frontend/dist/
 Frontend/node_modules/
-.agent-private/
 __pycache__/
 *.pyc
 .pytest_cache/
 .venv/
 release-source/
-AGENT_TASK.md
-ADENT_TASK_CONTINUATION.md
-AGENT_TASK_CONTINUATION.md
-*PLAN.md
-ОТЧЕТ.md

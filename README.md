@@ -44,10 +44,10 @@
 
 ## Локальный запуск
 
-Нужен Docker Compose. Для разработки используются `docker-compose.dev.yaml` и локальный `.env`. Перед первым запуском скопируйте `.env.example` в `.env`: в примере уже есть тестовые значения. Compose читает `.env` автоматически; этот файл не коммитится. Образы собираются по одному, чтобы несколько Gradle-процессов не занимали память одновременно. Команды ниже — для Bash, в том числе Git Bash на Windows:
+Нужен Docker Compose. Для разработки используются `docker-compose.dev.yaml` и публичный `.env.example` с тестовыми значениями. `COMPOSE_ENV_FILES` указывает Compose, откуда читать настройки; отдельный `.env` в репозитории не создаётся. Образы собираются по одному, чтобы несколько Gradle-процессов не занимали память одновременно. Команды ниже — для Bash, в том числе Git Bash на Windows:
 
 ```sh
-cp -n .env.example .env
+export COMPOSE_ENV_FILES=.env.example
 for service in eureka-server media-service user-service post-service feed-service notification-service api-gateway frontend; do
   docker compose -f docker-compose.dev.yaml build "$service" || exit 1
 done
@@ -56,7 +56,7 @@ for service in socket-proxy traefik eureka-server media-service user-service pos
 done
 ```
 
-Frontend: http://localhost:5173, API: http://localhost:8082. Для настоящего Google OAuth укажите свои `GOOGLE_CLIENT_ID` и `GOOGLE_CLIENT_SECRET` в локальном `.env` или окружении процесса.
+Frontend: http://localhost:5173, API: http://localhost:8082. Для собственных настроек скопируйте `.env.example` за пределы репозитория и задайте абсолютный путь к копии в `COMPOSE_ENV_FILES`. Настоящие `GOOGLE_CLIENT_ID` и `GOOGLE_CLIENT_SECRET` храните в этой приватной копии или окружении процесса, не в публичном примере.
 
 Frontend остаётся одним контейнером: его Nginx раздаёт HTML, CSS и JavaScript на порту 5173. React выполняется в браузере и отправляет API-запросы через отдельный Traefik на порту 8082. Traefik автоматически обнаруживает Gateway текущего Compose-проекта и распределяет запросы между готовыми экземплярами. На production перед ним остаётся серверный Nginx с существующими доменами и HTTPS. Межсервисные gRPC-вызовы распределяются через Eureka. Например, второй Gateway запускается так:
 
@@ -96,7 +96,7 @@ HTTP-тесты в `tests/e2e` проходят OAuth, создают двух �
 | На сервере | Приватный `.env.prod`, HTTPS-конфигурация и сертификаты серверного Nginx |
 | Docker volumes на сервере | Данные PostgreSQL, Redis, MinIO и остальных хранилищ; данные не являются частью выпуска |
 
-Отдельный архив выпуска не создаётся: GitHub сам предоставляет Source code, а Release получает ту же версию через `actions/checkout` по тегу. CI копирует `.env.example` в `.env` и проверяет production Compose с собранными образами и этими тестовыми значениями. Версия образов берётся из окружения CI и имеет приоритет над `VERSION=local` в примере. Ansible берётся из репозитория workflow Release.
+Отдельный архив выпуска не создаётся: GitHub сам предоставляет Source code, а Release получает ту же версию через `actions/checkout` по тегу. CI читает `.env.example` через `COMPOSE_ENV_FILES` и проверяет production Compose с собранными образами и этими тестовыми значениями. Версия образов берётся из окружения CI и имеет приоритет над `VERSION=local` в примере. Ansible берётся из репозитория workflow Release.
 
 Чтобы установить выпуск: **GitHub → Actions → Release → Run workflow → version**. Публикация сборки сама по себе сервер не обновляет.
 
