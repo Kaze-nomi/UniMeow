@@ -2,6 +2,7 @@ name: CI
 on:
   pull_request:
     branches: [meow]
+    types: [opened, synchronize, reopened, closed]
   workflow_dispatch:
     inputs:
       version:
@@ -16,7 +17,9 @@ concurrency:
 jobs:
   ci:
     name: CI
-    if: github.event_name == 'pull_request' || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/meow')
+    if: >-
+      (github.event_name == 'pull_request' && (github.event.action != 'closed' || github.event.pull_request.merged == true)) ||
+      (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/meow')
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     permissions:
@@ -28,9 +31,21 @@ jobs:
       COMPOSE_PARALLEL_LIMIT: '1'
       COMPOSE_PROJECT_NAME: unimeow-ci
       COMPOSE_ENV_FILES: .env.example
-      PUBLISH: ${{ github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/meow' }}
+      PUBLISH: ${{ github.ref == 'refs/heads/meow' && (github.event_name == 'workflow_dispatch' || github.event.pull_request.merged == true) }}
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.pull_request.merged == true && github.event.pull_request.merge_commit_sha || github.sha }}
+      - name: Select next version
+        if: github.event_name == 'pull_request' && github.event.pull_request.merged == true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          PREVIOUS=$(gh api "repos/$GITHUB_REPOSITORY/releases/latest" --jq .tag_name)
+          [[ "$PREVIOUS" =~ ^v([0-9]+)\.([0-9]+)\.([0-9]+)$ ]]
+          VERSION="v${BASH_REMATCH[1]}.${BASH_REMATCH[2]}.$((10#${BASH_REMATCH[3]} + 1))"
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+          echo "Next version: $VERSION"
       - uses: actions/setup-java@v6
         with:
           distribution: temurin
@@ -87,6 +102,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          docker compose -f docker-compose.dev.yaml push
+          read -r -a APP_IMAGES <<< "$SERVICES"
+          docker compose -f docker-compose.dev.yaml push "${APP_IMAGES[@]}"
           gh release create "$VERSION" --repo "$GITHUB_REPOSITORY" \
-            --target "$GITHUB_SHA" --title "$VERSION" --notes "Production версия ${VERSION#v}"
+            --target "$(git rev-parse HEAD)" --title "$VERSION" --notes "Production версия ${VERSION#v}"
