@@ -1,8 +1,7 @@
 name: CI
 on:
-  push:
-    branches: [meow]
   pull_request:
+    branches: [meow]
   workflow_dispatch:
     inputs:
       version:
@@ -17,6 +16,7 @@ concurrency:
 jobs:
   ci:
     name: CI
+    if: github.event_name == 'pull_request' || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/meow')
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     permissions:
