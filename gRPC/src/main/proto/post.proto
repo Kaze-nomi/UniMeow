@@ -14,6 +14,7 @@ service PostService {
 
     rpc LikePost   (LikePostRequest)   returns (LikeResponse);
     rpc UnlikePost (UnlikePostRequest) returns (LikeResponse);
+    rpc GetPostLikers (GetPostLikersRequest) returns (LikerListResponse);
 
     rpc AddComment    (AddCommentRequest)    returns (CommentResponse);
     rpc GetComments   (GetCommentsRequest)   returns (CommentListResponse);
@@ -21,6 +22,7 @@ service PostService {
     rpc DeleteComment (DeleteCommentRequest) returns (DeleteCommentResponse);
     rpc LikeComment   (LikeCommentRequest)   returns (LikeResponse);
     rpc UnlikeComment (UnlikeCommentRequest) returns (LikeResponse);
+    rpc GetCommentLikers (GetCommentLikersRequest) returns (LikerListResponse);
 }
 
 message CreatePostRequest {
@@ -102,6 +104,23 @@ message UnlikePostRequest {
 
 message LikeResponse  { 
     bool success   = 1; 
+}
+
+message GetPostLikersRequest {
+    string post_id = 1;
+    int32 page = 2;
+    int32 size = 3;
+}
+
+message GetCommentLikersRequest {
+    string comment_id = 1;
+    int32 page = 2;
+    int32 size = 3;
+}
+
+message LikerListResponse {
+    repeated string user_ids = 1;
+    int32 total = 2;
 }
 
 message AddCommentRequest {

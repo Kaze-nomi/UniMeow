@@ -172,6 +172,23 @@ public class PostGrpcServer extends PostServiceGrpc.PostServiceImplBase {
 	}
 
 	@Override
+	public void getPostLikers(GetPostLikersRequest req, StreamObserver<LikerListResponse> obs) {
+		try {
+			var page = postService.getPostLikers(UUID.fromString(req.getPostId()), req.getPage(), req.getSize());
+			obs.onNext(LikerListResponse.newBuilder()
+					.addAllUserIds(page.getContent().stream().map(UUID::toString).toList())
+					.setTotal((int) page.getTotalElements()).build());
+			obs.onCompleted();
+		} catch (PostNotFoundException e) {
+			obs.onError(Status.NOT_FOUND.withDescription(e.getMessage()).asRuntimeException());
+		} catch (IllegalArgumentException e) {
+			obs.onError(Status.INVALID_ARGUMENT.withDescription(e.getMessage()).asRuntimeException());
+		} catch (Exception e) {
+			obs.onError(Status.INTERNAL.withDescription(e.getMessage()).asRuntimeException());
+		}
+	}
+
+	@Override
 	public void addComment(AddCommentRequest req, StreamObserver<CommentResponse> obs) {
 		try {
 			CommentResult comment = commentService.addComment(UUID.fromString(req.getPostId()),
@@ -267,6 +284,24 @@ public class PostGrpcServer extends PostServiceGrpc.PostServiceImplBase {
 			commentService.unlikeComment(UUID.fromString(req.getCommentId()), UUID.fromString(req.getUserId()));
 			obs.onNext(LikeResponse.newBuilder().setSuccess(true).build());
 			obs.onCompleted();
+		} catch (Exception e) {
+			obs.onError(Status.INTERNAL.withDescription(e.getMessage()).asRuntimeException());
+		}
+	}
+
+	@Override
+	public void getCommentLikers(GetCommentLikersRequest req, StreamObserver<LikerListResponse> obs) {
+		try {
+			var page = commentService.getCommentLikers(UUID.fromString(req.getCommentId()), req.getPage(),
+					req.getSize());
+			obs.onNext(LikerListResponse.newBuilder()
+					.addAllUserIds(page.getContent().stream().map(UUID::toString).toList())
+					.setTotal((int) page.getTotalElements()).build());
+			obs.onCompleted();
+		} catch (CommentNotFoundException e) {
+			obs.onError(Status.NOT_FOUND.withDescription(e.getMessage()).asRuntimeException());
+		} catch (IllegalArgumentException e) {
+			obs.onError(Status.INVALID_ARGUMENT.withDescription(e.getMessage()).asRuntimeException());
 		} catch (Exception e) {
 			obs.onError(Status.INTERNAL.withDescription(e.getMessage()).asRuntimeException());
 		}

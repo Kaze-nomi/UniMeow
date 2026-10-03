@@ -68,6 +68,14 @@ public class UserService {
 	}
 
 	@Transactional(readOnly = true)
+	public List<User> getByIds(List<UUID> ids) {
+		if (ids.size() > 50) {
+			throw new IllegalArgumentException("At most 50 user IDs may be requested");
+		}
+		return ids.isEmpty() ? List.of() : userRepository.findAllById(ids);
+	}
+
+	@Transactional(readOnly = true)
 	public User getByUsername(String username) {
 		return userRepository.findByUsername(username)
 				.orElseThrow(() -> new UserNotFoundException("User not found: @" + username));

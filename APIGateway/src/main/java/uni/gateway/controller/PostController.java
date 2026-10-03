@@ -15,6 +15,8 @@ import uni.gateway.dto.post.DeleteResult;
 import uni.gateway.dto.post.EditPostInput;
 import uni.gateway.dto.post.FeedPageDto;
 import uni.gateway.dto.post.LikeResult;
+import uni.gateway.dto.post.LikerDto;
+import uni.gateway.dto.post.LikerPageDto;
 import uni.gateway.dto.post.PostDto;
 import uni.gateway.dto.post.PostPageDto;
 import uni.gateway.dto.user.UserDto;
@@ -25,6 +27,7 @@ import uni.grpc.feed.FeedType;
 import uni.grpc.feed.GetFeedResponse;
 import uni.grpc.post.CommentListResponse;
 import uni.grpc.post.CommentResponse;
+import uni.grpc.post.LikerListResponse;
 import uni.grpc.post.PostListResponse;
 import uni.grpc.post.PostResponse;
 import uni.grpc.user.UserResponse;
@@ -32,6 +35,9 @@ import uni.grpc.user.UserResponse;
 import javax.security.auth.login.CredentialException;
 import java.nio.file.AccessDeniedException;
 import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.stream.Collectors;
 
 @Controller
 @RequiredArgsConstructor
@@ -69,6 +75,22 @@ public class PostController {
 		int p = page != null ? page : 0;
 		int s = size != null ? size : 20;
 		return postGrpcClient.getComments(postId, p, s, currentUserId).map(this::toCommentPageDto);
+	}
+
+	@QueryMapping
+	public Mono<LikerPageDto> getPostLikers(@Argument(name = "postId") String postId,
+			@Argument(name = "page") Integer page, @Argument(name = "size") Integer size) {
+		int p = page != null ? page : 0;
+		int s = size != null ? size : 20;
+		return postGrpcClient.getPostLikers(postId, p, s).flatMap(this::hydrateLikers);
+	}
+
+	@QueryMapping
+	public Mono<LikerPageDto> getCommentLikers(@Argument(name = "commentId") String commentId,
+			@Argument(name = "page") Integer page, @Argument(name = "size") Integer size) {
+		int p = page != null ? page : 0;
+		int s = size != null ? size : 20;
+		return postGrpcClient.getCommentLikers(commentId, p, s).flatMap(this::hydrateLikers);
 	}
 
 	@QueryMapping
@@ -211,6 +233,22 @@ public class PostController {
 		}
 		return requireActiveUser(userId).flatMap(id -> postGrpcClient.unlikeComment(commentId, id))
 				.map(LikeResult::new);
+	}
+
+	private Mono<LikerPageDto> hydrateLikers(LikerListResponse likers) {
+		if (likers.getUserIdsList().isEmpty()) {
+			return Mono.just(new LikerPageDto(List.of(), likers.getTotal()));
+		}
+		return userGrpcClient.getUsersByIds(likers.getUserIdsList()).map(response -> {
+			Map<String, LikerDto> usersById = response.getUsersList().stream()
+					.map(user -> new LikerDto(user.getId(), user.getUsername(), user.getName(),
+							user.getSurname().isEmpty() ? null : user.getSurname(),
+							user.getAvatarUrl().isEmpty() ? null : user.getAvatarUrl()))
+					.collect(Collectors.toMap(LikerDto::id, user -> user));
+			List<LikerDto> users = likers.getUserIdsList().stream().map(usersById::get).filter(Objects::nonNull)
+					.toList();
+			return new LikerPageDto(users, likers.getTotal());
+		});
 	}
 
 	private Mono<FeedPageDto> hydrateFeed(GetFeedResponse feed, String viewerId) {

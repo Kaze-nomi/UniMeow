@@ -50,6 +50,21 @@ public class UserGrpcServer extends UserServiceGrpc.UserServiceImplBase {
 	}
 
 	@Override
+	public void getUsersByIds(GetUsersByIdsRequest req, StreamObserver<UserListResponse> obs) {
+		try {
+			UserListResponse.Builder builder = UserListResponse.newBuilder();
+			userService.getByIds(req.getIdsList().stream().map(UUID::fromString).toList())
+					.forEach(user -> builder.addUsers(toProto(user)));
+			obs.onNext(builder.build());
+			obs.onCompleted();
+		} catch (IllegalArgumentException e) {
+			obs.onError(Status.INVALID_ARGUMENT.withDescription(e.getMessage()).asRuntimeException());
+		} catch (Exception e) {
+			obs.onError(Status.INTERNAL.withDescription(e.getMessage()).asRuntimeException());
+		}
+	}
+
+	@Override
 	public void getUserByUsername(GetUserByUsernameRequest req, StreamObserver<UserResponse> obs) {
 		try {
 			User user = userService.getByUsername(req.getUsername());

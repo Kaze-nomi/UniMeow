@@ -251,7 +251,7 @@ function PostCard({ post, onNavigate, currentUser, onLike }) {
             onClick={e => { e.stopPropagation(); onNavigate('/post/' + post.id); }}
             icon={<CommentIcon size={18} color="var(--text-muted)" />}
             label={post.commentsCount} />
-          <ActionBtn
+          <LikeButton targetId={post.id} onNavigate={onNavigate}
             className={`um-like-btn ${likePulse ? 'um-likebtn-active' : ''}`}
             onClick={handleLike} active={liked}
             activeColor="var(--like)"
@@ -286,9 +286,11 @@ function PostCard({ post, onNavigate, currentUser, onLike }) {
   );
 }
 
-function ActionBtn({ onClick, icon, label, active, loading, activeColor, className }) {
+function ActionBtn({ onClick, icon, label, active, loading, activeColor, className, ...buttonProps }) {
   return (
     <button
+      type="button"
+      {...buttonProps}
       className={className}
       onClick={onClick}
       style={{
@@ -300,11 +302,191 @@ function ActionBtn({ onClick, icon, label, active, loading, activeColor, classNa
         padding: '6px 10px', borderRadius: 9999,
         transition: 'background 0.12s, color 0.12s',
       }}>
-      <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 24, height: 24 }}>
+      <span style={{ display: 'inline-flex', flexShrink: 0, alignItems: 'center', justifyContent: 'center', width: 24, height: 24 }}>
         {loading ? <Spinner size={16} color="var(--text-muted)" /> : icon}
       </span>
-      {label !== '' && label !== undefined && label !== null && <span>{label}</span>}
+      {label !== '' && label !== undefined && label !== null && (
+        <span style={typeof label === 'number' ? { display: 'inline-block', width: `${String(label).length}ch`, flexShrink: 0, textAlign: 'center', fontVariantNumeric: 'tabular-nums' } : undefined}>{label}</span>
+      )}
     </button>
+  );
+}
+
+function LikeButton({ targetId, kind = 'post', onNavigate, onClick, ...buttonProps }) {
+  const [position, setPosition] = React.useState(null);
+  const [revision, setRevision] = React.useState(0);
+  const [mobile, setMobile] = React.useState(() => window.matchMedia('(max-width: 640px), (hover: none)').matches);
+  const trigger = React.useRef(null);
+  const panel = React.useRef(null);
+  const openTimer = React.useRef(null);
+  const closeTimer = React.useRef(null);
+  const panelId = React.useId();
+  const keepOpen = () => clearTimeout(closeTimer.current);
+  const close = () => { clearTimeout(openTimer.current); keepOpen(); setPosition(null); };
+  const contains = node => trigger.current?.contains(node) || panel.current?.contains(node);
+  const leave = () => {
+    clearTimeout(openTimer.current);
+    keepOpen();
+    if (position?.sheet) return;
+    closeTimer.current = setTimeout(() => {
+      if (!contains(document.activeElement) || !document.activeElement.matches(':focus-visible')) setPosition(null);
+    }, 180);
+  };
+  const open = (sheet = mobile) => {
+    clearTimeout(openTimer.current);
+    keepOpen();
+    if (position || !trigger.current) return;
+    if (sheet) { setPosition({ sheet: true }); return; }
+    const rect = trigger.current.getBoundingClientRect();
+    const below = window.innerHeight - rect.bottom;
+    const above = below < 240 && rect.top > below;
+    const width = Math.min(240, window.innerWidth - 16);
+    setPosition({
+      width, left: Math.max(8, Math.min(rect.left, window.innerWidth - width - 8)),
+      ...(above ? { bottom: window.innerHeight - rect.top + 4 } : { top: rect.bottom + 4 }),
+      maxHeight: Math.min(260, (above ? rect.top : below) - 12),
+    });
+  };
+  const scheduleOpen = e => {
+    if (e.pointerType !== 'mouse' || mobile) return;
+    keepOpen();
+    clearTimeout(openTimer.current);
+    if (!position) openTimer.current = setTimeout(() => open(false), 450);
+  };
+
+  React.useEffect(() => () => { clearTimeout(openTimer.current); clearTimeout(closeTimer.current); }, []);
+  React.useEffect(() => {
+    const media = window.matchMedia('(max-width: 640px), (hover: none)');
+    const change = () => { setMobile(media.matches); close(); };
+    media.addEventListener('change', change);
+    return () => media.removeEventListener('change', change);
+  }, []);
+  React.useEffect(() => {
+    if (!position || position.sheet) return;
+    const outside = e => { if (!contains(e.target)) close(); };
+    const scroll = e => { if (!panel.current?.contains(e.target)) close(); };
+    const key = e => {
+      if (e.key === 'Escape') {
+        if (panel.current?.contains(document.activeElement)) trigger.current.querySelector('button').focus();
+        close();
+      }
+    };
+    document.addEventListener('pointerdown', outside);
+    document.addEventListener('keydown', key);
+    window.addEventListener('scroll', scroll, true);
+    window.addEventListener('resize', close);
+    return () => {
+      document.removeEventListener('pointerdown', outside);
+      document.removeEventListener('keydown', key);
+      window.removeEventListener('scroll', scroll, true);
+      window.removeEventListener('resize', close);
+    };
+  }, [position]);
+
+  const count = <span style={{ width: `${String(buttonProps.label ?? 0).length}ch` }}>{buttonProps.label ?? 0}</span>;
+
+  return (
+    <div ref={trigger} className="um-like-control"
+      onFocus={e => { if (!mobile && e.target.matches(':focus-visible')) requestAnimationFrame(() => { if (contains(document.activeElement)) open(); }); }}
+      onBlur={e => { if (!contains(e.relatedTarget)) leave(); }} onClick={e => e.stopPropagation()}>
+      <ActionBtn {...buttonProps} label="" aria-label={buttonProps.active ? 'Убрать лайк' : 'Поставить лайк'}
+        aria-pressed={!!buttonProps.active} aria-expanded={!!position} aria-controls={position ? panelId : undefined}
+        onPointerEnter={scheduleOpen} onPointerLeave={leave}
+        onKeyDown={e => { if (e.key === 'ArrowDown') { e.preventDefault(); open(); requestAnimationFrame(() => panel.current?.focus()); } }}
+        onClick={async e => { await onClick(e); setRevision(value => value + 1); }} />
+      {mobile ? <button type="button" className="um-like-count" aria-label={`Посмотреть, кому понравилось (${buttonProps.label ?? 0})`}
+        aria-expanded={!!position} aria-controls={position ? panelId : undefined}
+        style={{ color: buttonProps.active ? buttonProps.activeColor : undefined }}
+        onClick={() => open(true)}>
+        {count}
+      </button> : <span className="um-like-count" style={{ color: buttonProps.active ? buttonProps.activeColor : undefined }}>{count}</span>}
+      {position?.sheet ? ReactDOM.createPortal(
+        <LikersSheet id={panelId} onClose={close}>
+          <LikersList key={`${kind}:${targetId}:${revision}`} targetId={targetId} kind={kind}
+            onNavigate={url => { close(); onNavigate(url); }} />
+        </LikersSheet>, document.body
+      ) : position && ReactDOM.createPortal(
+        <div ref={panel} id={panelId} role="region" aria-label="Кому понравилось" tabIndex={-1}
+          className="um-likers" style={{ position: 'fixed', ...position }}
+          onMouseEnter={keepOpen} onMouseLeave={leave} onFocus={keepOpen}
+          onBlur={e => { if (!contains(e.relatedTarget)) leave(); }} onClick={e => e.stopPropagation()}>
+          <div className="um-likers-title">Кому понравилось</div>
+          <LikersList key={`${kind}:${targetId}:${revision}`} targetId={targetId} kind={kind}
+            onNavigate={url => { close(); onNavigate(url); }} />
+        </div>, document.body
+      )}
+    </div>
+  );
+}
+
+function LikersSheet({ id, onClose, children }) {
+  const dialog = React.useRef(null);
+  React.useLayoutEffect(() => {
+    const element = dialog.current;
+    const previousOverflow = document.body.style.overflow;
+    element.showModal();
+    document.body.style.overflow = 'hidden';
+    return () => { element.close(); document.body.style.overflow = previousOverflow; };
+  }, []);
+
+  return (
+    <dialog ref={dialog} id={id} className="um-likers-sheet" aria-labelledby={`${id}-title`}
+      onCancel={e => { e.preventDefault(); onClose(); }}
+      onClick={e => { e.stopPropagation(); if (e.target === e.currentTarget) onClose(); }}>
+      <div className="um-likers-sheet-content" onClick={e => e.stopPropagation()}>
+        <div className="um-likers-sheet-header">
+          <div id={`${id}-title`}>Кому понравилось</div>
+          <button type="button" aria-label="Закрыть список" onClick={onClose} autoFocus>×</button>
+        </div>
+        <div className="um-likers-sheet-list">{children}</div>
+      </div>
+    </dialog>
+  );
+}
+
+function LikersList({ targetId, kind, onNavigate }) {
+  const [users, setUsers] = React.useState([]);
+  const [total, setTotal] = React.useState(0);
+  const [page, setPage] = React.useState(0);
+  const [loading, setLoading] = React.useState(true);
+  const [error, setError] = React.useState(false);
+  const [retry, setRetry] = React.useState(0);
+
+  React.useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    setError(false);
+    const query = kind === 'comment' ? 'getCommentLikers' : 'getPostLikers';
+    const variables = { [kind === 'comment' ? 'commentId' : 'postId']: targetId, page, size: 20 };
+    API.gql(API.Q[query], variables).then(data => {
+      if (cancelled) return;
+      const result = data[query];
+      setUsers(previous => page === 0 ? result.users : [...previous, ...result.users.filter(user => !previous.some(item => item.id === user.id))]);
+      setTotal(result.total);
+    }).catch(() => { if (!cancelled) setError(true); })
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, [targetId, kind, page, retry]);
+
+  return (
+    <>
+      {users.map(user => (
+        <a key={user.id} className="um-liker" href={API.profileUrl(user)} onClick={e => {
+          if (e.button !== 0 || e.ctrlKey || e.metaKey || e.shiftKey || e.altKey) return;
+          e.preventDefault(); onNavigate(API.profileUrl(user));
+        }}>
+          <Avatar user={user} size={28} />
+          <span style={{ minWidth: 0 }}>
+            <span className="um-liker-name">{[user.name, user.surname].filter(Boolean).join(' ') || user.username}</span>
+            {user.username && <span className="um-liker-username">@{user.username}</span>}
+          </span>
+        </a>
+      ))}
+      {loading && <div className="um-likers-status" role="status">Загрузка…</div>}
+      {error && <div className="um-likers-status" role="alert">Не удалось загрузить список. <button type="button" className="um-likers-more" onClick={() => setRetry(value => value + 1)}>Повторить</button></div>}
+      {!loading && !error && users.length === 0 && <div className="um-likers-status">Пока никто не поставил лайк</div>}
+      {!loading && !error && (page + 1) * 20 < total && <button type="button" className="um-likers-more" onClick={() => setPage(value => value + 1)}>Показать ещё</button>}
+    </>
   );
 }
 
@@ -534,4 +716,4 @@ function ComposeModal({ open, onClose, currentUser, onNavigate, onCreated, defau
   );
 }
 
-Object.assign(window, { PostCard, ComposeModal, ActionBtn, ImageLightbox });
+Object.assign(window, { PostCard, ComposeModal, ActionBtn, LikeButton, ImageLightbox });

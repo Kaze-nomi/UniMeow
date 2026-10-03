@@ -1,14 +1,20 @@
 package uni.user.repository;
 
+import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import uni.user.entity.User;
 
 import java.time.LocalDateTime;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
 public interface UserRepository extends JpaRepository<User, UUID> {
+	@Override
+	@EntityGraph(attributePaths = {"university", "faculty", "program", "program.faculty"})
+	List<User> findAllById(Iterable<UUID> ids);
+
 	Optional<User> findByEmailGoogle(String emailGoogle);
 	Optional<User> findByUsername(String username);
 	boolean existsByUsername(String username);

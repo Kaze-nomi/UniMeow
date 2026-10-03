@@ -239,7 +239,7 @@ function PostPage({ postId, currentUser, onNavigate }) {
           <ActionBtn className="um-reply-btn"
             icon={<CommentIcon size={18} color="var(--text-muted)" />}
             label={comments.length} />
-          <ActionBtn onClick={handleLike} active={liked}
+          <LikeButton targetId={post.id} onNavigate={onNavigate} onClick={handleLike} active={liked}
             className={`um-like-btn ${likePulse ? 'um-likebtn-active' : ''}`}
             icon={<HeartIcon size={18} color={liked ? 'var(--like)' : 'var(--text-muted)'} filled={liked} />}
             label={likes} activeColor="var(--like)" />
@@ -441,7 +441,7 @@ function CommentItem({ comment, currentUser, onNavigate, onDelete, onUpdate, onL
             <p style={{ margin: '0 0 6px', fontSize: 14, lineHeight: 1.6, whiteSpace: 'pre-wrap', wordBreak: 'break-word', overflowWrap: 'break-word' }}>{comment.content}</p>
           )}
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 2, marginLeft: -8 }}>
-            <ActionBtn onClick={handleLike} active={liked}
+            <LikeButton targetId={comment.id} kind="comment" onNavigate={onNavigate} onClick={handleLike} active={liked}
               className={`um-like-btn ${likePulse ? 'um-likebtn-active' : ''}`}
               icon={<HeartIcon size={14} color={liked ? 'oklch(0.6 0.22 15)' : 'var(--text-muted)'} filled={liked} />}
               label={likes} activeColor="oklch(0.6 0.22 15)" />

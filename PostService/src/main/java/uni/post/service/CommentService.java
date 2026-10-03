@@ -3,6 +3,8 @@ package uni.post.service;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import uni.post.entity.Comment;
@@ -38,6 +40,7 @@ public class CommentService {
 
 	private static final int DEFAULT_PAGE = 0;
 	private static final int DEFAULT_SIZE = 20;
+	private static final int MAX_LIKERS_SIZE = 50;
 	private static final long DEFAULT_RECOMMENDATION_LIKE_BOOST_MS = 3_600_000L;
 
 	private final CommentRepository commentRepository;
@@ -139,6 +142,14 @@ public class CommentService {
 		}).toList();
 
 		return new CommentPageResult(results, sortedComments.size());
+	}
+
+	@Transactional(readOnly = true)
+	public Page<UUID> getCommentLikers(UUID commentId, int page, int size) {
+		findOrThrow(commentId);
+		int resolvedPage = Math.max(DEFAULT_PAGE, page);
+		int resolvedSize = size > 0 ? Math.min(size, MAX_LIKERS_SIZE) : DEFAULT_SIZE;
+		return commentLikeRepository.findLikerIdsByCommentId(commentId, PageRequest.of(resolvedPage, resolvedSize));
 	}
 
 	private List<Comment> sortCommentsForDisplay(List<Comment> comments) {
