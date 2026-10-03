@@ -68,14 +68,16 @@ function PostCard({ post, onNavigate, currentUser, onLike }) {
     const optimisticLikes = Math.max(0, previousLikes + (wasLiked ? -1 : 1));
     setLiked(optimisticLiked);
     setLikes(optimisticLikes);
+    if (!wasLiked) {
+      setLikePulse(false);
+      requestAnimationFrame(() => setLikePulse(true));
+      setTimeout(() => setLikePulse(false), 380);
+    }
     try {
       if (wasLiked) {
         await API.gql(API.M.unlikePost, { postId: post.id });
       } else {
         await API.gql(API.M.likePost, { postId: post.id });
-        setLikePulse(false);
-        requestAnimationFrame(() => setLikePulse(true));
-        setTimeout(() => setLikePulse(false), 380);
       }
       try {
         const fresh = await API.gql(API.Q.getPost, { id: post.id });

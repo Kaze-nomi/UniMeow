@@ -52,14 +52,16 @@ function PostPage({ postId, currentUser, onNavigate }) {
     const previousLikes = likes || 0;
     setLiked(!wasLiked);
     setLikes(Math.max(0, previousLikes + (wasLiked ? -1 : 1)));
+    if (!wasLiked) {
+      setLikePulse(false);
+      requestAnimationFrame(() => setLikePulse(true));
+      setTimeout(() => setLikePulse(false), 380);
+    }
     try {
       if (wasLiked) {
         await API.gql(API.M.unlikePost, { postId });
       } else {
         await API.gql(API.M.likePost, { postId });
-        setLikePulse(false);
-        requestAnimationFrame(() => setLikePulse(true));
-        setTimeout(() => setLikePulse(false), 380);
       }
       try {
         const fresh = await API.gql(API.Q.getPost, { id: postId });
@@ -368,14 +370,16 @@ function CommentItem({ comment, currentUser, onNavigate, onDelete, onUpdate, onL
     const nextLikes = Math.max(0, previousLikes + (wasLiked ? -1 : 1));
     setLiked(nextLiked);
     setLikes(nextLikes);
+    if (!wasLiked) {
+      setLikePulse(false);
+      requestAnimationFrame(() => setLikePulse(true));
+      setTimeout(() => setLikePulse(false), 380);
+    }
     try {
       if (wasLiked) {
         await API.gql(API.M.unlikeComment, { commentId: comment.id });
       } else {
         await API.gql(API.M.likeComment, { commentId: comment.id });
-        setLikePulse(false);
-        requestAnimationFrame(() => setLikePulse(true));
-        setTimeout(() => setLikePulse(false), 380);
       }
       onLikeChange && onLikeChange(comment.id, nextLiked, nextLikes);
     } catch (e) {
