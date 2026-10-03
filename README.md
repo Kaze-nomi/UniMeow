@@ -19,7 +19,7 @@
 
 ## Архитектура
 
-![architecture](architecture.jpg)
+![Архитектура UniMeow](architecture.jpg)
 
 ## Стек
 
