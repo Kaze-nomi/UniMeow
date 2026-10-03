@@ -108,6 +108,19 @@ public class PostGrpcClient {
 		return Mono.fromCallable(() -> stub.addComment(builder.build())).subscribeOn(Schedulers.boundedElastic());
 	}
 
+	public Mono<LikerListResponse> getPostLikers(String postId, int page, int size) {
+		return Mono
+				.fromCallable(() -> stub.getPostLikers(
+						GetPostLikersRequest.newBuilder().setPostId(postId).setPage(page).setSize(size).build()))
+				.subscribeOn(Schedulers.boundedElastic());
+	}
+
+	public Mono<LikerListResponse> getCommentLikers(String commentId, int page, int size) {
+		return Mono.fromCallable(() -> stub.getCommentLikers(
+				GetCommentLikersRequest.newBuilder().setCommentId(commentId).setPage(page).setSize(size).build()))
+				.subscribeOn(Schedulers.boundedElastic());
+	}
+
 	public Mono<CommentListResponse> getComments(String postId, int page, int size, String viewerId) {
 		GetCommentsRequest.Builder builder = GetCommentsRequest.newBuilder().setPostId(postId).setPage(page)
 				.setSize(size);

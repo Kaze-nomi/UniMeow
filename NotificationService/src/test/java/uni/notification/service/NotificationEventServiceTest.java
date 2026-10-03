@@ -126,6 +126,7 @@ class NotificationEventServiceTest {
 				{"postId":"%s","authorId":"%s","mentionedUserIds":["%s","%s"]}
 				""".formatted(POST_ID, USER_A, USER_B, USER_C)));
 
+		@SuppressWarnings("unchecked")
 		ArgumentCaptor<List<Notification>> captor = ArgumentCaptor.forClass(List.class);
 		verify(notificationRepository).saveAll(captor.capture());
 		List<Notification> saved = captor.getValue();
@@ -142,6 +143,7 @@ class NotificationEventServiceTest {
 				{"postId":"%s","authorId":"%s","mentionedUserIds":["%s","%s"]}
 				""".formatted(POST_ID, USER_A, USER_B, USER_B)));
 
+		@SuppressWarnings("unchecked")
 		ArgumentCaptor<List<Notification>> captor = ArgumentCaptor.forClass(List.class);
 		verify(notificationRepository).saveAll(captor.capture());
 		assertThat(captor.getValue()).hasSize(1);
@@ -178,6 +180,7 @@ class NotificationEventServiceTest {
 				{"postId":"%s","authorId":"%s","actorId":"%s"}
 				""".formatted(POST_ID, USER_A, USER_B)));
 
+		@SuppressWarnings("unchecked")
 		ArgumentCaptor<List<Notification>> captor = ArgumentCaptor.forClass(List.class);
 		verify(notificationRepository).saveAll(captor.capture());
 		Notification n = captor.getValue().get(0);
@@ -200,6 +203,7 @@ class NotificationEventServiceTest {
 				{"postId":"%s","authorId":"%s","actorId":"%s"}
 				""".formatted(POST_ID, USER_A, USER_B)));
 
+		@SuppressWarnings("unchecked")
 		ArgumentCaptor<List<Notification>> captor = ArgumentCaptor.forClass(List.class);
 		verify(notificationRepository).saveAll(captor.capture());
 		assertThat(captor.getValue()).containsExactly(existing);
@@ -226,6 +230,7 @@ class NotificationEventServiceTest {
 				{"commentId":"%s","postId":"%s","authorId":"%s","postAuthorId":"%s"}
 				""".formatted(COMMENT_ID, POST_ID, USER_B, USER_A)));
 
+		@SuppressWarnings("unchecked")
 		ArgumentCaptor<List<Notification>> captor = ArgumentCaptor.forClass(List.class);
 		verify(notificationRepository).saveAll(captor.capture());
 		Notification n = captor.getValue().get(0);
@@ -253,6 +258,7 @@ class NotificationEventServiceTest {
 				{"commentId":"%s","postId":"%s","authorId":"%s","postAuthorId":"%s"}
 				""".formatted(COMMENT_ID, POST_ID, USER_B, USER_A)));
 
+		@SuppressWarnings("unchecked")
 		ArgumentCaptor<List<Notification>> captor = ArgumentCaptor.forClass(List.class);
 		verify(notificationRepository, times(2)).saveAll(captor.capture());
 		assertThat(captor.getAllValues().get(1)).containsExactly(existing);
@@ -268,6 +274,7 @@ class NotificationEventServiceTest {
 				 "parentCommentId":"parent-1","parentAuthorId":"%s"}
 				""".formatted(COMMENT_ID, POST_ID, USER_B, USER_A, USER_C)));
 
+		@SuppressWarnings("unchecked")
 		ArgumentCaptor<List<Notification>> captor = ArgumentCaptor.forClass(List.class);
 		verify(notificationRepository).saveAll(captor.capture());
 		Notification n = captor.getValue().get(0);
@@ -295,6 +302,7 @@ class NotificationEventServiceTest {
 				 "mentionedUserIds":["%s","%s"]}
 				""".formatted(COMMENT_ID, POST_ID, USER_B, USER_A, USER_A, USER_C)));
 
+		@SuppressWarnings("unchecked")
 		ArgumentCaptor<List<Notification>> captor = ArgumentCaptor.forClass(List.class);
 		verify(notificationRepository).saveAll(captor.capture());
 		List<Notification> saved = captor.getValue();
@@ -313,6 +321,7 @@ class NotificationEventServiceTest {
 				{"commentId":"%s","commentAuthorId":"%s","actorId":"%s"}
 				""".formatted(COMMENT_ID, USER_A, USER_B)));
 
+		@SuppressWarnings("unchecked")
 		ArgumentCaptor<List<Notification>> captor = ArgumentCaptor.forClass(List.class);
 		verify(notificationRepository).saveAll(captor.capture());
 		Notification n = captor.getValue().get(0);
@@ -340,6 +349,7 @@ class NotificationEventServiceTest {
 				{"subscriberId":"%s","targetUserId":"%s"}
 				""".formatted(USER_A, USER_B)));
 
+		@SuppressWarnings("unchecked")
 		ArgumentCaptor<List<Notification>> captor = ArgumentCaptor.forClass(List.class);
 		verify(notificationRepository).saveAll(captor.capture());
 		Notification n = captor.getValue().get(0);
@@ -367,6 +377,7 @@ class NotificationEventServiceTest {
 				{"targetUserId":"%s","granterId":"%s"}
 				""".formatted(USER_A, USER_B)));
 
+		@SuppressWarnings("unchecked")
 		ArgumentCaptor<List<Notification>> captor = ArgumentCaptor.forClass(List.class);
 		verify(notificationRepository).saveAll(captor.capture());
 		assertThat(captor.getValue().get(0).getType()).isEqualTo("ADMIN_GRANTED");
@@ -380,6 +391,7 @@ class NotificationEventServiceTest {
 				{"targetUserId":"%s","moderatorId":"%s"}
 				""".formatted(USER_A, USER_B)));
 
+		@SuppressWarnings("unchecked")
 		ArgumentCaptor<List<Notification>> captor = ArgumentCaptor.forClass(List.class);
 		verify(notificationRepository).saveAll(captor.capture());
 		assertThat(captor.getValue().get(0).getType()).isEqualTo("BANNED");

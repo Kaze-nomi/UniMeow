@@ -7,6 +7,7 @@ option java_package = "uni.grpc.user";
 service UserService {
     rpc CreateOrGetUser  (CreateOrGetUserRequest)  returns (UserResponse);
     rpc GetUserById      (GetUserByIdRequest)       returns (UserResponse);
+    rpc GetUsersByIds    (GetUsersByIdsRequest)     returns (UserListResponse);
     rpc GetUserByUsername(GetUserByUsernameRequest) returns (UserResponse);
     rpc UpdateUser       (UpdateUserRequest)        returns (UserResponse);
     rpc DeleteAccount    (DeleteAccountRequest)     returns (ModerationResponse);
@@ -53,6 +54,7 @@ message CreateOrGetUserRequest {
 }
 
 message GetUserByIdRequest       { string id       = 1; }
+message GetUsersByIdsRequest     { repeated string ids = 1; }
 message GetUserByUsernameRequest { string username = 1; }
 
 message UpdateUserRequest {

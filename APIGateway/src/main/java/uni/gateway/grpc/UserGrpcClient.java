@@ -6,6 +6,7 @@ import org.springframework.stereotype.Service;
 import uni.grpc.user.CreateOrGetUserRequest;
 import uni.grpc.user.DeleteAccountRequest;
 import uni.grpc.user.GetUserByIdRequest;
+import uni.grpc.user.GetUsersByIdsRequest;
 import uni.grpc.user.GetUserByUsernameRequest;
 import uni.grpc.user.UpdateUserRequest;
 import uni.grpc.user.UserResponse;
@@ -54,6 +55,7 @@ import uni.grpc.user.ReviewUniversityProposalRequest;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
 
+import java.util.List;
 import java.util.concurrent.TimeUnit;
 
 @Service
@@ -77,6 +79,12 @@ public class UserGrpcClient {
 	public Mono<UserResponse> getUserByUsername(String username) {
 		return Mono.fromCallable(
 				() -> readStub().getUserByUsername(GetUserByUsernameRequest.newBuilder().setUsername(username).build()))
+				.subscribeOn(Schedulers.boundedElastic());
+	}
+
+	public Mono<UserListResponse> getUsersByIds(List<String> ids) {
+		return Mono
+				.fromCallable(() -> readStub().getUsersByIds(GetUsersByIdsRequest.newBuilder().addAllIds(ids).build()))
 				.subscribeOn(Schedulers.boundedElastic());
 	}
 

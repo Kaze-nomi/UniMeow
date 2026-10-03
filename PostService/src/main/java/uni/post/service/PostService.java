@@ -35,6 +35,7 @@ public class PostService {
 
 	private static final int DEFAULT_PAGE = 0;
 	private static final int DEFAULT_SIZE = 20;
+	private static final int MAX_LIKERS_SIZE = 50;
 
 	private final PostRepository postRepository;
 	private final CommentRepository commentRepository;
@@ -111,6 +112,14 @@ public class PostService {
 		Post post = findOrThrow(postId);
 		boolean likedByMe = viewerId != null && likeRepository.existsByPostIdAndUserId(postId, viewerId);
 		return new PostResult(post, likedByMe);
+	}
+
+	@Transactional(readOnly = true)
+	public Page<UUID> getPostLikers(UUID postId, int page, int size) {
+		findOrThrow(postId);
+		int resolvedPage = Math.max(DEFAULT_PAGE, page);
+		int resolvedSize = size > 0 ? Math.min(size, MAX_LIKERS_SIZE) : DEFAULT_SIZE;
+		return likeRepository.findLikerIdsByPostId(postId, PageRequest.of(resolvedPage, resolvedSize));
 	}
 
 	@Transactional(readOnly = true)

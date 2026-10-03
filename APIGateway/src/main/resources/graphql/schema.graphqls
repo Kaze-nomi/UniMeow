@@ -18,6 +18,8 @@ type Query {
     getPost(id: ID!):                               Post
     getUserPosts(userId: ID!, page: Int, size: Int): PostPage!
     getComments(postId: ID!, page: Int, size: Int):  CommentPage!
+    getPostLikers(postId: ID!, page: Int, size: Int): LikerPage!
+    getCommentLikers(commentId: ID!, page: Int, size: Int): LikerPage!
 
     getNotifications(page: Int, size: Int): NotificationPage!
     getUnreadNotificationCount: Int!
@@ -213,6 +215,19 @@ type PostPage {
 type CommentPage {
     comments: [Comment!]!
     total:    Int!
+}
+
+type LikerPage {
+    users: [Liker!]!
+    total: Int!
+}
+
+type Liker {
+    id: ID!
+    username: String
+    name: String!
+    surname: String
+    avatarUrl: String
 }
 
 type Notification {

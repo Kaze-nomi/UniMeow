@@ -271,6 +271,8 @@
   function clearUserCache() { Object.keys(_userCache).forEach(id => delete _userCache[id]); }
 
   const Q = {
+    getPostLikers: `query($postId:ID!,$page:Int,$size:Int) { getPostLikers(postId:$postId,page:$page,size:$size) { users { id username name surname avatarUrl } total } }`,
+    getCommentLikers: `query($commentId:ID!,$page:Int,$size:Int) { getCommentLikers(commentId:$commentId,page:$page,size:$size) { users { id username name surname avatarUrl } total } }`,
     me: `query { me { id username name surname avatarUrl coverUrl bio status emailGoogle emailUniversity university { id name shortName subdomain iconUrl } faculty { id name shortName } program { id facultyId name shortName } course educationLevel graduationYear isStudentVerified isEmployeeVerified isAdmin isBanned bannedUntil banReason createdAt } }`,
     getUser: `query GetUser($id:ID!) { getUser(id:$id) { id username name surname avatarUrl coverUrl bio status isStudentVerified isEmployeeVerified isAdmin isBanned bannedUntil banReason isFollowedByMe university { id name shortName subdomain iconUrl } faculty { id name shortName } program { id facultyId name shortName } course educationLevel graduationYear createdAt } }`,
     getUserByUsername: `query($username:String!) { getUserByUsername(username:$username) { id username name surname avatarUrl coverUrl bio status isStudentVerified isEmployeeVerified isAdmin isBanned bannedUntil banReason isFollowedByMe university { id name shortName subdomain iconUrl } faculty { id name shortName } program { id facultyId name shortName } course educationLevel graduationYear createdAt } }`,

@@ -81,6 +81,32 @@
     .um-icon-btn:hover { background: var(--accent-subtle); color: var(--accent); }
     .um-like-btn:hover { background: var(--like-subtle); color: var(--like) !important; }
     .um-like-btn:hover svg { stroke: var(--like); }
+    .um-like-control { display: inline-flex; align-items: center; flex-shrink: 0; }
+    .um-like-count { display: flex; align-items: center; justify-content: center; align-self: stretch; padding: 6px 10px 6px 0; border: none; border-radius: 9999px; background: none; color: var(--text-muted); font-size: 13.5px; cursor: default; }
+    .um-like-count span { display: inline-block; flex-shrink: 0; text-align: center; font-variant-numeric: tabular-nums; }
+    button.um-like-count { cursor: pointer; }
+    button.um-like-count:hover { color: var(--like); background: var(--like-subtle); }
+    .um-likers { z-index: 1200; overflow-y: auto; overscroll-behavior: contain; padding: 6px; background: var(--bg); color: var(--text); border: 1px solid var(--border); border-radius: 12px; box-shadow: 0 8px 24px rgba(0,0,0,0.18); font-size: 12.5px; }
+    .um-likers-title { padding: 5px 6px 8px; font-weight: 700; }
+    .um-liker { display: flex; align-items: center; gap: 8px; padding: 6px; border-radius: 8px; color: var(--text); }
+    .um-liker:hover, .um-liker:focus-visible { background: var(--surface-hover); }
+    .um-liker-name, .um-liker-username { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .um-liker-name { font-weight: 600; }
+    .um-liker-username, .um-likers-status { color: var(--text-muted); }
+    .um-likers-status { padding: 8px; }
+    .um-likers-more { display: block; width: 100%; padding: 8px; border: none; border-radius: 8px; background: none; color: var(--accent); cursor: pointer; font: inherit; }
+    .um-likers-sheet { position: fixed; inset: auto 0 0; margin: 0 auto; width: 100%; max-width: 480px; max-height: 80dvh; overflow: hidden; padding: 0; border: 1px solid var(--border); border-bottom: none; border-radius: 20px 20px 0 0; background: var(--bg); color: var(--text); }
+    .um-likers-sheet::backdrop { background: rgba(0,0,0,0.45); }
+    .um-likers-sheet-content { display: flex; flex-direction: column; max-height: 80dvh; padding: 8px 12px max(12px, env(safe-area-inset-bottom)); }
+    .um-likers-sheet-header { display: flex; align-items: center; justify-content: space-between; flex-shrink: 0; padding-left: 8px; font-size: 16px; font-weight: 700; }
+    .um-likers-sheet-header button { width: 44px; height: 44px; border: none; border-radius: 50%; background: none; color: var(--text); font-size: 26px; cursor: pointer; }
+    .um-likers-sheet-list { min-height: 0; overflow-y: auto; overscroll-behavior: contain; font-size: 14px; }
+    .um-likers-sheet .um-liker { min-height: 52px; padding: 8px; }
+    .um-likers-sheet .um-likers-more { min-height: 44px; }
+    @media (max-width: 640px), (hover: none) {
+      .um-like-control > button { min-width: 44px; min-height: 44px; }
+      .um-like-count { padding: 6px 10px; }
+    }
     .um-reply-btn:hover { background: var(--reply-subtle); color: var(--reply) !important; }
     .um-reply-btn:hover svg { stroke: var(--reply); }
     @media (max-width: 400px) {
